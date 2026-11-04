@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111b20">
+  <meta name="description" content="Um jogo de aventura em pixel art sobre reconectar a humanidade." />
+  <title>OUTLINE — Além do Silêncio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell">
+    <header class="site-header">
+      <a class="brand" href="#topo"><span class="brand-mark">O</span><span>OUTLINE<small>JOGO DE AVENTURA</small></span></a>
+      <div class="header-status"><span class="status-light"></span> REDE GLOBAL <b>OFFLINE</b></div>
+      <span class="edition">CAPÍTULO 01 <i>·</i> 2091</span>
+    </header>
+
+    <section class="game-frame" id="topo" aria-label="Jogo OUTLINE: Além do Silêncio">
+      <canvas id="game" width="960" height="540" aria-label="Jogo de aventura em pixel art com perspectiva isométrica"></canvas>
+      <button id="grapple-action" class="grapple-action" type="button" hidden>LANÇAR RAPEL</button>
+      <div class="title-screen" id="title-screen">
+        <div class="title-kicker"><span></span> UMA HISTÓRIA DE UM MUNDO DESLIGADO</div>
+        <h1>ALÉM DO<br><em>SILÊNCIO</em></h1>
+        <p>As máquinas cortaram a humanidade do resto do mundo.<br>Encontre o caminho. Suba. Reconecte tudo.</p>
+        <button id="start-game" class="start-button" type="button"><span>▶</span> INICIAR MISSÃO</button>
+        <div class="title-controls">W A S D <span>—</span> MOVER <i>·</i> E <span>—</span> INTERAGIR</div>
+      </div>
+      <div class="toast" id="toast" role="status"></div>
+    </section>
+
+    <section class="mission-bar" aria-live="polite">
+      <div class="mission-objective"><span class="objective-index" id="objective-index">01</span><span><small>OBJETIVO ATUAL</small><strong id="objective">Chegue à primeira máquina de moto.</strong></span></div>
+      <div class="mission-progress"><div class="progress-label"><span>REDE RESTAURADA</span><span id="network-count">0 / 3</span></div><div class="progress-track"><i id="network-progress"></i></div></div>
+      <div class="mission-controls"><kbd>W A S D</kbd><span>MOVER</span><kbd>E</kbd><span>INTERAGIR</span></div>
+    </section>
+
+    <footer class="site-footer"><span>✦ <b>UMA FREQUÊNCIA DE CADA VEZ</b></span><span>FEITO PARA JOGAR NO NAVEGADOR <i>·</i> SEM INSTALAÇÃO</span></footer>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
