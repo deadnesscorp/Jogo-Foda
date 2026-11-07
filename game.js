@@ -3,24 +3,32 @@
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
-  const RENDER_SCALE = 2;
-  const W = canvas.width / RENDER_SCALE, H = canvas.height / RENDER_SCALE;
-  ctx.scale(RENDER_SCALE, RENDER_SCALE);
-  const bikeSpriteSheets = ['moto-64-pares.png','moto-64-impares.png'].map(file => {
-    const image = new Image(); image.src = 'assets/moto/' + file; return image;
+  let RENDER_SCALE = 2;
+  const DISPLAY_W=640,DISPLAY_H=360;
+  let W=DISPLAY_W,H=DISPLAY_H,gameScene=gameSceneViewport('title');
+  const ignition=createBikeIgnition({canvas,ctx,width:W,height:H,
+    onStart:()=>{keys.clear();bike.speed=0;if(fuel<=0||bikeLife<=0){dismount();setToast('VERIFIQUE O COMBUSTÍVEL E O ESTADO DA MOTO.');return;}bikeEngineRunning=true;bikeRpm=1000;setToast('MOTO LIGADA — BOA VIAGEM!');updateObjective();},
+    onCancel:()=>{keys.clear();dismount();}
   });
-  function bikeSpriteSource(direction) { return bikeSpriteSheets[direction % 2]; }
-  function bikeSpritesReady() { return bikeSpriteSheets.every(image => image.complete && image.naturalWidth > 0); }
-  // Alpha bounds keep every orientation centered on the same wheel contact point.
-  const BIKE_DIRECTION_COUNT = 64, BIKE_SPRITE_COLUMNS = 8;
-  const BIKE_DIRECTION_STEP = Math.PI * 2 / BIKE_DIRECTION_COUNT;
-  const bikeSpriteBounds = [[100,25,93,189],[97,23,94,193],[319,24,98,190],[314,23,100,193],[524,20,120,192],[520,18,125,195],[736,19,135,192],[735,17,140,195],[954,19,147,190],[953,18,151,192],[1169,22,166,181],[1166,23,172,183],[1384,24,180,175],[1382,25,184,175],[1594,30,179,165],[1594,31,179,165],[22,250,207,148],[18,250,211,150],[262,250,193,156],[260,251,195,159],[496,256,176,161],[495,257,177,162],[725,259,159,163],[725,262,159,163],[957,258,131,169],[958,256,132,173],[1186,252,108,175],[1186,250,112,180],[1406,249,98,178],[1404,249,104,182],[1623,247,94,185],[1626,245,95,189],[71,466,101,187],[67,465,104,189],[287,466,105,187],[285,468,111,186],[510,468,117,184],[509,468,121,184],[726,469,139,180],[723,470,144,181],[934,472,162,171],[932,473,168,171],[1142,479,175,157],[1138,481,185,156],[1357,481,191,151],[1356,481,195,153],[1569,475,194,149],[1568,474,198,152],[13,693,207,148],[10,691,211,152],[249,693,191,160],[248,693,192,165],[477,689,172,172],[476,691,172,174],[705,687,158,179],[705,688,158,182],[939,683,141,186],[937,684,142,188],[1165,679,122,193],[1163,681,126,192],[1397,678,103,194],[1395,679,103,194],[1614,678,93,195],[1617,678,91,195]];
-  const bikeWheelContacts = [[[46,186]],[[46.49,189.94]],[[27.5,187]],[[28.06,189.95]],[[25,188],[68,143]],[[26.04,190.94],[70.83,145.23]],[[23.5,189],[77,140]],[[24.37,191.95],[79.85,142.19]],[[25.5,187],[84.5,141]],[[26.19,188.97],[86.80,142.48]],[[27,178],[95.5,136]],[[27.98,179.97],[98.95,137.5]],[[29,171],[144,134]],[[29.64,171],[147.2,134]],[[30.5,161],[143.5,128]],[[30.5,161],[143.5,128]],[[34.5,145],[172.5,143]],[[35.17,146.96],[175.83,144.93]],[[36.5,135],[160,152]],[[36.88,137.6],[161.66,154.92]],[[75,121],[148,157]],[[75.43,121.75],[148.84,157.98]],[[67,113],[135,159]],[[67,113],[135,159]],[[55,120],[107.5,165]],[[55.42,122.84],[108.32,168.91]],[[40,124],[76.5,171]],[[41.48,127.54],[79.33,175.89]],[[41,138],[62.5,174]],[[43.51,141.1],[66.33,177.91]],[[54,181]],[[54.57,184.91]],[[51,184]],[[52.51,185.97]],[[42,184]],[[44.4,183.02]],[[27.5,180],[68,132]],[[28.44,180],[70.32,132]],[[22,177],[79,128]],[[22.79,177.98],[81.84,128.71]],[[25,168],[92.5,120]],[[25.93,168],[95.93,120]],[[27,154],[100.5,114]],[[28.54,153.02],[106.24,113.27]],[[29,148],[109.5,114]],[[29.61,149.96],[111.79,115.51]],[[29.5,146],[155.5,123]],[[30.11,148.94],[158.71,125.48]],[[35,144],[167.5,143]],[[35.68,147.89],[170.74,146.86]],[[34,130],[155.5,157]],[[34.18,134.06],[156.31,161.91]],[[72.5,131],[139,169]],[[72.5,132.52],[139,170.97]],[[67,134],[129.5,176]],[[67,136.25],[129.5,178.95]],[[60,141],[108,183]],[[60.43,142.52],[108.77,184.97]],[[51,143],[91.5,190]],[[52.67,142.26],[94.5,189.02]],[[43,161],[71,191]],[[43,161],[71,191]],[[61,191]],[[59.69,191]]];
-  const bikeHeadlightAnchors = [[46.5,56.7],[47.0,57.9],[55.7,57],[56.84,57.9],[76.1,57.6],[79.27,58.5],[93.1,40.2],[96.55,40.83],[134.1,51.5],[137.75,52.04],[148.7,59.4],[154.07,60.06],[155.4,60.4],[158.85,60.4],[155.6,55.9],[155.6,55.9],[174.4,60.8],[177.77,61.62],[158.8,68.3],[160.45,69.61],[140.4,65.2],[141.20,65.60],[125.8,67.7],[125.8,67.7],[99.6,74.1],[100.36,75.85],[72.5,82.8],[75.19,85.17],[59.7,87],[63.36,88.96],[52.6,90.8],[53.16,92.76],[50.8,100.3],[52.31,101.37],[40.7,98.4],[43.03,97.87],[33.5,93.5],[34.65,93.5],[34.1,93.2],[35.33,93.72],[40.1,87.3],[41.59,87.3],[36.2,67.3],[38.27,66.87],[36.9,62.1],[37.67,62.92],[36.3,63.1],[37.05,64.37],[35.5,57.5],[36.19,59.05],[26.1,48.5],[26.24,50.02],[23.9,45],[23.9,45.52],[22,38.6],[22,39.25],[44.6,39.4],[44.92,39.82],[41.6,37.6],[42.96,37.41],[37.7,58.2],[37.7,58.2],[40.1,58.5],[39.24,58.5]];
+  ctx.scale(RENDER_SCALE, RENDER_SCALE);
+  const spriteAtlas=SURVIVOR_ATLAS_128;
+  const bikeSpriteSheets=['bike','mounted'].map(kind=>{
+    const image=new Image();image.src='assets/sprites-128/'+spriteAtlas[kind].file;return image;
+  });
+  const survivorSpriteSheet=new Image();survivorSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.file;
+  function bikeSpriteSource(direction,riding=false){return bikeSpriteSheets[riding?1:0];}
+  function bikeSpriteMetadata(riding=false){return spriteAtlas[riding?'mounted':'bike'];}
+  function bikeSpritesReady(){return bikeSpriteSheets.every(image=>image.complete&&image.naturalWidth>0);}
+  const BIKE_DIRECTION_COUNT=128,BIKE_SPRITE_COLUMNS=16;
+  const BIKE_DIRECTION_STEP=Math.PI*2/BIKE_DIRECTION_COUNT;
+  const bikeSpriteBounds=spriteAtlas.bike.frames;
+  const bikeWheelContacts=spriteAtlas.bike.wheelContacts;
+  const bikeHeadlightAnchors=spriteAtlas.bike.headlightAnchors;
   const bikeVisualFacings = new Map();
   const bikeBlendLayer=document.createElement('canvas');
   bikeBlendLayer.width=160*RENDER_SCALE;bikeBlendLayer.height=160*RENDER_SCALE;
   const bikeBlendContext=bikeBlendLayer.getContext('2d');
+  let bikeBlendStamp='';
   function bikeDirectionBlend(angle) {
     const heading=((angle%(Math.PI*2)+Math.PI*2)%(Math.PI*2))/BIKE_DIRECTION_STEP;
     const direction=Math.floor(heading)%BIKE_DIRECTION_COUNT;
@@ -59,14 +67,15 @@
       x + size / 2 - sw * scale / 2, y + size * .93 - sh * scale + bounce, sw * scale, sh * scale);
     return true;
   }
-  function bikeGroundLayout(x, y, size, direction) {
-    const [sx, sy, sw, sh] = bikeSpriteBounds[direction];
-    const scale = size / (bikeSpriteSource(direction).naturalWidth / BIKE_SPRITE_COLUMNS);
-    const contacts = bikeWheelContacts[direction];
+  function bikeGroundLayout(x, y, size, direction, riding=false) {
+    const metadata=bikeSpriteMetadata(riding);
+    const [sx, sy, sw, sh] = metadata.frames[direction];
+    const scale = size / (bikeSpriteSource(direction,riding).naturalWidth / BIKE_SPRITE_COLUMNS);
+    const contacts = metadata.wheelContacts[direction];
     const anchorX = contacts.reduce((sum, point) => sum + point[0], 0) / contacts.length;
     const anchorY = contacts.reduce((sum, point) => sum + point[1], 0) / contacts.length;
     const left = x - anchorX * scale, top = y + 5 - anchorY * scale;
-    return {sx, sy, sw, sh, left, top, width: sw * scale, height: sh * scale,
+    return {sx, sy, sw, sh, left, top, width: sw * scale, height: sh * scale,riding,
       riderOffsetX: (sw / 2 - anchorX) * scale,
       riderOffsetY: -5.5 + (sh - anchorY) * scale,
       contacts: contacts.map(([px, py]) => [left + px * scale, top + py * scale])};
@@ -77,6 +86,9 @@
   const nightLayer = document.createElement('canvas');
   nightLayer.width = W; nightLayer.height = H;
   const nightContext = nightLayer.getContext('2d');
+  const headlightLayer = document.createElement('canvas');
+  headlightLayer.width = W; headlightLayer.height = H;
+  const headlightContext = headlightLayer.getContext('2d');
   function worldLighting(time) {
     const totalHours = startHour + Math.max(0, time) * 24 / DAY_LENGTH_SECONDS;
     const hour = totalHours % 24;
@@ -111,14 +123,15 @@
       shadowAlpha: (moon ? .17 : .5) * Math.pow(elevation,.4),
       period: hour >= 5 && hour < 7 ? 'AMANHECER' : hour >= 7 && hour < 17 ? 'DIA' : hour >= 17 && hour < 19 ? 'ENTARDECER' : 'NOITE'};
   }
-  function bikeShadowMask(direction) {
-    if (bikeShadowMasks.has(direction)) return bikeShadowMasks.get(direction);
-    const [sx, sy, sw, sh] = bikeSpriteBounds[direction];
+  function bikeShadowMask(direction,riding=false) {
+    const key=direction+':'+riding;
+    if (bikeShadowMasks.has(key)) return bikeShadowMasks.get(key);
+    const [sx, sy, sw, sh] = bikeSpriteMetadata(riding).frames[direction];
     const mask = document.createElement('canvas'); mask.width = sw; mask.height = sh;
     const painter = mask.getContext('2d');
-    painter.drawImage(bikeSpriteSource(direction), sx, sy, sw, sh, 0, 0, sw, sh);
+    painter.drawImage(bikeSpriteSource(direction,riding), sx, sy, sw, sh, 0, 0, sw, sh);
     painter.globalCompositeOperation = 'source-in'; painter.fillStyle = '#03060b'; painter.fillRect(0, 0, sw, sh);
-    bikeShadowMasks.set(direction, mask);
+    bikeShadowMasks.set(key, mask);
     return mask;
   }
   bikeSpriteSheets.forEach(image => image.addEventListener('load', () => {
@@ -132,20 +145,27 @@
     const angle = facing ? facing.angle : chase ? 0 : projectFacing(bike.angle);
     const direction = facing ? facing.direction : bikeSpritePose(angle,0,0).direction;
     const blend=bikeDirectionBlend(angle);
+    const riding=chase||mounted,metadata=bikeSpriteMetadata(riding);
     const anchors=[blend.direction,blend.next].map(index=>{
-      const ground=bikeGroundLayout(center.x,center.y,50,index),[mx,my]=bikeHeadlightAnchors[index],scale=ground.width/ground.sw;
+      const ground=bikeGroundLayout(center.x,center.y,50,index,riding),[mx,my]=metadata.headlightAnchors[index],scale=ground.width/ground.sw;
       return {x:ground.left+mx*scale,y:ground.top+my*scale};
     });
     const x=anchors[0].x+(anchors[1].x-anchors[0].x)*blend.weight,y=anchors[0].y+(anchors[1].y-anchors[0].y)*blend.weight;
-    if (!chase) return {x,y,angle,direction};
+    // Direction zero shows the rear: the front lamp is hidden behind the tank.
+    // Fade its lens glow into view only as the front turns toward the camera.
+    const visibility=Math.max(0,Math.min(1,(.3-Math.cos(angle))/.6));
+    if (!chase) return {x,y,angle,direction,visibility};
     const tilt = chaser.steer * .13;
     return {x:chaser.x + (x*Math.cos(tilt)-y*Math.sin(tilt))*1.55,
-      y:CHASE_BIKE_Y + (x*Math.sin(tilt)+y*Math.cos(tilt))*1.55,angle:angle+tilt,direction};
+      y:CHASE_BIKE_Y + (x*Math.sin(tilt)+y*Math.cos(tilt))*1.55,angle:angle+tilt,direction,visibility};
   }
   const worldShadowLayer = document.createElement('canvas');
   worldShadowLayer.width = W; worldShadowLayer.height = H;
   const worldShadowContext = worldShadowLayer.getContext('2d');
   worldShadowContext.imageSmoothingEnabled = false;
+  const softShadowLayer=document.createElement('canvas');
+  softShadowLayer.width=W;softShadowLayer.height=H;
+  const softShadowContext=softShadowLayer.getContext('2d');
   function drawBikeContactShadow(x, y, ground) {
     const first = ground.contacts[0], last = ground.contacts[ground.contacts.length - 1];
     const wheelbase = Math.hypot(last[0]-first[0],last[1]-first[1]);
@@ -171,7 +191,7 @@
     const dx=last[0]-first[0],dy=last[1]-first[1];
     const height=Math.max(18,ground.height*.8);
     const castX=light.shadowX*light.shadowLength/height,castY=light.shadowY*light.shadowLength/height;
-    const mask=bikeShadowMask(direction),scale=ground.width/ground.sw;
+    const mask=bikeShadowMask(direction,ground.riding),scale=ground.width/ground.sw;
     // Project narrow columns from the wheel contact line. Clamp outside the
     // wheelbase: extrapolating it makes handlebars cast sideways at sharp angles.
     // Near head-on views the contacts merge, so use their midpoint instead.
@@ -214,7 +234,7 @@
   }
   function drawWorldGroundShadows(time) {
     const light=worldLighting(time),target=worldShadowContext;
-    target.clearRect(0,0,W,H);target.save();target.fillStyle='#03060b';
+    target.clearRect(0,0,worldShadowLayer.width,worldShadowLayer.height);target.save();target.fillStyle='#03060b';
     buildings.forEach(([x,y,w,h],index)=>{
       const shape=isoBuildingGeometry(x,y,w,h,index);
       const projected=shape.roof.map((roof,i)=>{
@@ -228,16 +248,17 @@
     });
     if(bikeSpritesReady()) {
       const p=projectPoint(bike.x,bike.y),facing=smoothBikeFacing(projectFacing(bike.angle),time,'world');
-      const ground=bikeGroundLayout(p.x,p.y,50,facing.direction);
+      const ground=bikeGroundLayout(p.x,p.y,50,facing.direction,mounted);
       drawBikeCastShadow(p.x,p.y,ground,facing.direction,light,target);
-      if(mounted)drawPersonCastShadow(p.x,p.y,31,light,target);
     }
     if(!mounted){const p=projectPoint(player.x,player.y);drawPersonCastShadow(p.x,p.y,22,light,target);}
     target.restore();
     // Composite the combined mask once so overlapping objects do not multiply the darkness.
+    softShadowContext.clearRect(0,0,softShadowLayer.width,softShadowLayer.height);
+    softShadowContext.filter='blur('+((light.moon?1.7:.6+(1-light.elevation)*1.2)/RENDER_SCALE)+'px)';
+    softShadowContext.drawImage(worldShadowLayer,0,0);
     ctx.save();ctx.globalAlpha=light.shadowAlpha;
-    ctx.filter='blur('+(light.moon?1.7:.6+(1-light.elevation)*1.2)+'px)';
-    ctx.drawImage(worldShadowLayer,0,0);ctx.restore();
+    ctx.drawImage(softShadowLayer,0,0);ctx.restore();
   }
   function drawDayNightLighting(time, view = 'world') {
     const light = worldLighting(time);
@@ -251,28 +272,41 @@
     glow.addColorStop(1,'rgba('+red+','+green+','+blue+',0)');
     ctx.globalCompositeOperation='screen';ctx.fillStyle=glow;ctx.fillRect(0,0,W,H);ctx.globalCompositeOperation='source-over';
     const darkness = .06 + light.night * .55;
-    nightContext.clearRect(0,0,W,H);
+    nightContext.clearRect(0,0,nightLayer.width,nightLayer.height);
     nightContext.globalCompositeOperation = 'source-over';
     nightContext.fillStyle = 'rgba(5,14,35,' + darkness + ')';nightContext.fillRect(0,0,W,H);
-    const lamp = light.night>.02 && (view==='chase' || mounted) && bikeLife>0 && fuel>0 ? bikeLightPose(view) : null;
+    const lamp = light.night>.02 && (view==='chase' || mounted) && bikeEngineRunning && bikeLife>0 && fuel>0 ? bikeLightPose(view) : null;
     if(lamp) {
       const fx=Math.sin(lamp.angle),fy=-Math.cos(lamp.angle),sx=lamp.x,sy=lamp.y;
       const ex=sx+fx*104,ey=sy+fy*104;
-      const beam=nightContext.createLinearGradient(sx,sy,ex,ey);
+      const target=headlightContext;
+      target.clearRect(0,0,headlightLayer.width,headlightLayer.height);
+      const beam=target.createLinearGradient(sx,sy,ex,ey);
       beam.addColorStop(0,'rgba(0,0,0,.94)');beam.addColorStop(.6,'rgba(0,0,0,.65)');beam.addColorStop(1,'rgba(0,0,0,0)');
-      nightContext.globalCompositeOperation='destination-out';nightContext.fillStyle=beam;
-      nightContext.beginPath();nightContext.moveTo(sx-fy*3,sy+fx*3);nightContext.lineTo(ex-fy*33,ey+fx*33);nightContext.lineTo(ex+fy*33,ey-fx*33);nightContext.lineTo(sx+fy*3,sy-fx*3);nightContext.closePath();nightContext.fill();
+      target.fillStyle=beam;
+      target.beginPath();target.moveTo(sx-fy*3,sy+fx*3);target.lineTo(ex-fy*33,ey+fx*33);target.lineTo(ex+fy*33,ey-fx*33);target.lineTo(sx+fy*3,sy-fx*3);target.closePath();target.fill();
+      // The beam lights the road; the same blended sprite blocks it on the bike.
+      target.save();target.globalCompositeOperation='destination-out';
+      target.imageSmoothingEnabled=false;
+      if(view==='chase') {
+        target.translate(chaser.x,CHASE_BIKE_Y);target.rotate(chaser.steer*.13);target.scale(1.55,1.55);
+      } else {
+        const center=projectPoint(bike.x,bike.y);target.translate(center.x,center.y);
+      }
+      target.drawImage(bikeBlendLayer,-80,-80,160,160);target.restore();
+      nightContext.globalCompositeOperation='destination-out';
+      nightContext.drawImage(headlightLayer,0,0);
       nightContext.globalCompositeOperation='source-over';
     }
     ctx.drawImage(nightLayer,0,0);
-    if(lamp) {
+    if(lamp && lamp.visibility>0) {
       const glow=ctx.createRadialGradient(lamp.x,lamp.y,0,lamp.x,lamp.y,5);
-      glow.addColorStop(0,'rgba(255,226,158,'+(.7*light.night)+')');glow.addColorStop(1,'rgba(255,210,128,0)');
+      glow.addColorStop(0,'rgba(255,226,158,'+(.7*light.night*lamp.visibility)+')');glow.addColorStop(1,'rgba(255,210,128,0)');
       ctx.globalCompositeOperation='screen';ctx.fillStyle=glow;ctx.fillRect(lamp.x-5,lamp.y-5,10,10);
     }
     ctx.restore();
   }
-  const CHASE_BIKE_Y = H - 54;
+  const CHASE_BIKE_Y = 216;
   const ISO_X = Math.SQRT1_2, ISO_Y = Math.SQRT1_2 * .5;
   const CHASE_MACHINE_SCALE_X = 1.48, CHASE_MACHINE_SCALE_Y = 1.08;
   const titleScreen = document.querySelector('#title-screen');
@@ -366,6 +400,8 @@
   let fuel = 68, hunger = 100, thirst = 100, exploreBuilding = -1, exploreStep = 0;
   let repairKits = 1, bikeLife = 100, bikeWearClock = 0, bikeCrashCooldown = 0, bikeParts = { motor: 100, handlebar: 100, frontTire: 100, rearTire: 100 };
   let bikeInspectOpen = false;
+  let bikeInspectHover = null;
+  const bikeWorkshopWindow={x:null,y:null,full:false,drag:null};
   let bikeInspectTab = 'Info', bikeTireSelected = 'frontTire', bikeService = null;
   const bikeInspectTabs = ['Info', 'Motor', 'Pneus', 'Guidão'];
   const bikeFaults = Object.fromEntries(Object.keys(bikeParts).map(part => [part, [100,100,100,100]]));
@@ -373,7 +409,7 @@
   const bikeJobs = {
     motor: [
       ['Ignição fora de ponto', 'Sincronizar ignição', 'timing', 'Pare o marcador dentro da faixa verde, três vezes.'],
-      ['Válvulas desreguladas', 'Regular válvulas', 'sequence', 'Ajuste a folga de cada válvula com − / + e confirme entre 0,10 e 0,15 mm.'],
+      ['Válvulas desreguladas', 'Regular válvulas', 'sequence', 'Pegue pelo cabo e arraste para cima ou para baixo. Confirme entre 0,10 e 0,15 mm.'],
       ['Circuito de óleo obstruído', 'Desobstruir circuito', 'route', 'Ligue os trechos: gire cada conexão até formar uma linha.'],
       ['Mistura irregular', 'Ajustar mistura', 'balance', 'Use − / + para estabilizar a mistura no centro por 3 segundos.']
     ],
@@ -387,7 +423,7 @@
       ['Direção desalinhada', 'Alinhar direção', 'align', 'Use − / + para centralizar a roda e confirme o alinhamento.'],
       ['Cabos desconectados', 'Reconectar cabos', 'wires', 'Arraste cada cabo ao conector de mesmo símbolo, ou selecione os pares com cliques.'],
       ['Mesa com aperto incorreto', 'Regular torque', 'torque', 'Gire a chave no sentido horário e confirme entre 18 e 22 Nm. − / + também ajustam.'],
-      ['Rolamentos fora de posição', 'Assentar rolamentos', 'bearings', 'Encaixe, alinhe e dê batidas leves com o martelo de borracha, alternando os lados.']
+      ['Rolamentos fora de posição', 'Assentar rolamentos', 'bearings', 'Dê três batidas no mesmo ponto: clique em BATER ou pressione 1.']
     ]
   };
   const bikePartNames = { motor: 'MOTOR', handlebar: 'GUIDÃO', frontTire: 'PNEU DIANTEIRO', rearTire: 'PNEU TRASEIRO' };
@@ -399,7 +435,8 @@
   let walkCycle = 0;
   const camera = { x: 180, y: 3300 };
   const bike = { x: 180, y: 3300, angle: .87, speed: 0, wheel: 0, steering:0 };
-  const BIKE_GEAR_LIMITS=[0,25,60,90,125],BIKE_SPEED_TO_KMH=.52;
+  let bikeEngineRunning=false;
+  const BIKE_GEAR_LIMITS=[0,30,60,90,125],BIKE_SPEED_TO_KMH=.52;
   let bikeGear=1,bikeShiftCooldown=0,bikeShiftFlash=0,bikeRpm=1000;
   function bikeGearSpeedLimit(gear=bikeGear) {
     return BIKE_GEAR_LIMITS[Math.max(1,Math.min(BIKE_GEAR_LIMITS.length-1,gear))]/BIKE_SPEED_TO_KMH;
@@ -408,7 +445,7 @@
   function updateBikeGearbox(dt,speed,throttle) {
     bikeShiftCooldown=Math.max(0,bikeShiftCooldown-dt);bikeShiftFlash=Math.max(0,bikeShiftFlash-dt);
     const ratio=Math.min(1.15,Math.abs(speed)/bikeGearSpeedLimit());
-    const target=bikeLife>0&&fuel>0?1000+ratio*5900+(throttle?350:0):0;
+    const target=bikeEngineRunning&&bikeLife>0&&fuel>0?1000+ratio*5900+(throttle?350:0):0;
     bikeRpm+=(target-bikeRpm)*(1-Math.exp(-8*dt));
   }
   function shiftBikeGear(delta) {
@@ -419,13 +456,15 @@
     return true;
   }
   function bikeControlsMounted() {return state==='drive'&&mounted||state==='chase'||state==='grapple';}
-  function bikeDashboardBounds(){return {x:W-96,y:H-60,w:84,h:44};}
+  const BIKE_DASHBOARD_SCALE = .75;
+  function bikeDashboardBounds(){const w=130*BIKE_DASHBOARD_SCALE,h=76*BIKE_DASHBOARD_SCALE;return {x:W-w-12,y:H-h-12,w,h};}
   function handleBikeDashboardPointer(event) {
     if(event.button!==0||!bikeControlsMounted())return false;
-    const p=bikeServicePointer(event),{x,y}=bikeDashboardBounds();
-    if(p.y<y+30||p.y>y+42)return false;
-    if(p.x>=x+4&&p.x<=x+34){shiftBikeGear(-1);return true;}
-    if(p.x>=x+50&&p.x<=x+80){shiftBikeGear(1);return true;}
+    const pointer=bikeCanvasPointer(event),bounds=bikeDashboardBounds();
+    const p={x:(pointer.x-bounds.x)/BIKE_DASHBOARD_SCALE,y:(pointer.y-bounds.y)/BIKE_DASHBOARD_SCALE},x=0,y=0;
+    if(p.y<y+61||p.y>y+73)return false;
+    if(p.x>=x+7&&p.x<=x+55){shiftBikeGear(-1);return true;}
+    if(p.x>=x+75&&p.x<=x+123){shiftBikeGear(1);return true;}
     return false;
   }
   const player = { x: 180, y: 3300, angle: .87, hp: 3 };
@@ -627,13 +666,16 @@
     toast.textContent = message; toast.classList.add('visible'); toastTimer = seconds;
   }
   function setObjective(text, index = activeTower) {
-    objectiveNode.textContent = text;
-    objectiveIndex.textContent = String(Math.max(1, Math.min(index + 1, towers.length))).padStart(2, '0');
-    networkCount.textContent = `${network} / ${towers.length}`;
-    networkProgress.style.width = `${network / towers.length * 100}%`;
+    if(objectiveNode.textContent!==text)objectiveNode.textContent=text;
+    const number=String(Math.max(1,Math.min(index+1,towers.length))).padStart(2,'0');
+    if(objectiveIndex.textContent!==number)objectiveIndex.textContent=number;
+    const count=`${network} / ${towers.length}`,progress=`${network/towers.length*100}%`;
+    if(networkCount.textContent!==count)networkCount.textContent=count;
+    if(networkProgress.style.width!==progress)networkProgress.style.width=progress;
   }
   function updateObjective() {
-    networkCount.textContent = `${network} / ${towers.length}`;
+    const count=`${network} / ${towers.length}`;
+    if(networkCount.textContent!==count)networkCount.textContent=count;
     networkProgress.style.width = `${network / towers.length * 100}%`;
     const tower = active();
     if (!tower) return;
@@ -652,9 +694,10 @@
     bikeVisualFacings.clear();
     state = 'drive'; gameTime = 0; lastTime = 0; activeTower = 0; network = 0;
     bike.x = 180; bike.y = 3300; bike.angle = .87; bike.speed = 0; bike.wheel = 0; bike.steering=0;
-    bikeGear=1;bikeShiftCooldown=0;bikeShiftFlash=0;bikeRpm=1000;
+    bikeGear=1;bikeShiftCooldown=0;bikeShiftFlash=0;bikeRpm=0;bikeEngineRunning=false;
     player.x = bike.x; player.y = bike.y; player.angle = bike.angle; player.hp = 3;
-    mounted = true; approachedByBike = false; totalRide = 0; fuel = 68; hunger = 100; thirst = 100;
+    mounted = false; approachedByBike = false; totalRide = 0; fuel = 68; hunger = 100; thirst = 100;
+    player.x=bike.x+Math.cos(bike.angle)*19;player.y=bike.y+Math.sin(bike.angle)*19;
     repairKits = 1; bikeLife = 100; bikeWearClock = 0; bikeCrashCooldown = 0; Object.keys(bikeParts).forEach(part => bikeParts[part] = 100);
     bikeInspectOpen = false;
     bikeService = null; Object.values(bikeFaults).forEach(faults => faults.fill(100));
@@ -663,7 +706,7 @@
     towers.forEach(t => t.disabled = false);
     randomizeTowerSpawns();
     titleScreen.classList.add('dismissed'); keys.clear(); updateObjective();
-    setToast('MOTO LIGADA — SIGA O SINAL DA MÁQUINA');
+    setToast('E PARA SUBIR NA MOTO E DAR A PARTIDA');
   }
   document.querySelector('#start-game').addEventListener('click', startGame);
 
@@ -681,7 +724,18 @@
     if (distance(player, bike) > 43) { setToast('A MOTO ESTÁ FORA DE ALCANCE.'); return; }
     bike.steering=0;
     mounted = true; player.x = bike.x; player.y = bike.y; player.angle = bike.angle;
-    setToast('MOTO PRONTA. SIGA PARA O PRÓXIMO NÓ.'); updateObjective();
+    keys.clear();
+    if(!bikeEngineRunning) {
+      ignition.open();setObjective('Encaixe a chave e gire para ligar a moto.',activeTower);
+      toastTimer=0;toast.classList.remove('visible');
+    } else {setToast('MOTOR JÁ LIGADO — BOA VIAGEM!');updateObjective();}
+  }
+  function switchOffBike() {
+    if(state!=='drive'||(!mounted&&distance(player,bike)>43))return;
+    if(Math.abs(bike.speed)>2){setToast('PARE A MOTO ANTES DE DESLIGAR.');return;}
+    if(!bikeEngineRunning){setToast('SUBA NA MOTO PARA DAR A PARTIDA.');return;}
+    bikeEngineRunning=false;bikeRpm=0;bike.speed=0;keys.clear();
+    setToast('MOTOR DESLIGADO. DESÇA E SUBA PARA DAR A PARTIDA.');
   }
   function startGrappleAim() {
     if (!grappleAvailable) { setToast('APROXIME A MOTO DE UMA PERNA E MANTENHA O RITMO'); return; }
@@ -716,20 +770,27 @@
     if (state === 'chase') startGrappleAim();
     else if (state === 'grapple') attemptGrapple();
   });
-  canvas.addEventListener('pointerdown', event => { if (bikeInspectOpen) handleBikeInspectPointer(event); else if(handleBikeDashboardPointer(event))return;else if (state === 'grapple') attemptGrapple(); else if (state === 'hack') handleHackPointer(event); });
-  canvas.addEventListener('pointermove', moveBikeServiceGesture);
-  canvas.addEventListener('pointerup', endBikeServiceGesture);
-  canvas.addEventListener('pointercancel', endBikeServiceGesture);
-  canvas.addEventListener('lostpointercapture', endBikeServiceGesture);
-  window.addEventListener('blur', () => {if(bikeService){bikeService.drag=null;}});
+  canvas.addEventListener('pointerdown', event => { if(ignition.active){ignition.down(event);return;}if (bikeInspectOpen) handleBikeInspectPointer(event); else if(handleBikeDashboardPointer(event))return;else if (state === 'grapple') attemptGrapple(); else if (state === 'hack') handleHackPointer(event); });
+  canvas.addEventListener('pointermove', event => {
+    if(ignition.active){ignition.move(event);return;}
+    bikeInspectHover=bikeInspectOpen?bikeServicePointer(event):null;
+    moveBikeServiceGesture(event);
+  });
+  canvas.addEventListener('pointerleave', () => {bikeInspectHover=null;});
+  canvas.addEventListener('pointerup', event=>{if(ignition.active)ignition.up(event);else endBikeServiceGesture(event);});
+  canvas.addEventListener('pointercancel', event=>{if(ignition.active)ignition.up(event);else endBikeServiceGesture(event);});
+  canvas.addEventListener('lostpointercapture', event=>{if(ignition.active)ignition.up(event);else endBikeServiceGesture(event);});
+  window.addEventListener('blur', () => {ignition.cancelDrag();endBikeWorkshopWindowDrag({pointerId:bikeWorkshopWindow.drag?.pointerId});if(bikeService){bikeService.drag=null;}});
   canvas.addEventListener('contextmenu', event => {
     if (bikeInspectOpen) event.preventDefault();
   });
   function syncGrappleButton() {
     const visible = state === 'chase' || state === 'grapple';
-    grappleButton.hidden = !visible;
-    grappleButton.disabled = state === 'chase' && !grappleAvailable;
-    grappleButton.textContent = state === 'grapple' ? 'DISPARAR RAPEL' : grappleAvailable ? 'MIRAR / RAPEL' : 'RAPEL INDISPONÍVEL';
+    if(grappleButton.hidden===visible)grappleButton.hidden=!visible;
+    const disabled=state==='chase'&&!grappleAvailable;
+    if(grappleButton.disabled!==disabled)grappleButton.disabled=disabled;
+    const label=state==='grapple'?'DISPARAR RAPEL':grappleAvailable?'MIRAR / RAPEL':'RAPEL INDISPONÍVEL';
+    if(grappleButton.textContent!==label)grappleButton.textContent=label;
   }
   function interact() {
     if (state === 'chase') { startGrappleAim(); return; }
@@ -809,8 +870,7 @@
   }
   function handleHackPointer(event) {
     if (state !== 'hack') return;
-    const bounds = canvas.getBoundingClientRect();
-    const x = (event.clientX - bounds.left) / bounds.width * W, y = (event.clientY - bounds.top) / bounds.height * H;
+    const {x,y}=bikeCanvasPointer(event);
     if (hackMode === 'question') {
       const choice = Math.floor((y - 108) / 32);
       if (x >= 100 && x <= 380 && choice >= 0 && choice < 3) hackInput(choice);
@@ -827,10 +887,13 @@
   }
 
   function keyDown(e) {
+    if(ignition.active&&e.key.toLowerCase()==='f'){e.preventDefault();if(!e.repeat)ignition.close(false);return;}
+    if(ignition.active){ignition.key(e);return;}
     const key = e.key.toLowerCase();
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
     if (bikeInspectOpen && key !== 'f') {
       e.preventDefault();
+      if(!bikeService&&['w','a','s','d'].includes(key)){keys.add(key);return;}
       if (!e.repeat && bikeService) {
         if (/^[1-8]$/.test(key)) bikeServiceAction(Number(key)-1);
         else if (['arrowleft','a','-'].includes(key)) bikeServiceAction(0);
@@ -842,6 +905,7 @@
     if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) e.preventDefault();
     if (state === 'title') { if (key === 'enter') startGame(); return; }
     if (state === 'ending') { if (key === 'enter') { state = 'title'; titleScreen.classList.remove('dismissed'); } return; }
+    if(key==='f'&&state==='drive'&&mounted&&!e.repeat){switchOffBike();return;}
     if(bikeControlsMounted()&&['r','q'].includes(key)){e.preventDefault();if(!e.repeat)shiftBikeGear(key==='r'?1:-1);return;}
     if (state === 'drive' && !mounted && key === 'f' && !e.repeat) {
       if (distance(player,bike) <= 85) { bikeInspectOpen = !bikeInspectOpen; keys.clear(); bikeInspectTab = 'Info'; bikeService = null; }
@@ -864,15 +928,28 @@
   addEventListener('keyup', keyUp);
   addEventListener('blur', () => keys.clear());
 
+  const GROUND_CHUNK_SIZE=256,groundTextureCache=new Map();
+  function groundTextureChunk(x,y) {
+    const key=x+','+y;
+    if(groundTextureCache.has(key))return groundTextureCache.get(key);
+    const tile=document.createElement('canvas');tile.width=tile.height=GROUND_CHUNK_SIZE;
+    const painter=tile.getContext('2d');
+    for(let py=0;py<GROUND_CHUNK_SIZE;py+=16)for(let px=0;px<GROUND_CHUNK_SIZE;px+=16){
+      const wx=x+px,wy=y+py,shade=((Math.imul(wx/16,374761393)^Math.imul(wy/16,668265263))>>>0)%5;
+      painter.fillStyle=shade===0?'#37433b':shade===1?'#354139':'#344038';painter.fillRect(px,py,16,16);
+      if((wx*7+wy*3)%11===0){painter.fillStyle='#343b38';painter.fillRect(px+4,py+5,2,2);}
+    }
+    // Keep a bounded working set rather than retaining the entire world texture.
+    if(groundTextureCache.size>=48)groundTextureCache.delete(groundTextureCache.keys().next().value);
+    groundTextureCache.set(key,tile);return tile;
+  }
   function drawGround(time) {
     ctx.fillStyle = '#34413a'; ctx.fillRect(0, 0, world.w, world.h);
     const left = Math.max(0, Math.floor((camera.x - 520) / 16) * 16), right = Math.min(world.w, camera.x + 520);
     const top = Math.max(0, Math.floor((camera.y - 520) / 16) * 16), bottom = Math.min(world.h, camera.y + 520);
-    for (let y = top; y < bottom; y += 16) for (let x = left; x < right; x += 16) {
-      const shade = ((Math.imul(x / 16, 374761393) ^ Math.imul(y / 16, 668265263)) >>> 0) % 5;
-      ctx.fillStyle = shade === 0 ? '#37433b' : shade === 1 ? '#354139' : '#344038';
-      ctx.fillRect(x, y, 16, 16);
-      if ((x * 7 + y * 3) % 11 === 0) { ctx.fillStyle = '#343b38'; ctx.fillRect(x + 4, y + 5, 2, 2); }
+    for(let y=Math.floor(top/GROUND_CHUNK_SIZE)*GROUND_CHUNK_SIZE;y<bottom;y+=GROUND_CHUNK_SIZE)for(let x=Math.floor(left/GROUND_CHUNK_SIZE)*GROUND_CHUNK_SIZE;x<right;x+=GROUND_CHUNK_SIZE){
+      const width=Math.min(GROUND_CHUNK_SIZE,world.w-x),height=Math.min(GROUND_CHUNK_SIZE,world.h-y);
+      ctx.drawImage(groundTextureChunk(x,y),0,0,width,height,x,y,width,height);
     }
     rubble.forEach(r => { if (Math.abs(r.x-camera.x)<560 && Math.abs(r.y-camera.y)<560) { ctx.fillStyle = r.color > .5 ? '#3c4641' : '#1c292b'; ctx.fillRect(r.x, r.y, r.s, r.s * .7); } });
     ctx.lineCap = 'square'; ctx.lineJoin = 'round';
@@ -924,8 +1001,14 @@
     const roof = base.map((p, i) => ({ x: p.x, y: p.y - lift - ((index + i * 2) % 5 === 0 ? 9 + index % 3 * 3 : 0) }));
     return {w,h,base,roof,lift};
   }
-  function drawIsoBuilding(x, y, width, height, index, time) {
-    const {w,h,base,roof,lift} = isoBuildingGeometry(x,y,width,height,index);
+  function isoBuildingVisible(shape) {
+    return !(
+      shape.base.every(p=>p.x < -64)||shape.base.every(p=>p.x>W+64)||
+      shape.base.every(p=>p.y < -64)||shape.roof.every(p=>p.y>H+128)
+    );
+  }
+  function drawIsoBuilding(x, y, width, height, index, time, geometry) {
+    const {w,h,base,roof,lift} = geometry||isoBuildingGeometry(x,y,width,height,index);
     ctx.fillStyle = '#11191a88'; ctx.beginPath(); ctx.ellipse((base[0].x + base[2].x) / 2 + 4, (base[0].y + base[2].y) / 2 + 3, w * .48, h * .18, 0, 0, Math.PI * 2); ctx.fill();
     polygon([base[1], base[2], roof[2], roof[1]], index % 2 ? '#1a2425' : '#161f21');
     polygon([base[2], base[3], roof[3], roof[2]], index % 3 ? '#232a29' : '#1b2324');
@@ -1074,13 +1157,19 @@
   }
   function drawIsoDepthObjects(time, includeActors) {
     const objects = [];
-    buildings.forEach(([x, y, w, h], i) => objects.push({ depth: x + y + (w + h) * .82, draw: () => drawIsoBuilding(x, y, w, h, i, time) }));
-    towers.forEach((tower, i) => objects.push({ depth: tower.x + tower.y, draw: () => drawIsoTower(tower, i, time) }));
+    buildings.forEach(([x,y,w,h],i)=>{
+      const geometry=isoBuildingGeometry(x,y,w,h,i);
+      if(isoBuildingVisible(geometry))objects.push({depth:x+y+(w+h)*.82,draw:()=>drawIsoBuilding(x,y,w,h,i,time,geometry)});
+    });
+    towers.forEach((tower,i)=>{
+      const p=projectPoint(tower.x,tower.y);
+      if(p.x>=-220&&p.x<=W+220&&p.y>=-120&&p.y<=H+240)objects.push({depth:tower.x+tower.y,draw:()=>drawIsoTower(tower,i,time)});
+    });
     const tower = active();
     if (includeActors && mounted) objects.push({ depth: bike.x + bike.y, draw: () => {
       const p = projectPoint(bike.x, bike.y);
       const rider = drawBike(p.x, p.y, projectFacing(bike.angle), bike.speed, time);
-      drawPerson(rider.x, rider.y, projectFacing(player.angle), time, Math.abs(bike.speed) > 2, true);
+      if(!rider.integrated)drawPerson(rider.x, rider.y, projectFacing(player.angle), time, Math.abs(bike.speed) > 2, true);
     } });
     else if (includeActors) {
       objects.push({ depth: bike.x + bike.y, draw: () => {
@@ -1111,7 +1200,8 @@
       return {x, y};
     }
     const blend=bikeDirectionBlend(facing.angle);
-    const first=bikeGroundLayout(x,y,50,blend.direction),second=bikeGroundLayout(x,y,50,blend.next);
+    const riding=view==='chase'||mounted;
+    const first=bikeGroundLayout(x,y,50,blend.direction,riding),second=bikeGroundLayout(x,y,50,blend.next,riding);
     const mix=(a,b)=>a+(b-a)*blend.weight;
     const ground={...first,
       contacts:[0,1].map(i=>{
@@ -1120,24 +1210,28 @@
       })};
     ctx.save();
     if (view === 'world') drawBikeContactShadow(x,y,ground);
-    else drawBikeGroundShadow(x,y,bikeGroundLayout(x,y,50,pose.direction),pose.direction,time);
+    else drawBikeGroundShadow(x,y,bikeGroundLayout(x,y,50,pose.direction,riding),pose.direction,time);
     // Blend into a transparent layer additively: overlapping silhouettes stay opaque.
     // Both views use their own wheel anchors, so changing crop sizes cannot move the bike.
     const painter=bikeBlendContext;
+    const stamp=blend.direction+':'+blend.next+':'+Math.round(blend.weight*1e6)+':'+RENDER_SCALE+':'+riding;
+    if(stamp!==bikeBlendStamp){
     painter.setTransform(1,0,0,1,0,0);painter.clearRect(0,0,bikeBlendLayer.width,bikeBlendLayer.height);
     painter.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,80*RENDER_SCALE,80*RENDER_SCALE);
     painter.imageSmoothingEnabled=false;painter.globalCompositeOperation='lighter';
     for(const [direction,layout,alpha] of [[blend.direction,first,1-blend.weight],[blend.next,second,blend.weight]]) {
       if(alpha<=.001)continue;
       painter.globalAlpha=alpha;
-      painter.drawImage(bikeSpriteSource(direction),layout.sx,layout.sy,layout.sw,layout.sh,
+      painter.drawImage(bikeSpriteSource(direction,riding),layout.sx,layout.sy,layout.sw,layout.sh,
         layout.left-x,layout.top-y,layout.width,layout.height);
     }
     painter.globalAlpha=1;painter.globalCompositeOperation='source-over';
+    bikeBlendStamp=stamp;
+    }
     ctx.imageSmoothingEnabled=false;ctx.drawImage(bikeBlendLayer,x-80,y-80,160,160);
     ctx.restore();
     const bounce=Math.sin(time*Math.min(12,4+Math.abs(speed)/25)*Math.PI*2)*Math.min(.3,Math.abs(speed)/150);
-    return { x: x + mix(first.riderOffsetX,second.riderOffsetX) - 6 * Math.sin(facing.angle),
+    return { integrated:riding,x: x + mix(first.riderOffsetX,second.riderOffsetX) - 6 * Math.sin(facing.angle),
       y: y + mix(first.riderOffsetY,second.riderOffsetY) - 14 + 2 * Math.cos(facing.angle) + bounce };
   }
   function drawBikeFallback(x, y, angle, speed, time) {
@@ -1233,7 +1327,7 @@
     if (bikeService.job[2] === 'balance') bikeService.value = .7;
     if (bikeService.job[2] === 'align') bikeService.value = Math.random() < .5 ? -12 : 12;
     if (bikeService.job[2] === 'sequence') bikeService.value = (Math.random()<.5?1:22);
-    if (bikeService.job[2] === 'bearings') {bikeService.bearingStage='choose';bikeService.seated=0;bikeService.hits=0;}
+    if (bikeService.job[2] === 'bearings') {bikeService.bearingStage='hammer';bikeService.seated=0;bikeService.hits=0;bikeService.lastStrike=-1;}
   }
   function completeBikeService() {
     const s = bikeService;
@@ -1286,25 +1380,11 @@
       s.lastClean=choice;
       s.remaining[choice]=Math.max(0,s.remaining[choice]-1); if(s.remaining.every(v=>v===0)) completeBikeService();
     } else if (mode === 'bearings') {
-      if(s.bearingStage==='choose') {
-        if(s.order[choice]<s.progress)return;
-        if(s.order[choice]!==s.progress){bikeServiceMiss('Escolha o menor rolamento ainda disponível.');return;}
-        s.selected=choice;s.bearingStage='align';s.value=Math.random()<.5?-8:8;
-      } else if(s.bearingStage==='align') {
-        if(choice<2)s.value=Math.max(-12,Math.min(12,s.value+(choice===0?-1:1)));
-        else if(choice===2) {
-          if(Math.abs(s.value)>1){s.message='Centralize o rolamento antes de começar as batidas.';return;}
-          s.bearingStage='hammer';s.seated=0;s.hits=0;s.lastStrike=-1;
-        }
-      } else if(s.bearingStage==='hammer') {
-        if(s.clock-s.lastStrike<.22){s.message='Espere o martelo voltar antes da próxima batida.';return;}
-        if(choice!==[0,2,1,3][s.hits%4]){bikeServiceMiss('Alterne os lados opostos para assentar por igual.');return;}
-        s.lastStrike=s.clock;s.hitPoint=choice;s.hits++;s.seated=s.hits/8;
-        if(s.hits===8){
-          s.progress++;s.bearingStage='choose';s.selected=-1;s.drag=null;s.message='Rolamento assentado por igual. Escolha o próximo.';
-          if(s.progress===4)completeBikeService();
-        }
-      }
+      if(choice!==0)return;
+      if(s.clock-s.lastStrike<.15)return;
+      s.lastStrike=s.clock;s.hitPoint=0;s.hits++;s.progress=s.hits;s.seated=s.hits/3;
+      s.message='Boa! Mais uma batida no mesmo lugar.';
+      if(s.hits>=3)completeBikeService();
     } else if (mode === 'bolts') {
       if(s.order[choice]===s.progress) {s.progress++;if(s.progress===4)completeBikeService();}
       else bikeServiceMiss(mode==='bolts'?'Siga a ordem em cruz.':'Comece pelo menor rolamento restante.');
@@ -1318,7 +1398,11 @@
     }
   }
   function updateBikeService(dt) {
-    const s=bikeService;if(!s || s.phase==='done' || s.phase==='failed')return;
+    const s=bikeService;if(!s)return;
+    if(s.phase==='done' || s.phase==='failed') {
+      if(s.job[2]==='bearings'){s.clock+=dt;s.pulse=Math.max(0,s.pulse-dt);}
+      return;
+    }
     s.clock+=dt;
     s.pulse=Math.max(0,s.pulse-dt);
     s.cure=s.cure.map(value=>Math.max(0,value-dt));
@@ -1338,10 +1422,18 @@
   }
   function handleBikeInspectPointer(event) {
     if (event.button !== 0) return;
-    const bounds = canvas.getBoundingClientRect();
-    const x = (event.clientX - bounds.left) / bounds.width * W;
-    const y = (event.clientY - bounds.top) / bounds.height * H;
+    const {x,y}=bikeServicePointer(event);
+    if(x<13||x>467||y<12||y>258)return;
     if (x >= 17 && x <= 32 && y >= 13 && y <= 28) { bikeInspectOpen = false; bikeService=null; return; }
+    if(x>=432&&x<=458&&y>=15&&y<=29){bikeWorkshopWindow.full=!bikeWorkshopWindow.full;bikeInspectHover=null;return;}
+    if(y>=13&&y<31&&x>=35&&x<430){
+      if(event.pointerId!==undefined&&!bikeWorkshopWindow.full){
+        const p=bikeCanvasPointer(event),view=bikeWorkshopViewport();
+        event.preventDefault();canvas.setPointerCapture(event.pointerId);
+        bikeWorkshopWindow.drag={pointerId:event.pointerId,dx:p.x-view.x,dy:p.y-view.y};
+      }
+      return;
+    }
     if (y >= 31 && y <= 49 && x >= 15 && x < 465) {bikeInspectTab = bikeInspectTabs[Math.floor((x-15)/(450/bikeInspectTabs.length))];bikeService=null;return;}
     if(bikeService?.phase==='play'&&bikeWrenchHit(bikeService,x,y)&&beginBikeServiceGesture(event,x,y))return;
     if(bikeService) {
@@ -1353,14 +1445,7 @@
       if(beginBikeServiceGesture(event,x,y))return;
       const mode=bikeService.job[2];
       if(mode==='bearings') {
-        if(bikeService.bearingStage==='hammer') {
-          const y0=143+bikeService.seated*19,points=[[242,y0-13],[266,y0],[242,y0+13],[218,y0]];
-          const hit=points.findIndex(([px,py])=>Math.hypot(x-px,y-py)<10);
-          if(hit>=0)bikeServiceAction(hit);
-          return;
-        }
-        if(bikeService.bearingStage==='choose'&&x>=58&&x<162&&y>=130&&y<210)bikeServiceAction(Math.floor((x-58)/52)+2*Math.floor((y-130)/40));
-        else if(bikeService.bearingStage==='align'&&y>=187&&y<=210){if(x>=175&&x<211)bikeServiceAction(0);else if(x>=211&&x<247)bikeServiceAction(1);else if(x>=250&&x<310)bikeServiceAction(2);}
+        if(x>=170&&x<=310&&y>=120&&y<=212)bikeServiceAction(0);
         return;
       }
       if(mode==='patch' || mode==='bolts') {
@@ -1386,9 +1471,34 @@
     if(bikeInspectTab==='Pneus'&&y>=58&&y<=76) {bikeTireSelected=x<240?'frontTire':'rearTire';return;}
     if(y>=110&&y<230&&x>=25&&x<=455) startBikeService(selectedBikePart(),Math.floor((y-110)/30));
   }
-  function bikeServicePointer(event) {
+  function bikeWorkshopViewport(){
+    if(bikeWorkshopWindow.full){
+      const scale=Math.min((W-8)/454,(H-8)/246);
+      return {x:(W-454*scale)/2-13*scale,y:(H-246*scale)/2-12*scale,scale};
+    }
+    return {x:bikeWorkshopWindow.x??W-480*.64-8,y:bikeWorkshopWindow.y??5,scale:.64};
+  }
+  function moveBikeWorkshopWindow(event){
+    const drag=bikeWorkshopWindow.drag;
+    if(!drag||drag.pointerId!==event.pointerId||!bikeInspectOpen)return false;
+    const p=bikeCanvasPointer(event),{scale}=bikeWorkshopViewport();
+    bikeWorkshopWindow.x=Math.max(4-13*scale,Math.min(W-4-467*scale,p.x-drag.dx));
+    bikeWorkshopWindow.y=Math.max(4-12*scale,Math.min(H-4-258*scale,p.y-drag.dy));
+    bikeInspectHover=null;return true;
+  }
+  function endBikeWorkshopWindowDrag(event){
+    const drag=bikeWorkshopWindow.drag;if(!drag||drag.pointerId!==event.pointerId)return false;
+    bikeWorkshopWindow.drag=null;
+    if(canvas.hasPointerCapture(drag.pointerId))canvas.releasePointerCapture(drag.pointerId);
+    canvas.dataset.bikeTool='__window__';return true;
+  }
+  function bikeCanvasPointer(event) {
     const bounds=canvas.getBoundingClientRect();
-    return {x:(event.clientX-bounds.left)/bounds.width*W,y:(event.clientY-bounds.top)/bounds.height*H};
+    return {x:(event.clientX-bounds.left)/bounds.width*DISPLAY_W-gameScene.x,y:(event.clientY-bounds.top)/bounds.height*DISPLAY_H-gameScene.y};
+  }
+  function bikeServicePointer(event) {
+    const p=bikeCanvasPointer(event),view=bikeWorkshopViewport();
+    return {x:Math.round((p.x-view.x)/view.scale*1e6)/1e6,y:Math.round((p.y-view.y)/view.scale*1e6)/1e6};
   }
   function bikeServiceTool() {
     const s=bikeService;if(!s)return 'wrench';
@@ -1402,6 +1512,11 @@
     return ({clean:'brush',pressure:'pump',wires:'pliers',sequence:'gauge',route:'screwdriver',balance:'screwdriver',timing:'screwdriver',bearings:'patch',align:'wrench',torque:'wrench',bolts:'wrench'})[mode]||'wrench';
   }
   function syncBikeServiceCursor() {
+    if(bikeWorkshopWindow.drag){canvas.style.cursor='grabbing';return;}
+    if(bikeInspectOpen&&bikeInspectHover&&bikeInspectHover.y>=13&&bikeInspectHover.y<31&&bikeInspectHover.x>=35){
+      canvas.style.cursor=bikeInspectHover.x>=432?'pointer':bikeWorkshopWindow.full?'default':'grab';
+      canvas.dataset.bikeTool='__window__';return;
+    }
     const active=bikeInspectOpen&&bikeService?.phase==='play';
     const tool=active?bikeServiceTool():'';
     if(canvas.dataset.bikeTool===tool)return;
@@ -1420,8 +1535,21 @@
         gauge:'<path d="M10 35L35 9L40 12L15 39Z" fill="#bbc6ca"/><path d="M19 31L37 12" stroke="#626f78"/>',
         pump:'<path d="M24 10L24 31M15 31L34 31M14 9L34 9" stroke="#b7c6cb" stroke-width="4"/><path d="M29 23Q42 23 38 8" fill="none" stroke="#c39b61" stroke-width="3"/>'
       };
-      const glove='<path d="M4 46L3 36L9 26Q11 23 14 26L19 20Q21 18 23 21L28 18Q31 18 31 22L29 29L23 38L22 46Z" fill="#bc874f" stroke="#322a26" stroke-width="1.5"/><path d="M9 33L16 28M13 37L21 30M17 40L25 32" stroke="#805b38" fill="none"/>';
-      const svg='<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><g stroke="#20272b" stroke-width="1" stroke-linejoin="round">'+shapes[tool]+glove+'</g></svg>';
+      const glove='<path d="M4 44L4 36Q4 33 7 30L12 25Q14 23 16 25L13 30L21 22Q23 20 25 23L20 29L27 23Q30 21 31 24L25 31L29 28Q32 27 33 30L28 36Q25 39 23 43L22 47L7 47Z" fill="url(#leather)" stroke="#251e22" stroke-width="1.4"/><path d="M8 34Q15 36 20 40M13 30L17 33M20 29L23 32M25 31L27 33" fill="none" stroke="#e3ba82" stroke-width="1"/><path d="M7 40L23 43L22 47L6 47Z" fill="#292735"/><path d="M9 43L20 45" stroke="#9874b9" stroke-width="2"/><path d="M7 32L10 29M8 37L10 38" stroke="#f5d5a0" stroke-linecap="round"/>';
+      const details={
+        mallet:'<path d="M10 37L27 19" stroke="#e6bc80" stroke-width="1.5"/><path d="M22 8L36 23M26 5L40 20" stroke="#4c5a60" stroke-width="2"/>',
+        wrench:'<path d="M10 32L24 18" stroke="#f0f5f4" stroke-width="2"/><circle cx="9" cy="32" r="2" fill="#37444b"/><path d="M25 6L25 11L29 15L33 14" fill="none" stroke="#f4f7ef"/>',
+        screwdriver:'<path d="M20 23L32 10" stroke="#f1f8f7" stroke-width="1.2"/><path d="M8 33L15 26M11 36L18 29" stroke="#764027" stroke-width="1.5"/>',
+        brush:'<path d="M27 9L38 19" stroke="#ede0b4" stroke-width="2"/><path d="M22 17L30 25M24 15L33 23M27 13L36 21" stroke="#9e834f"/><path d="M11 32L20 22" stroke="#edc088"/>',
+        sandpaper:'<path d="M17 8L20 26L40 22" fill="none" stroke="#e1b882"/><path d="M23 10L25 22M29 9L31 21M35 8L37 20" stroke="#604c3d" stroke-dasharray="1 3"/>',
+        glue:'<path d="M23 19L31 16L34 25L26 28Z" fill="#ede8d1"/><path d="M26 21L31 19" stroke="#ad7750" stroke-width="2"/><path d="M19 8L22 6" stroke="#fff5ce"/>',
+        patch:'<ellipse cx="28" cy="15" rx="11" ry="8" fill="none" stroke="#dfaa73" stroke-dasharray="2 2"/><path d="M23 14L26 17L33 12" fill="none" stroke="#e9c99b" stroke-width="1.5"/>',
+        pliers:'<circle cx="26" cy="19" r="3.5" fill="#899ca5"/><circle cx="26" cy="19" r="1" fill="#24343e"/><path d="M10 33L20 21M17 35L25 25" stroke="#ffc480" stroke-width="1.3"/>',
+        gauge:'<path d="M20 28L35 12" stroke="#edf5f2"/><path d="M23 28L26 29M27 24L30 25M31 20L34 21" stroke="#4a5861"/>',
+        pump:'<path d="M15 7L33 7" stroke="#e6eeeb"/><path d="M21 17L27 17L27 29L21 29Z" fill="#b98b56"/><path d="M22 19L22 27" stroke="#f0ca8f"/>'
+      };
+      const defs='<defs><linearGradient id="leather" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e2ba82"/><stop offset=".5" stop-color="#b58453"/><stop offset="1" stop-color="#715035"/></linearGradient><filter id="shadow" x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="1" stdDeviation=".6" flood-opacity=".65"/></filter></defs>';
+      const svg='<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">'+defs+'<g filter="url(#shadow)" stroke="#20272b" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">'+shapes[tool]+(details[tool]||'')+glove+'</g><circle cx="28" cy="12" r="1.2" fill="#fff1bf" stroke="#29232c" stroke-width=".6"/></svg>';
       bikeToolCursors.set(tool,'url("data:image/svg+xml,'+encodeURIComponent(svg)+'") 28 12, crosshair');
     }
     canvas.style.cursor=bikeToolCursors.get(tool);
@@ -1442,15 +1570,14 @@
     const s=bikeService,mode=s.job[2],grip=bikeWrenchHit(s,x,y);
     if((y<116||y>212)&&!grip)return false;
     let kind='',index=-1,cx=240,cy=153;
-    if(mode==='bearings') {
-      if(s.bearingStage==='choose'&&x>=58&&x<162&&y>=130&&y<210){kind='bearingLift';index=Math.floor((x-58)/52)+2*Math.floor((y-130)/40);if(s.order[index]<s.progress)return true;}
-      else if(s.bearingStage==='align'&&Math.hypot(x-242,y-153)<30)kind='bearingAlign';
-
-    }
+    if(mode==='bearings')return false;
     if(mode==='torque'&&Math.hypot(x-cx,y-cy)<61)kind='turn';
     if(mode==='pressure'&&x>304&&x<399&&y<181)kind='pump';
     if(mode==='align'&&x>110&&x<370&&y<178)kind='align';
-    if(mode==='sequence'&&x>105&&x<370&&y<178)kind='feeler';
+    if(mode==='sequence') {
+      const handleY=141+Math.max(0,Math.min(35,s.value))*.5;
+      if(x>=101&&x<=152&&y>=handleY-3&&y<=handleY+13)kind='feeler';
+    }
     if(mode==='patch') {
       index=s.holes.findIndex(([px,py])=>Math.hypot(x-px,y-py)<14);
       if(index>=0&&!s.done[index]) {
@@ -1483,6 +1610,7 @@
     return true;
   }
   function moveBikeServiceGesture(event) {
+    if(moveBikeWorkshopWindow(event))return;
     const s=bikeService;if(!bikeInspectOpen||!s||s.phase!=='play')return;
     const p=bikeServicePointer(event);
     if(s.job[2]==='patch')s.hoverIndex=s.holes.findIndex(([x,y])=>Math.hypot(p.x-x,p.y-y)<14);
@@ -1512,7 +1640,7 @@
       if(p.y-d.startY<5)d.down=false;
     } else if(d.kind==='align')s.value=Math.max(-20,Math.min(20,s.value+dx*.15));
     else if(d.kind==='bearingAlign')s.value=Math.max(-12,Math.min(12,s.value+dx*.15));
-    else if(d.kind==='feeler')s.value=Math.max(0,Math.min(2200,s.value+dx*(s.value>110?8:s.value>25?1:.12)));
+    else if(d.kind==='feeler')s.value=Math.max(0,Math.min(35,s.value+dy*2));
     else if(d.kind==='sand'||d.kind==='brush') {
       if(d.kind==='brush'&&p.x>=55&&p.x<423&&p.y>=128&&p.y<=197) {
         const index=Math.floor((p.x-55)/92);
@@ -1530,6 +1658,7 @@
     }
   }
   function endBikeServiceGesture(event) {
+    if(endBikeWorkshopWindowDrag(event))return;
     const s=bikeService,d=s?.drag;if(!d||d.pointerId!==event.pointerId)return;
     s.drag=null;
     if(d.kind==='bearingLift'&&event.type==='pointerup'&&s.phase==='play') {
@@ -1626,17 +1755,25 @@
       text('Arraste o guidão para centralizar',84,126,6,'#b9cbd1');
       text(s.value.toFixed(1)+'° · alvo −1 a +1',287,174,7);
     } else {
-      const gap=4+Math.min(35,s.value)*.3;
-      ctx.fillStyle=metal;ctx.fillRect(184,123,103,13);ctx.fillRect(209,136,11,8);ctx.fillRect(242,144+gap,12,22);
+      const travel=Math.max(0,Math.min(35,s.value))*.5;
+      ctx.fillStyle=metal;ctx.fillRect(184,123,103,13);ctx.fillRect(242,136,12,8);
+      // Keep the blade below the upper contact and above the moving valve tip.
+      ctx.fillRect(242,149+travel,12,25-travel);
       ctx.strokeStyle='#818f95';ctx.lineWidth=2;ctx.strokeRect(177,119,119,55);
-      ctx.fillStyle='#b5c9ce';ctx.fillRect(108,143+gap/2,142,2);
-      ctx.fillStyle='#a97e49';ctx.fillRect(104,139+gap/2,45,10);
-      text('Arraste a lâmina para medir a folga',88,126,6,'#b9cbd1');
+      const handleY=141+travel,held=s.drag?.kind==='feeler';
+      ctx.fillStyle='#b5c9ce';ctx.fillRect(145,handleY+4,105,2);
+      ctx.fillStyle=held?'#d5ab70':'#a97e49';ctx.strokeStyle=held?'#efdcac':'#624a32';ctx.lineWidth=1;
+      ctx.beginPath();ctx.roundRect(104,handleY,45,10,3);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='#6d4c2e';
+      for(let i=0;i<5;i++){ctx.beginPath();ctx.moveTo(113+i*6,handleY+2);ctx.lineTo(113+i*6,handleY+8);ctx.stroke();}
+      ctx.strokeStyle=held?'#e2cd91':'#91afa7';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(91,148);ctx.lineTo(91,172);ctx.moveTo(88,151);ctx.lineTo(91,148);ctx.lineTo(94,151);ctx.moveTo(88,169);ctx.lineTo(91,172);ctx.lineTo(94,169);ctx.stroke();
+      text('Pegue o cabo e mova para cima / baixo',88,126,6,'#b9cbd1');
       text('Válvula '+(s.progress+1)+'/4 · '+(s.value/100).toFixed(2)+' mm',307,153,7);
       text('Alvo 0,10–0,15',307,166,6,'#8db19a');
     }
     button('− [←]',100,182);button('+ [→]',190,182);button('Confirmar [E]',280,182,85);
-    text(mode==='torque'?'Gire sem exceder o torque e confirme.':mode==='pressure'?'Bombeie com movimentos completos; − alivia a pressão.':mode==='align'?'Compare a roda com a linha de referência.':'Ajuste até a lâmina passar com leve resistência.',80,220,7,'#b6c6c2');
+    text(mode==='torque'?'Gire sem exceder o torque e confirme.':mode==='pressure'?'Bombeie com movimentos completos; − alivia a pressão.':mode==='align'?'Compare a roda com a linha de referência.':'Cima diminui a folga; baixo aumenta. Confirme com E.',80,220,7,'#b6c6c2');
   }
   function drawBikeEngineService(s,mode,text,button) {
     const metal=ctx.createLinearGradient(0,118,0,215);
@@ -1924,76 +2061,46 @@
   }
   function drawBikeBearingService(s,text,button) {
     ctx.save();
-    const bg=ctx.createLinearGradient(0,116,0,225);bg.addColorStop(0,'#2d4048');bg.addColorStop(1,'#0d1b23');
-    ctx.fillStyle=bg;ctx.fillRect(47,116,386,110);
-    text('BANDEJA / '+s.progress+' DE 4 ASSENTADOS',59,125,5.5,'#b6cbca');
-    const ring=(x,y,r,color)=>{
-      ctx.save();ctx.translate(x,y);ctx.scale(1,.7);
-      ctx.strokeStyle='#030d13';ctx.lineWidth=6;ctx.beginPath();ctx.arc(1,3,r,0,Math.PI*2);ctx.stroke();
-      ctx.strokeStyle=color;ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();
-      ctx.strokeStyle='#1b303b';ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,0,r-4,0,Math.PI*2);ctx.stroke();
-      for(let j=0;j<12;j++){const a=j*Math.PI/6;ctx.fillStyle='#b6c6c2';ctx.beginPath();ctx.arc(Math.cos(a)*(r-1),Math.sin(a)*(r-1),1.4,0,Math.PI*2);ctx.fill();}ctx.restore();
-    };
-    for(let i=0;i<4;i++){
-      const x=58+(i%2)*52,y=130+Math.floor(i/2)*40,done=s.order[i]<s.progress;
-      ctx.fillStyle='#0c1a23';ctx.beginPath();ctx.roundRect(x,y,48,36,3);ctx.fill();
-      if(!done&&s.selected!==i)ring(x+24,y+15,8+s.order[i]*2,s.order[i]===s.progress?'#d4b77d':'#7e969f');
-      text(done?'✓ ASSENTADO':'['+(i+1)+'] Ø '+(s.order[i]+1)*10,x+5,y+30,5,done?'#a9ca9a':'#a9bfc3');
+    ctx.fillStyle='#0e1d25';ctx.beginPath();ctx.roundRect(50,117,380,108,6);ctx.fill();
+    text('TRES BATIDAS E PRONTO',66,134,8,'#dec795');
+    text('Sem alinhar ou alternar os lados.',66,146,6,'#a5bfc2');
+    const age=s.hits>0?s.clock-s.lastStrike:1,impact=Math.max(0,1-age/.3);
+    const settle=s.hits>0?(s.hits-1+1-Math.pow(1-Math.min(1,age/.2),3))/3:0;
+    const cy=165+settle*7,jolt=Math.sin(age*65)*impact*1.4;
+    ctx.save();ctx.translate(jolt,0);
+    const wood=ctx.createLinearGradient(0,182,0,191);wood.addColorStop(0,'#a27b50');wood.addColorStop(1,'#4c3629');
+    ctx.fillStyle=wood;ctx.beginPath();ctx.roundRect(184,182,112,10,2);ctx.fill();
+    ctx.strokeStyle='#cda47955';ctx.lineWidth=.6;
+    for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(190,184+i*2);ctx.bezierCurveTo(218,181+i*2,263,189+i*2,289,184+i*2);ctx.stroke();}
+    ctx.fillStyle='#354c53';ctx.beginPath();ctx.ellipse(240,cy+5,29,14,0,0,Math.PI*2);ctx.fill();
+    const steel=ctx.createLinearGradient(215,cy-10,265,cy+10);steel.addColorStop(0,'#687f89');steel.addColorStop(.35,'#edf2df');steel.addColorStop(.65,'#81969b');steel.addColorStop(1,'#c1cdc4');
+    ctx.strokeStyle=steel;ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(240,cy,23,11,0,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle='#7eaa9b';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(240,cy,17,7,0,0,Math.PI*2);ctx.stroke();
+    for(let i=0;i<10;i++){
+      const a=i*Math.PI/5;ctx.fillStyle='#d5e0d8';ctx.beginPath();ctx.ellipse(240+Math.cos(a)*20,cy+Math.sin(a)*9,1.4,1,0,0,Math.PI*2);ctx.fill();
     }
-    // Manual bench repair: a steering tube resting on a wooden support.
-    ctx.fillStyle='#62482e';ctx.beginPath();ctx.roundRect(185,171,117,12,3);ctx.fill();
-    ctx.strokeStyle='#a17e493f';ctx.lineWidth=.7;
-    for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(190,173+i*2);ctx.bezierCurveTo(220,170+i*2,263,178+i*2,296,173+i*2);ctx.stroke();}
-    ctx.strokeStyle='#263c42';ctx.lineWidth=11;ctx.beginPath();ctx.moveTo(251,167);ctx.lineTo(282,178);ctx.stroke();
-    const tube=ctx.createLinearGradient(213,0,270,0);tube.addColorStop(0,'#3d5155');tube.addColorStop(.4,'#718584');tube.addColorStop(1,'#243a40');
-    ctx.fillStyle=tube;ctx.beginPath();ctx.roundRect(214,149,56,24,8);ctx.fill();
-    ctx.fillStyle='#14262c';ctx.strokeStyle='#7b9391';ctx.lineWidth=2;
-    ctx.beginPath();ctx.ellipse(242,149,28,15,0,0,Math.PI*2);ctx.fill();ctx.stroke();
-    ctx.fillStyle='#07141b';ctx.beginPath();ctx.ellipse(242,149,20,10,0,0,Math.PI*2);ctx.fill();
-    text('APOIO DE MADEIRA',204,181,4.5,'#c0a57c');
-    if(s.bearingStage==='align'){
-      ctx.setLineDash([2,3]);ctx.strokeStyle='#b0ca9e';ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(242,128);ctx.lineTo(242,172);ctx.stroke();ctx.setLineDash([]);
-    }
-    if(s.bearingStage!=='hammer'){
-      ctx.save();ctx.translate(289,151);ctx.rotate(.55);ctx.fillStyle='#ab8250';ctx.beginPath();ctx.roundRect(-2,0,5,23,2);ctx.fill();
-      ctx.fillStyle='#192121';ctx.strokeStyle='#64746b';ctx.lineWidth=.7;ctx.beginPath();ctx.roundRect(-10,-6,21,12,3);ctx.fill();ctx.stroke();ctx.restore();
-    }
-    if(s.selected>=0) {
-      const x=242+(s.bearingStage==='align'?s.value:0),y=s.bearingStage==='hammer'?143+s.seated*19:144;
-      ring(x,y,18,Math.abs(s.value)<=1?'#c6d0af':'#ceb17d');
-
-    }
-    if(s.drag?.kind==='bearingLift')ring(s.drag.x,s.drag.y,15,'#dbca9c');
-    ctx.fillStyle='#081720';ctx.beginPath();ctx.roundRect(316,123,108,85,3);ctx.fill();
-    text(s.bearingStage==='choose'?'1 / ENCAIXAR':s.bearingStage==='align'?'2 / ALINHAR':'3 / ASSENTAR',324,134,7,'#c5d6d0');
-    if(s.bearingStage==='choose') {
-      text('Arraste o menor',324,151,6,'#a3bcc0');text('rolamento para',324,162,6,'#a3bcc0');text('a caixa de direção.',324,173,6,'#a3bcc0');
-      text('Ou use 1–4.',324,193,6,'#dbc498');
-    } else if(s.bearingStage==='align') {
-      text('DESVIO '+s.value.toFixed(1)+'°',324,153,7,'#d8c498');text('Alvo: −1° a +1°',324,168,6,'#a5c697');
-      text('Arraste para alinhar.',324,192,5.5,'#a6bec1');
-      button('−',175,187,34);button('+',211,187,34);button('Encaixar [E]',250,187,60);
-    } else {
-      text('MARTELO DE BORRACHA',324,148,5,'#a6bdc1');
-      text('Batidas leves.',324,163,6,'#c6d8ce');
-      text('Alterne os lados',324,175,6,'#a6bdc1');
-      text('destacados: 1–4.',324,187,6,'#a6bdc1');
-      text(s.hits+' / 8 BATIDAS',324,201,6,'#d4c394');
-      const y=143+s.seated*19,points=[[242,y-13],[266,y],[242,y+13],[218,y]],next=[0,2,1,3][s.hits%4];
-      points.forEach(([px,py],i)=>{
-        ctx.fillStyle=i===next?'#d4b577':'#526c75';ctx.beginPath();ctx.arc(px,py,5,0,Math.PI*2);ctx.fill();
-        text(String(i+1),px-1.5,py+2,5,'#101b22');
-      });
-      {
-        const striking=s.hitPoint>=0&&s.pulse>0;
-        const [px,py]=striking?points[s.hitPoint]:points[next];ctx.save();ctx.translate(px+(striking?0:9),py-(striking?0:9));ctx.rotate(-.55-(striking?Math.sin(s.pulse/.3*Math.PI)*.5:.7));
-        ctx.fillStyle='#ac8452';ctx.beginPath();ctx.roundRect(4,-3,32,5,2);ctx.fill();
-        ctx.fillStyle='#141b1b';ctx.strokeStyle='#6b7970';ctx.lineWidth=.7;ctx.beginPath();ctx.roundRect(-6,-11,14,21,3);ctx.fill();ctx.stroke();ctx.restore();
+    const idle=s.phase==='play'?Math.sin(s.clock*3)*1.5:0,lift=impact*18;
+    ctx.save();ctx.translate(259+lift*.3,cy-12-lift+idle);ctx.rotate(-.45-impact*.7);
+    const handle=ctx.createLinearGradient(0,-3,0,4);handle.addColorStop(0,'#e4bd82');handle.addColorStop(1,'#805330');
+    ctx.fillStyle=handle;ctx.beginPath();ctx.roundRect(0,-2,36,5,2);ctx.fill();
+    ctx.fillStyle='#20282b';ctx.strokeStyle='#93a4a4';ctx.lineWidth=.8;ctx.beginPath();ctx.roundRect(-6,-10,14,20,3);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#52656b';ctx.beginPath();ctx.moveTo(-3,-7);ctx.lineTo(5,-7);ctx.moveTo(-3,6);ctx.lineTo(5,6);ctx.stroke();ctx.restore();
+    if(impact>0){
+      ctx.globalAlpha=impact;ctx.strokeStyle='#e8d8a8';ctx.lineWidth=1;
+      ctx.beginPath();ctx.ellipse(240,cy,25+(1-impact)*19,12+(1-impact)*8,0,0,Math.PI*2);ctx.stroke();
+      for(let i=0;i<7;i++){
+        const angle=-Math.PI+i*Math.PI/6,travel=(1-impact)*23;
+        ctx.fillStyle=i%2?'#b49a71':'#e0c795';ctx.fillRect(252+Math.cos(angle)*travel,cy-5+Math.sin(angle)*travel+(1-impact)**2*10,1.5,1.5);
       }
-      ctx.fillStyle='#253e42';ctx.fillRect(188,194,111,5);ctx.fillStyle='#a6c999';ctx.fillRect(188,194,111*s.seated,5);
-      text('ASSENTAMENTO '+Math.floor(s.seated*100)+'%',191,212,5.5,'#a6c999');
+      ctx.globalAlpha=1;
     }
-    text('Encaixe → alinhe → bata suavemente nos lados opostos destacados.',66,223,6,'#a6c1bb');
+    ctx.restore();
+    for(let i=0;i<3;i++){
+      ctx.fillStyle=i<s.hits?'#abd59d':'#344953';ctx.beginPath();ctx.arc(335+i*17,169,5+(i===s.hits-1?impact*2:0),0,Math.PI*2);ctx.fill();
+    }
+    text(s.hits+' / 3 BATIDAS',322,188,7,'#d6c391');
+    button('BATER [1]',180,197,120);
+    text('Clique no rolamento ou em BATER. Teclado: 1.',66,220,6,'#b3c8c4');
     ctx.restore();
   }
   function drawBikeHandlebarService(s,mode,text,button) {
@@ -2077,14 +2184,14 @@
     const button=(label,x,y,w=78)=>{
       const primary=label.startsWith('Confirmar')||label.startsWith('Sincronizar');
       const face=ctx.createLinearGradient(0,y,0,y+23);
-      face.addColorStop(0,primary?'#495b50':'#34454e');face.addColorStop(1,primary?'#25382e':'#1a2b34');
+      face.addColorStop(0,primary?'#665078':'#3b3048');face.addColorStop(1,primary?'#392747':'#211a2b');
       ctx.fillStyle='#030a0d88';ctx.beginPath();ctx.roundRect(x,y+2,w,23,3);ctx.fill();
-      ctx.fillStyle=face;ctx.strokeStyle=primary?'#94b38d':'#617d87';ctx.lineWidth=.7;
+      ctx.fillStyle=face;ctx.strokeStyle=primary?'#c49cdd':'#79608c';ctx.lineWidth=.7;
       ctx.beginPath();ctx.roundRect(x,y,w,23,3);ctx.fill();ctx.stroke();
       ctx.strokeStyle=primary?'#c9dac333':'#b6d3dd22';ctx.beginPath();ctx.moveTo(x+4,y+2);ctx.lineTo(x+w-4,y+2);ctx.stroke();
       text(label,x+7,y+15,8,primary?'#dce8ce':'#c8dbdf');
     };
-    ctx.fillStyle='#080709';ctx.fillRect(15,51,450,205);
+    ctx.fillStyle='#100d16';ctx.fillRect(15,51,450,205);
     const s=bikeService;
     if(s) {
       const mode=s.job[2];
@@ -2133,90 +2240,180 @@
       text(s.message,30,110,7,'#f2bf8d');button('Cancelar / Esc',30,229,130);
       return;
     }
-    const part=selectedBikePart(),jobs=jobsForBikePart(part);
-    if(bikeInspectTab==='Pneus') {button((part==='frontTire'?'● ':'')+'Dianteiro',28,55,208);button((part==='rearTire'?'● ':'')+'Traseiro',244,55,208);}
-    else text(bikePartNames[part]+' · DIAGNÓSTICO',28,69,11,'#dfb2ef');
-    text('Condição: '+Math.round(bikeParts[part])+'% · Kits: '+repairKits,28,93,9);
+    const part=selectedBikePart(),jobs=jobsForBikePart(part),condition=bikeParts[part];
+    if(bikeInspectTab==='Pneus') {
+      button((part==='frontTire'?'● ':'')+'Dianteiro',28,55,208);button((part==='rearTire'?'● ':'')+'Traseiro',244,55,208);
+      text('CONDIÇÃO '+Math.round(condition)+'%',30,96,7,bikePartColor(condition));
+      text('Escolha um serviço abaixo',282,96,6,'#ad94bd');
+    } else {
+      const summary=ctx.createLinearGradient(25,56,455,102);summary.addColorStop(0,'#35213f');summary.addColorStop(1,'#18121f');
+      ctx.fillStyle=summary;ctx.strokeStyle='#493355';ctx.lineWidth=.5;ctx.beginPath();ctx.roundRect(25,56,430,46,5);ctx.fill();ctx.stroke();
+      ctx.fillStyle='#3d2b49';ctx.beginPath();ctx.roundRect(33,64,30,30,5);ctx.fill();
+      drawBikeMenuIcon(part,48,79,'#dfb4f3',.95);
+      text('DIAGNÓSTICO / '+jobs.length+' SERVIÇOS',73,69,5,'#b69bc5');
+      text(bikePartNames[part],73,84,12,'#f2e5fa');
+      text('Repare avarias ou pratique nos componentes íntegros.',73,95,5,'#ae96ba');
+      text('CONDIÇÃO',363,69,5,'#b69bc5');
+      text(Math.round(condition)+'%',385,84,12,bikePartColor(condition));
+      for(let j=0;j<12;j++){ctx.fillStyle=condition>j*100/12?bikePartColor(condition):'#392c43';ctx.fillRect(364+j*6,91,4,2);}
+    }
     jobs.forEach((job,i)=>{
-      const value=bikeFaults[part][i],y=110+i*30;
-      ctx.fillStyle='#19151c';ctx.fillRect(25,y,430,27);
-      text(job[0],32,y+10,8);text(value>=99.5?'Íntegro · treino disponível':value>=72?'Desgaste leve':value>=38?'Problema moderado':'Problema crítico',32,y+21,7,bikePartColor(value));
-      text(Math.round(value)+'%',238,y+16,9,bikePartColor(value));
-      text(job[1]+' →',286,y+16,8,'#dfb2ef');
+      const value=bikeFaults[part][i],y=110+i*30,color=bikePartColor(value);
+      const hover=bikeInspectHover&&bikeInspectHover.x>=25&&bikeInspectHover.x<=455&&bikeInspectHover.y>=y&&bikeInspectHover.y<y+27;
+      const row=ctx.createLinearGradient(25,y,455,y+27);row.addColorStop(0,hover?'#35243f':'#25202d');row.addColorStop(1,hover?'#261b33':'#17131f');
+      ctx.fillStyle=row;ctx.strokeStyle=hover?'#aa77cf':'#44324f';ctx.lineWidth=.5;ctx.beginPath();ctx.roundRect(25,y,430,27,4);ctx.fill();ctx.stroke();
+      ctx.fillStyle=hover?'#523162':'#30233d';ctx.beginPath();ctx.roundRect(31,y+5,18,17,3);ctx.fill();
+      text(String(i+1).padStart(2,'0'),35,y+16,6,'#b899cf');
+      text(job[0],57,y+10,7,'#e9dcef');
+      ctx.fillStyle=color;ctx.beginPath();ctx.arc(59,y+19,1.3,0,Math.PI*2);ctx.fill();
+      text(value>=99.5?'Íntegro / treino':value>=72?'Desgaste leve':value>=38?'Problema moderado':'Problema crítico',64,y+21,5.5,color);
+      text(Math.round(value)+'%',237,y+12,7,color);
+      for(let j=0;j<9;j++){ctx.fillStyle=value>j*100/9?color:'#3d2c46';ctx.fillRect(225+j*5,y+18,3.5,2);}
+      const action=ctx.createLinearGradient(282,y+4,447,y+23);action.addColorStop(0,hover?'#67417d':'#443052');action.addColorStop(1,hover?'#472957':'#2b1d39');
+      ctx.fillStyle=action;ctx.strokeStyle=hover?'#cf9bef':'#6c4a7f';ctx.beginPath();ctx.roundRect(282,y+4,165,19,3);ctx.fill();ctx.stroke();
+      text(job[1],291,y+16,7,'#ead1fa');
+      ctx.strokeStyle='#c398db';ctx.beginPath();ctx.moveTo(434,y+10);ctx.lineTo(438,y+13.5);ctx.lineTo(434,y+17);ctx.stroke();
     });
-    text('Clique em um serviço para reparar a peça.',28,246,7);
+    ctx.strokeStyle='#3c2b47';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(28,235);ctx.lineTo(451,235);ctx.stroke();
+    drawBikeMenuIcon('kit',35,245,'#c8ab7d',.5);
+    text('1 KIT POR REPARO',45,248,5.5,'#d8bc90');
+    text('O kit só é consumido ao concluir. Treino não gasta kits.',175,248,5.5,'#a991b9');
+  }
+  function drawBikeMenuIcon(kind,x,y,color='#c9a3e5',scale=1) {
+    ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1.2;ctx.lineCap='round';ctx.lineJoin='round';
+    if(kind==='motor') {
+      ctx.beginPath();ctx.moveTo(-6,-3);ctx.lineTo(-2,-3);ctx.lineTo(0,-6);ctx.lineTo(5,-6);ctx.lineTo(5,-2);ctx.lineTo(8,-2);ctx.lineTo(8,5);ctx.lineTo(5,5);ctx.lineTo(3,7);ctx.lineTo(-5,7);ctx.lineTo(-5,3);ctx.lineTo(-8,3);ctx.lineTo(-8,-1);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(-3,-6);ctx.lineTo(-6,-6);ctx.moveTo(0,-1);ctx.lineTo(-2,2);ctx.lineTo(2,2);ctx.lineTo(0,5);ctx.stroke();
+    } else if(kind==='handlebar') {
+      ctx.beginPath();ctx.moveTo(-9,-4);ctx.lineTo(-5,-6);ctx.lineTo(-2,-1);ctx.lineTo(2,-1);ctx.lineTo(5,-6);ctx.lineTo(9,-4);ctx.moveTo(-2,0);ctx.lineTo(-2,6);ctx.lineTo(2,6);ctx.lineTo(2,0);ctx.stroke();
+      ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(-10,-3);ctx.lineTo(-7,-5);ctx.moveTo(7,-5);ctx.lineTo(10,-3);ctx.stroke();
+    } else if(kind==='frontTire'||kind==='rearTire'||kind==='tire') {
+      ctx.beginPath();ctx.arc(0,0,8,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.arc(0,0,5.5,0,Math.PI*2);ctx.stroke();
+      for(let i=0;i<5;i++){const a=i*Math.PI*2/5;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*5,Math.sin(a)*5);ctx.stroke();}
+      ctx.beginPath();ctx.arc(0,0,1.5,0,Math.PI*2);ctx.fill();
+    } else if(kind==='kit') {
+      ctx.beginPath();ctx.roundRect(-8,-4,16,11,2);ctx.stroke();ctx.beginPath();ctx.moveTo(-3,-4);ctx.lineTo(-3,-7);ctx.lineTo(3,-7);ctx.lineTo(3,-4);ctx.moveTo(-8,0);ctx.lineTo(8,0);ctx.moveTo(0,-1);ctx.lineTo(0,2);ctx.stroke();
+    } else {
+      ctx.beginPath();ctx.arc(0,0,8,-Math.PI,0);ctx.lineTo(8,6);ctx.lineTo(-8,6);ctx.closePath();ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,3);ctx.lineTo(4,-2);ctx.moveTo(-4,-2);ctx.lineTo(-3,-1);ctx.moveTo(0,-4);ctx.lineTo(0,-3);ctx.stroke();
+    }
+    ctx.restore();
   }
   function drawBikeInspectMenu() {
     ctx.save();
-    ctx.fillStyle = '#000b'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#030503d9'; ctx.fillRect(13, 12, 454, 246);
-    ctx.strokeStyle = '#969696'; ctx.lineWidth = 1; ctx.strokeRect(13, 12, 454, 246);
-    const metal = ctx.createLinearGradient(0, 13, 0, 49);
-    metal.addColorStop(0, '#454545'); metal.addColorStop(.45, '#1c1c1c'); metal.addColorStop(1, '#080808');
-    ctx.fillStyle = metal; ctx.fillRect(15, 14, 450, 35);
-    ctx.fillStyle = '#e2e2e2'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('⊗', 19, 25); ctx.font = '9px sans-serif'; ctx.fillText('ⓘ', 39, 25);
-    ctx.font = '6px sans-serif'; ctx.fillStyle = '#bdbdbd'; ctx.fillText('INSPEÇÃO DA MOTOCICLETA', 56, 24);
-    ctx.fillStyle = '#eee'; ctx.fillText('F / ESC  FECHAR', 408, 24);
-    const tabWidth = 450 / bikeInspectTabs.length;
-    bikeInspectTabs.forEach((tab, i) => {
-      const x = 15 + i * tabWidth;
-      if (tab === bikeInspectTab) { ctx.fillStyle = '#555'; ctx.fillRect(x, 31, tabWidth, 18); }
-      ctx.strokeStyle = '#727272'; ctx.strokeRect(x, 31, tabWidth, 18);
-      ctx.fillStyle = tab === bikeInspectTab ? '#fff' : '#d6d6d6';
-      ctx.textAlign = 'center'; ctx.font = 'bold 8px sans-serif'; ctx.fillText(tab, x + tabWidth / 2, 43);
-    });
-    if (bikeInspectTab !== 'Info') { drawBikeServiceContent(); ctx.restore(); return; }
-    const label = (text,x,y,size=8,color='#d8d8d8') => {
-      ctx.textAlign='left';ctx.font=size+'px sans-serif';ctx.fillStyle=color;ctx.fillText(text,x,y);
-    };
-    // The inspection silhouette and condition meter share the reference's anatomy layout.
-    ctx.fillStyle='#090b0ad9';ctx.fillRect(15,51,450,205);
-    label('Clique em uma peça para abrir o diagnóstico',211,65,7,'#b9b9b9');
-    label('Estado geral da moto',211,79,10);
-    label(bikeLife>=72?'OK':bikeLife>=38?'AVARIADA':'CRÍTICO',211,92,9,bikePartColor(bikeLife));
-    label('MOTOCICLETA',28,68,6,'#888e89');
-    if(bikeSpritesReady()) {
-      const direction=16,mask=bikeShadowMask(direction);
-      const width=143,height=mask.height/mask.width*143,left=27,top=121;
-      ctx.save();ctx.filter='brightness(0) invert(1)';ctx.globalAlpha=.75;
-      for(const [ox,oy] of [[-0.65,0],[0.65,0],[0,-0.65],[0,0.65]])
-        ctx.drawImage(mask,left+ox,top+oy,width,height);
-      ctx.filter='none';ctx.globalAlpha=1;
-      ctx.drawImage(mask,left,top,width,height);ctx.restore();
-    } else {
-      ctx.save();ctx.translate(97,170);ctx.scale(2.6,2.6);
-      drawBikeFallback(0,0,Math.PI/2,0,0);ctx.restore();
+    const view=bikeWorkshopViewport();ctx.translate(view.x,view.y);ctx.scale(view.scale,view.scale);
+    const shell=ctx.createLinearGradient(0,12,0,258);
+    shell.addColorStop(0,'#38313e');shell.addColorStop(.12,'#18151f');shell.addColorStop(1,'#0d0d14');
+    ctx.shadowColor='#000b';ctx.shadowBlur=12;ctx.shadowOffsetY=3;
+    ctx.fillStyle=shell;ctx.strokeStyle='#67576f';ctx.lineWidth=.8;
+    ctx.beginPath();ctx.roundRect(13,12,454,246,8);ctx.fill();ctx.stroke();
+    ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+    ctx.strokeStyle='#d3b5e522';ctx.beginPath();ctx.moveTo(23,13);ctx.lineTo(457,13);ctx.stroke();
+    for(const bx of [18,462])for(const by of [17,253]){
+      ctx.fillStyle='#615767';ctx.beginPath();ctx.arc(bx,by,1.2,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#17121f';ctx.beginPath();ctx.moveTo(bx-.6,by);ctx.lineTo(bx+.6,by);ctx.stroke();
     }
-    const meterX=182,meterY=88,meterHeight=126;
-    const health=ctx.createLinearGradient(meterX,0,meterX+11,0);
-    health.addColorStop(0,'#8b8e8b');health.addColorStop(.45,'#f0f0e9');health.addColorStop(1,'#b9bdb8');
-    ctx.fillStyle='#242724';ctx.fillRect(meterX,meterY,11,meterHeight);
-    ctx.fillStyle=health;ctx.fillRect(meterX,meterY+meterHeight*(1-bikeLife/100),11,meterHeight*bikeLife/100);
-    ctx.strokeStyle='#555b55';ctx.lineWidth=.7;ctx.strokeRect(meterX,meterY,11,meterHeight);
-    ctx.textAlign='center';ctx.font='18px sans-serif';ctx.fillStyle='#a95e8b';ctx.fillText('♥',meterX+5.5,234);
-    ctx.font='6px sans-serif';ctx.fillStyle='#bfc4bf';ctx.fillText(Math.round(bikeLife)+'%',meterX+5.5,246);
-    const entries=[
-      ['motor','Motor','Potência e aceleração'],
-      ['handlebar','Guidão','Direção e controle'],
-      ['frontTire','Pneu dianteiro','Estabilidade e frenagem'],
-      ['rearTire','Pneu traseiro','Tração e suporte de carga']
-    ];
-    entries.forEach(([part,title,description],i)=>{
-      const value=bikeParts[part],rowY=103+i*32;
-      ctx.fillStyle=i%2===0?'#777d7728':'#777d7715';ctx.fillRect(210,rowY,244,30);
-      label(title,216,rowY+11,8);
-      const status=value>=99.5?'Íntegro':value>=72?'Desgaste leve':value>=38?'Desgaste elevado':'Danificado';
-      label('– '+status,222,rowY+23,7,bikePartColor(value));
-      ctx.textAlign='right';ctx.font='7px sans-serif';ctx.fillStyle='#c5c9c4';ctx.fillText(Math.round(value)+'%  ›',447,rowY+12);
+    const label=(str,x,y,size=8,color='#e5dfeb',bold=false)=>{
+      ctx.textAlign='left';ctx.font=(bold?'bold ':'')+size+'px sans-serif';ctx.fillStyle=color;ctx.fillText(str,x,y);
+    };
+    const hot=(x,y,w,h)=>bikeInspectHover&&bikeInspectHover.x>=x&&bikeInspectHover.x<=x+w&&bikeInspectHover.y>=y&&bikeInspectHover.y<=y+h;
+    const card=(x,y,w,h,hover=false)=>{
+      const fill=ctx.createLinearGradient(x,y,x+w,y+h);fill.addColorStop(0,hover?'#35223f':'#24202c');fill.addColorStop(1,hover?'#221a2d':'#14131d');
+      ctx.fillStyle=fill;ctx.strokeStyle=hover?'#af79d6':'#44364f';ctx.lineWidth=.6;ctx.beginPath();ctx.roundRect(x,y,w,h,5);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='#d8b7ee0d';ctx.beginPath();ctx.moveTo(x+6,y+1);ctx.lineTo(x+w-6,y+1);ctx.stroke();
+    };
+    ctx.fillStyle=hot(17,16,15,12)?'#633d70':'#302537';ctx.beginPath();ctx.roundRect(17,16,15,12,3);ctx.fill();
+    ctx.strokeStyle='#dac5e7';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(22,19);ctx.lineTo(27,24);ctx.moveTo(27,19);ctx.lineTo(22,24);ctx.stroke();
+    label('GARAGEM',40,24,8,'#f1e4fa',true);label('/  ARRASTE PARA MOVER',91,24,5.5,'#a491b4');
+    drawBikeMenuIcon('kit',374,21,'#d9b683',.55);
+    label(String(repairKits).padStart(2,'0')+' KITS',383,24,6,'#ead0a7',true);ctx.fillStyle=hot(432,15,26,14)?'#68447d':'#392847';ctx.beginPath();ctx.roundRect(432,15,26,14,3);ctx.fill();
+    ctx.strokeStyle='#e0c7f0';ctx.lineWidth=.8;
+    if(bikeWorkshopWindow.full){
+      ctx.strokeRect(443,18,8,6);ctx.fillStyle='#392847';ctx.fillRect(439,21,8,6);ctx.strokeRect(439,21,8,6);
+    } else {
+      ctx.strokeRect(439,18,12,8);ctx.beginPath();ctx.moveTo(439,20);ctx.lineTo(451,20);ctx.stroke();
+    }
+    const tabWidth=450/bikeInspectTabs.length;
+    bikeInspectTabs.forEach((tab,i)=>{
+      const x=15+i*tabWidth,active=tab===bikeInspectTab,hover=hot(x,31,tabWidth,18);
+      ctx.fillStyle=active?'#3b284c':hover?'#2a2035':'#17141e';ctx.fillRect(x,31,tabWidth,18);
+      if(active){const shine=ctx.createLinearGradient(x,31,x,49);shine.addColorStop(0,'#c583e300');shine.addColorStop(1,'#c583e322');ctx.fillStyle=shine;ctx.fillRect(x,31,tabWidth,18);}
+      ctx.fillStyle=active?'#cb92ef':'#3a2e43';ctx.fillRect(x+8,47,tabWidth-16,active?2:.5);
+      drawBikeMenuIcon(['info','motor','tire','handlebar'][i],x+29,39,active?'#e6baff':'#8c7c9a',.55);
+      label(tab==='Info'?'Visão geral':tab,x+42,42,7,active?'#f3e5ff':'#b0a0bd',active);
     });
-    label('Combustível  '+Math.round(fuel)+'%',27,91,7,'#bfc4bf');
-    label('Kits de reparo  '+repairKits,27,103,7,'#bfc4bf');
-    label('F / ESC  Fechar',27,246,6,'#999f99');
-    label('Selecione uma peça para inspecionar e reparar.',211,246,6,'#999f99');
+    if(bikeInspectTab!=='Info'){drawBikeServiceContent();ctx.restore();return;}
+    card(24,58,175,178);
+    ctx.save();ctx.beginPath();ctx.roundRect(25,59,173,176,5);ctx.clip();
+    const aura=ctx.createRadialGradient(112,147,4,112,147,95);aura.addColorStop(0,'#b76df044');aura.addColorStop(.6,'#7f49ab13');aura.addColorStop(1,'#7f49ab00');ctx.fillStyle=aura;ctx.fillRect(25,59,173,176);
+    ctx.strokeStyle='#a688bb0c';ctx.lineWidth=.5;
+    for(let gx=30;gx<198;gx+=12){ctx.beginPath();ctx.moveTo(gx,98);ctx.lineTo(gx,203);ctx.stroke();}
+    for(let gy=99;gy<204;gy+=12){ctx.beginPath();ctx.moveTo(25,gy);ctx.lineTo(198,gy);ctx.stroke();}
+    ctx.strokeStyle='#b992d41a';ctx.beginPath();ctx.ellipse(111,160,69,34,-.15,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(111,160,76,40,-.15,0,Math.PI*2);ctx.stroke();ctx.restore();
+    label('VEÍCULO / 01',35,72,5,'#b19bc0');label('MOTOCICLETA',35,85,10,'#f1e6f6',true);
+    ctx.fillStyle=bikeLife>0&&fuel>0?'#96c9ae':'#e4aa7b';ctx.beginPath();ctx.arc(185,69,2,0,Math.PI*2);ctx.fill();
+    label('PRETA',35,96,4.5,'#a99aae');ctx.fillStyle='#a976cf';ctx.fillRect(62,92,4,4);label('ROXA',69,96,4.5,'#c2a0d9');
+    ctx.save();ctx.translate(111,194);ctx.scale(1,.22);
+    const shadow=ctx.createRadialGradient(0,0,4,0,0,69);shadow.addColorStop(0,'#b179f15c');shadow.addColorStop(.7,'#5c368f22');shadow.addColorStop(1,'#5c368f00');ctx.fillStyle=shadow;ctx.fillRect(-69,-69,138,138);ctx.restore();
+    if(bikeSpritesReady()){
+      const direction=32,[sx,sy,sw,sh]=bikeSpriteBounds[direction],width=145,height=sh/sw*width;
+      ctx.drawImage(bikeSpriteSource(direction),sx,sy,sw,sh,38,100,width,height);
+    } else {ctx.save();ctx.translate(107,171);ctx.scale(2.6,2.6);drawBikeFallback(0,0,Math.PI/2,0,0);ctx.restore();}
+    // Fine leader lines identify the mechanical areas without covering the bike.
+    ctx.strokeStyle='#c6a0dc66';ctx.lineWidth=.5;
+    for(const [ax,ay,bx,by] of [[103,157,45,150],[162,144,180,118],[62,184,40,193]]){
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,ay);ctx.lineTo(bx,by);ctx.stroke();ctx.fillStyle='#d9bbeb';ctx.beginPath();ctx.arc(ax,ay,1.3,0,Math.PI*2);ctx.fill();
+    }
+    ctx.fillStyle='#100e18';ctx.beginPath();ctx.roundRect(31,207,161,23,3);ctx.fill();
+    label('COMBUSTÍVEL',37,215,5,'#c4afce');
+    ctx.textAlign='right';ctx.font='bold 7px monospace';ctx.fillStyle=fuel<=20?'#eea076':'#e5c38c';ctx.fillText(Math.round(fuel)+'%',186,218);
+    const fuelLevel=Math.max(0,Math.min(100,fuel));
+    for(let i=0;i<18;i++){ctx.fillStyle=fuelLevel>i*100/18?(fuel<=20?'#eea076':'#cca46c'):'#372e40';ctx.fillRect(37+i*6.8,221,5,3);}
+    card(210,58,244,39);
+    label('ESTADO GERAL',220,69,5,'#ad98bd');
+    ctx.fillStyle=bikePartColor(bikeLife);ctx.beginPath();ctx.arc(221,81,2,0,Math.PI*2);ctx.fill();
+    label(bikeLife>=72?'Pronta para rodar':bikeLife>=38?'Revisão recomendada':'Manutenção urgente',228,84,8,bikePartColor(bikeLife),true);
+    ctx.textAlign='right';ctx.font='bold 16px monospace';ctx.fillStyle='#f1e4fa';ctx.fillText(Math.round(bikeLife),435,82);ctx.font='6px monospace';ctx.fillStyle='#a18cab';ctx.fillText('%',445,82);
+    for(let i=0;i<32;i++){ctx.fillStyle=bikeLife>i*100/32?bikePartColor(bikeLife):'#35283f';ctx.fillRect(220+i*7,90,5,2);}
+    const entries=[['motor','Motor','Potência e aceleração'],['handlebar','Guidão','Direção e controle'],['frontTire','Pneu dianteiro','Estabilidade e frenagem'],['rearTire','Pneu traseiro','Tração e aderência']];
+    entries.forEach(([part,title,description],i)=>{
+      const value=bikeParts[part],rowY=103+i*32,color=bikePartColor(value),hover=hot(210,rowY,244,29);
+      card(210,rowY,244,29,hover);
+      ctx.fillStyle=hover?'#4d325f':'#302438';ctx.beginPath();ctx.roundRect(216,rowY+4,22,21,4);ctx.fill();
+      drawBikeMenuIcon(part,227,rowY+14,color,.67);
+      label(title,244,rowY+11,7.5,'#eee2f5',true);label(description,244,rowY+22,5,'#a995b5');
+      ctx.textAlign='right';ctx.font='bold 8px monospace';ctx.fillStyle=color;ctx.fillText(Math.round(value)+'%',433,rowY+12);
+      ctx.strokeStyle=hover?'#e0b5fd':'#8a6a9e';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(443,rowY+10);ctx.lineTo(447,rowY+14);ctx.lineTo(443,rowY+18);ctx.stroke();
+      for(let j=0;j<10;j++){ctx.fillStyle=value>j*10?color:'#3b2d46';ctx.fillRect(385+j*5,rowY+20,3.5,2);}
+    });
+    ctx.strokeStyle='#43314f';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(25,238);ctx.lineTo(455,238);ctx.stroke();
+    ctx.fillStyle='#251a31';ctx.beginPath();ctx.roundRect(26,242,20,9,2);ctx.fill();label('ESC',29,249,5,'#d2b9e2');label('FECHAR',51,249,5,'#a18bac');
+    label('Selecione uma peça para abrir o diagnóstico.',211,249,5.5,'#c1a7d1');
     ctx.restore();
   }
+  function drawSurvivorSprite(x,y,angle,time,moving) {
+    if(!survivorSpriteSheet.complete||survivorSpriteSheet.naturalWidth===0)return false;
+    const facing=smoothBikeFacing(angle,time,'survivor');
+    const direction=bikeSpritePose(facing.angle,0,time).direction;
+    const metadata=spriteAtlas.survivor,[sx,sy,sw,sh]=metadata.frames[direction];
+    const [anchorX,anchorY]=metadata.wheelContacts[direction][0];
+    const scale=34/(metadata.width/BIKE_SPRITE_COLUMNS),left=x-anchorX*scale,top=y+5-anchorY*scale;
+    ctx.save();ctx.imageSmoothingEnabled=false;
+    if(!moving)ctx.drawImage(survivorSpriteSheet,sx,sy,sw,sh,left,top,sw*scale,sh*scale);
+    else {
+      const step=Math.sin(time*13),split=Math.floor(sh*.82),half=Math.floor(sw/2);
+      const bob=-Math.abs(step)*.35;
+      ctx.drawImage(survivorSpriteSheet,sx,sy,sw,split+1,left,top+bob,sw*scale,(split+1)*scale);
+      for(let side=0;side<2;side++){
+        const offset=side?half:0,width=side?sw-half:half,stride=step*(side?1:-1)*.65;
+        ctx.drawImage(survivorSpriteSheet,sx+offset,sy+split,width,sh-split,
+          left+offset*scale+stride*Math.cos(facing.angle)*.3,top+split*scale+stride,width*scale,(sh-split)*scale);
+      }
+    }
+    ctx.restore();return true;
+  }
   function drawPerson(x, y, angle, time, moving, bikePose = false) {
+    if(!bikePose&&drawSurvivorSprite(x,y,angle,time,moving))return;
     ctx.save(); ctx.translate(x, y); ctx.scale(.72, .72);
     const sideFacing = Math.abs(Math.sin(angle)) > Math.abs(Math.cos(angle));
     if (sideFacing && Math.sin(angle) < 0) ctx.scale(-1, 1);
@@ -2273,7 +2470,7 @@
     }
     drawMinimap(); drawSurvivalHud();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? 'W ACELERA · S FREIA/RÉ · A/D VIRA · Q/R MARCHA · E DESCE' : 'W A S D MOVER  ·  E EXPLORAR / MOTO', W - 12, H - 7);
+    ctx.fillText(mounted ? 'W ACELERA · S FREIA/RÉ · A/D VIRA · Q/R MARCHA · F DESLIGA · E DESCE' : 'W A S D MOVER  ·  E EXPLORAR / MOTO', W - 12, H - 7);
     if (!mounted && nearbyEntrance(player.x, player.y) >= 0) hint('E  ENTRAR PELA PORTA', W / 2, 31, time);
     else if (!mounted && distance(player,bike)<55 && (bikeLife<75 || Object.values(bikeParts).some(value=>value<70))) hint(repairKits>0?'E  USAR KIT E REPARAR A MOTO':'PROCURE UM KIT DE FERRAMENTAS',W/2,31,time);
     else if (tower && !mounted && distance(player, bike) < 55) hint('E  MONTAR NA MOTO', W / 2, 31, time);
@@ -2427,7 +2624,10 @@
     }
     const p = { x: explorer.x, y: explorer.y };
     ctx.fillStyle = '#080d0e88'; ctx.beginPath(); ctx.ellipse(p.x,p.y + 7,8,4,0,0,Math.PI*2); ctx.fill();
-    drawPerson(p.x, p.y, 0, time, keys.size > 0, false);
+    const walkX=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0);
+    const walkY=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0);
+    if(walkX||walkY)explorer.spriteAngle=Math.atan2(walkX,-walkY);
+    drawPerson(p.x,p.y,explorer.spriteAngle??Math.PI,time,!!(walkX||walkY),false);
     drawAtmosphere(time, 'world');
     panel(10, 9, 180, 33, '#101a1deF', '#667a6e'); ctx.fillStyle = '#d5c18b'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.fillText(exploreBuilding === 10 ? 'EXPLORAÇÃO · POSTO DE GASOLINA' : `INTERIOR · SETOR ${String(exploreBuilding + 1).padStart(2,'0')}`, 18, 22); ctx.fillStyle = '#9da99a'; ctx.fillText(Math.hypot(explorer.x - 78, explorer.y - 200) < 42 ? 'E  SAIR PELA PORTA' : 'PROCURE A PORTA PARA SAIR', 18, 34);
     if (Math.hypot(explorer.x - 78, explorer.y - 200) < 42) hint('E  SAIR PELA PORTA', W / 2, 43, time);
@@ -2472,30 +2672,71 @@
   }
 
   function drawBikeDashboard(time) {
-    const {x,y,w,h}=bikeDashboardBounds();
+    const bounds=bikeDashboardBounds(),x=0,y=0,w=130,h=76;
     const speed=state==='chase'||state==='grapple'?chaseSpeed:bike.speed,kmh=Math.abs(speed)*BIKE_SPEED_TO_KMH;
     ctx.save();
-    // Tint only the housing: scenery remains visible while the digits stay legible.
-    const face=ctx.createLinearGradient(x,y,x+w,y+h);face.addColorStop(0,'rgba(23,44,47,.48)');face.addColorStop(1,'rgba(6,19,25,.34)');
-    ctx.fillStyle=face;ctx.strokeStyle='#9cbeb04d';ctx.lineWidth=.5;ctx.beginPath();ctx.roundRect(x,y,w,h,5);ctx.fill();ctx.stroke();
-    for(let i=0;i<18;i++){
-      ctx.fillStyle=bikeRpm/8000>i/18?(i>14?'#dfa371':'#a2c9ad'):'#6a8f8438';ctx.fillRect(x+6+i*4,y+5,2.6,2);
+    ctx.translate(bounds.x,bounds.y);ctx.scale(BIKE_DASHBOARD_SCALE,BIKE_DASHBOARD_SCALE);
+    const face=ctx.createLinearGradient(x,y,x,y+h);
+    face.addColorStop(0,'#454349');face.addColorStop(.12,'#232126');face.addColorStop(.7,'#111014');face.addColorStop(1,'#07070a');
+    ctx.fillStyle=face;ctx.strokeStyle='#98949d';ctx.lineWidth=1;
+    // Rounded black instrument pod matches the bike's tank and silver hardware.
+    ctx.beginPath();ctx.moveTo(x+25,y);ctx.lineTo(x+w-25,y);
+    ctx.quadraticCurveTo(x+w,y,x+w,y+25);ctx.lineTo(x+w,y+h-22);
+    ctx.quadraticCurveTo(x+w-2,y+h,x+w-19,y+h);ctx.lineTo(x+19,y+h);
+    ctx.quadraticCurveTo(x+2,y+h,x,y+h-22);ctx.lineTo(x,y+25);
+    ctx.quadraticCurveTo(x,y,x+25,y);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#8953b2';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(x+3,y+24);ctx.lineTo(x+3,y+50);ctx.lineTo(x+11,y+60);
+    ctx.moveTo(x+w-3,y+24);ctx.lineTo(x+w-3,y+50);ctx.lineTo(x+w-11,y+60);ctx.stroke();
+    ctx.strokeStyle='#060b10';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(x+9,y+59);ctx.lineTo(x+w-9,y+59);ctx.stroke();
+    const glass=ctx.createLinearGradient(x,y+6,x,y+58);
+    glass.addColorStop(0,'#302936');glass.addColorStop(.45,'#18151e');glass.addColorStop(1,'#0d0d13');
+    ctx.fillStyle=glass;ctx.strokeStyle='#655c70';ctx.lineWidth=.5;
+    ctx.beginPath();ctx.moveTo(x+21,y+6);ctx.lineTo(x+w-21,y+6);
+    ctx.lineTo(x+w-6,y+21);ctx.lineTo(x+w-6,y+51);
+    ctx.lineTo(x+w-13,y+58);ctx.lineTo(x+13,y+58);
+    ctx.lineTo(x+6,y+51);ctx.lineTo(x+6,y+21);ctx.closePath();ctx.fill();ctx.stroke();
+    // A circular silver bezel recalls the small round gauge above the handlebars.
+    ctx.fillStyle='#101015';ctx.strokeStyle='#a8a2ae';ctx.lineWidth=1.3;
+    ctx.beginPath();ctx.arc(x+44,y+34,16,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#513565';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(x+44,y+34,14.5,0,Math.PI*2);ctx.stroke();
+    for(const boltX of [x+4,x+w-4]){
+      ctx.fillStyle='#81909a';ctx.beginPath();ctx.arc(boltX,y+37,1.3,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#18242d';ctx.beginPath();ctx.moveTo(boltX-.7,y+37);ctx.lineTo(boltX+.7,y+37);ctx.stroke();
     }
-    ctx.textAlign='left';ctx.fillStyle='#e4eedc';ctx.font='bold 19px monospace';ctx.fillText(String(Math.round(kmh)).padStart(2,'0'),x+7,y+26);
-    ctx.font='5px monospace';ctx.fillStyle='#c2d3c5';ctx.fillText('km/h',x+34,y+25);
-    ctx.fillStyle=bikeShiftFlash>0?'#88b79555':'#41685a33';ctx.strokeStyle='#b9d4a866';ctx.lineWidth=.5;ctx.beginPath();ctx.roundRect(x+59,y+10,19,19,3);ctx.fill();ctx.stroke();
-    ctx.textAlign='center';ctx.font='bold 16px monospace';ctx.fillStyle='#d5e8b9';ctx.fillText(speed<0?'R':String(bikeGear),x+68.5,y+25);
-    for(const [bx,label] of [[x+4,'Q −'],[x+50,'R +']]){
-      ctx.fillStyle='#304d4d40';ctx.beginPath();ctx.roundRect(bx,y+31,30,10,2);ctx.fill();
-      ctx.font='5px monospace';ctx.fillStyle='#cadcc5';ctx.fillText(label,bx+15,y+38);
+    ctx.textAlign='left';ctx.font='4px monospace';ctx.fillStyle='#8db7c8';ctx.fillText('RPM  x1000',x+23,y+12);
+    for(let i=0;i<24;i++){
+      ctx.fillStyle=bikeRpm/8000>(i+.5)/24?(i>=20?'#ff765f':i>=17?'#f4c775':'#bc8fe1'):'#393040';
+      ctx.fillRect(x+10+i*4.55,y+15-(i/6|0),3.2,2+(i/6|0));
     }
-    ctx.font='4px monospace';ctx.fillStyle='#b4c9b7';ctx.fillText(String(BIKE_GEAR_LIMITS[bikeGear]),x+42,y+38);
+    ctx.textAlign='center';ctx.fillStyle='#f1e9dc';ctx.font='bold 15px monospace';
+    ctx.fillText(String(Math.round(kmh)).padStart(2,'0'),x+44,y+36);
+    ctx.font='4px monospace';ctx.fillStyle='#c6b0d5';ctx.fillText('km/h',x+44,y+43);
+    ctx.fillStyle=bikeShiftFlash>0?'#56366d':'#292033';ctx.beginPath();ctx.roundRect(x+96,y+24,23,24,3);ctx.fill();
+    ctx.textAlign='center';ctx.font='4px monospace';ctx.fillStyle='#9cbdcc';ctx.fillText('GEAR',x+107.5,y+30);
+    ctx.font='bold 16px monospace';ctx.fillStyle='#f7cd7f';ctx.fillText(speed<0?'R':String(bikeGear),x+107.5,y+45);
+    const level=Math.max(0,Math.min(100,fuel)),low=level<=20;
+    ctx.textAlign='left';ctx.font='4px monospace';ctx.fillStyle=low?'#ff9a70':'#b3d2d9';
+    ctx.fillText('GAS',x+10,y+56);ctx.fillText('E',x+25,y+56);
+    for(let i=0;i<10;i++){
+      ctx.fillStyle=level>i*10?(low?'#ff9864':'#d4af70'):'#393040';ctx.fillRect(x+32+i*5.5,y+52,4,4);
+    }
+    ctx.fillStyle='#b3d2d9';ctx.fillText('F',x+89,y+56);
+    ctx.textAlign='right';ctx.fillStyle=low?'#ff9a70':'#c5e5e9';ctx.fillText(Math.round(level)+'%',x+119,y+56);
+    for(const [bx,label] of [[x+7,'Q  -'],[x+75,'R  +']]){
+      ctx.fillStyle='#19151e';ctx.strokeStyle='#685174';ctx.beginPath();ctx.roundRect(bx,y+61,48,12,5);ctx.fill();ctx.stroke();
+      ctx.textAlign='center';ctx.font='5px monospace';ctx.fillStyle='#c5dbe3';ctx.fillText(label,bx+24,y+69);
+    }
+    ctx.fillStyle=low&&Math.sin(time*5)>0?'#ff855d':'#577582';ctx.beginPath();ctx.arc(x+65,y+67,2,0,Math.PI*2);ctx.fill();
     ctx.restore();
   }
   function drawSurvivalHud() {
-    const riding=bikeControlsMounted(),w=riding?84:110,x=W-w-12,top=riding?H-96:H-42,barWidth=w-53;
-    ctx.save();panel(x,top,w,31,riding?'#101f2366':'#101f23dc',riding?'#7ba49244':'#506f68');ctx.font='5px monospace';
-    [['GAS',fuel,'#d9ab68'],['FOME',hunger,'#c69d6d'],['SEDE',thirst,'#78b9b0']].forEach(([name,value,color],i)=>{
+    const riding=bikeControlsMounted(),bounds=bikeDashboardBounds(),w=riding?bounds.w:110,x=W-w-12,top=riding?bounds.y-29:H-42,barWidth=w-53;
+    ctx.save();panel(x,top,w,riding?23:31,riding?'#101f2366':'#101f23dc',riding?'#7ba49244':'#506f68');ctx.font='5px monospace';
+    const meters=[['GAS',fuel,'#d9ab68'],['FOME',hunger,'#c69d6d'],['SEDE',thirst,'#78b9b0']];
+    (riding?meters.slice(1):meters).forEach(([name,value,color],i)=>{
       const y=top+9+i*9;ctx.textAlign='left';ctx.fillStyle='#9ba99d';ctx.fillText(name,x+5,y);
       ctx.fillStyle='#293834';ctx.fillRect(x+27,y-4,barWidth,3);ctx.fillStyle=color;ctx.fillRect(x+27,y-4,barWidth*Math.max(0,value)/100,3);
       ctx.textAlign='right';ctx.fillStyle='#cedbce';ctx.fillText(String(Math.round(value)),x+w-5,y);
@@ -2548,7 +2789,7 @@
     const entrySpeed=Math.min(bikeGearSpeedLimit(),Math.max(0,bike.speed));
     state = 'chase'; mounted = false; bike.speed = 0; approachedByBike = true;
     chaseProgress = 0; chaseSpeed = entrySpeed; chaseLag = 90; chaseElapsed = 0; chaseLives = 3; chaseInvulnerable = 0; hookReady = false; grappleAvailable = false;
-    chaser.x = W * .5; chaser.feet = CHASE_BIKE_Y; chaser.vy = 0; chaser.grounded = true; chaser.duck = 0; chaser.steer = 0;
+    chaser.x = 240; chaser.feet = CHASE_BIKE_Y; chaser.vy = 0; chaser.grounded = true; chaser.duck = 0; chaser.steer = 0;
     chaseObstacles.forEach(o => o.cleared = false);
     keys.clear(); setToast('SOB A MÁQUINA — W ACELERA · R SOBE MARCHA · Q REDUZ · A/D DESVIA', 2.8); updateObjective();
   }
@@ -2786,7 +3027,7 @@
     panel(139, 9, 202, 37, '#101a1deF', '#667a6e');
     ctx.fillStyle = '#a6b5a5'; ctx.textAlign = 'center'; ctx.fillText('DISTÂNCIA DA MÁQUINA', 240, 21);
     ctx.fillStyle = '#283432'; ctx.fillRect(151, 28, 178, 5); ctx.fillStyle = chaseLag > 250 ? '#df795e' : '#80c9a9'; ctx.fillRect(151, 28, 178 * (1 - chaseLag / 390), 5);
-    panel(W - 89, 9, 78, 37, '#101a1deF', '#667a6e'); ctx.textAlign = 'right'; ctx.fillStyle = '#a6b5a5'; ctx.fillText('MOTO', W - 18, 21); ctx.fillStyle = '#dfc68d'; ctx.fillText(`${Math.round(chaseSpeed*BIKE_SPEED_TO_KMH)} KM/H`, W - 18, 38);
+
     ctx.textAlign = 'center'; ctx.fillStyle = '#bdc8b2'; ctx.fillText('SEGURE W PARA ACOMPANHAR · A/D DESVIA · S FREIA', W / 2, H - 9);
     if (grappleAvailable) { ctx.fillStyle = '#a8e6bd'; ctx.fillText('PERNA AO ALCANCE — APERTE E OU USE O BOTÃO DE RAPEL', W / 2, H - 22); }
   }
@@ -2864,7 +3105,7 @@
 
   function drawChaseBike(x, y, time) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(chaser.steer * .13); ctx.scale(1.55, 1.55);
-    const rider = drawBike(0, 0, 0, chaseSpeed, time, 'chase'); drawPerson(rider.x, rider.y, 0, time, true, true); ctx.restore();
+    const rider = drawBike(0, 0, 0, chaseSpeed, time, 'chase'); if(!rider.integrated)drawPerson(rider.x, rider.y, 0, time, true, true); ctx.restore();
     if (chaseSpeed > 165) { ctx.fillStyle = '#b88c58'; ctx.globalAlpha = .56; ctx.fillRect(x - 10, y + 25 + (time * 18) % 9, 2, 2); ctx.fillRect(x + 6, y + 29 + (time * 12) % 8, 2, 2); ctx.globalAlpha = 1; }
   }
 
@@ -2883,12 +3124,11 @@
     for (let y = 23; y < H; y += 27) { const row = (y + chaseProgress * .16) % H; ctx.strokeStyle = '#90805b26'; ctx.beginPath(); ctx.moveTo(180 - row * .35, row); ctx.lineTo(300 + row * .35, row); ctx.stroke(); }
     const targetX = W * .5 + (pose.target.x - chaser.x) * .52 + Math.sin(pose.phase) * 14;
     const targetY = 93 + (pose.target.y - CHASE_BIKE_Y) * .32;
-    // Rear-view rider and bike silhouette establish the new isometric camera.
-    ctx.fillStyle = '#070b0d'; ctx.beginPath(); ctx.ellipse(W * .5, 251, 25, 14, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#0a0e11'; ctx.fillRect(W * .5 - 8, 213, 16, 40); ctx.fillStyle = '#262d2e'; ctx.fillRect(W * .5 - 16, 217, 32, 21); ctx.fillStyle = '#5c5b51'; ctx.fillRect(W * .5 - 12, 219, 24, 4);
-    ctx.fillStyle = '#b65f4b'; ctx.fillRect(W * .5 - 4, 244, 8, 3); ctx.fillStyle = '#8455b4'; ctx.fillRect(W * .5 - 15, 216, 30, 2);
-    ctx.fillStyle = '#11181b'; ctx.fillRect(W * .5 - 11, 190, 22, 26); ctx.fillStyle = '#42534e'; ctx.fillRect(W * .5 - 9, 194, 18, 15);
-    ctx.fillStyle = '#141a1d'; ctx.fillRect(W * .5 - 8, 177, 16, 14); ctx.fillStyle = '#d6c59d'; ctx.fillRect(W * .5 - 8, 177, 15, 4); ctx.fillStyle = '#9f70d2'; ctx.fillRect(W * .5 + 3, 182, 5, 4);
+    // Reuse the mounted survivor atlas in the grapple camera as well.
+    ctx.save();ctx.translate(W*.5,244);ctx.scale(1.55,1.55);
+    const rider=drawBike(0,0,0,chaseSpeed,time,'chase');
+    if(!rider.integrated)drawPerson(rider.x,rider.y,0,time,true,true);
+    ctx.restore();
     // The hanging leg fills the forward view; the reticle and timing bar follow its motion.
     ctx.strokeStyle = '#0b1214'; ctx.lineWidth = 31; ctx.beginPath(); ctx.moveTo(targetX + 17, -20); ctx.lineTo(targetX - 10, 48); ctx.lineTo(targetX, targetY + 2); ctx.stroke();
     ctx.strokeStyle = tower.design === 1 ? '#756044' : tower.design === 2 ? '#586d80' : '#5b6962'; ctx.lineWidth = 21; ctx.beginPath(); ctx.moveTo(targetX + 17, -20); ctx.lineTo(targetX - 10, 48); ctx.lineTo(targetX, targetY + 2); ctx.stroke();
@@ -2976,6 +3216,10 @@
     // Small side-on character with animated legs and a cable pack.
     const blink = climber.invulnerable > 0 && Math.floor(time * 14) % 2;
     if (!blink) {
+      if(keys.has('a')||keys.has('arrowleft'))climber.spriteAngle=-Math.PI/2;
+      else if(keys.has('d')||keys.has('arrowright'))climber.spriteAngle=Math.PI/2;
+      const walking=climber.grounded&&(keys.has('a')||keys.has('d')||keys.has('arrowleft')||keys.has('arrowright'));
+      if(!drawSurvivorSprite(Math.round(climber.x),Math.round(climber.feet)-5,climber.spriteAngle??Math.PI/2,time,walking)){
       const x = Math.round(climber.x), y = Math.round(climber.feet - 20);
       const step = climber.grounded ? Math.sin(time * 10) * 2 : -2;
       ctx.fillStyle = '#0d1719'; ctx.fillRect(x - 7, y - 1, 15, 21);
@@ -2988,6 +3232,7 @@
       ctx.fillStyle = '#252522'; ctx.fillRect(x - 5, y + 14 + step, 4, 6); ctx.fillRect(x + 1, y + 14 - step, 4, 6);
       ctx.fillStyle = '#a4825e'; ctx.fillRect(x - 6, y + 19 + step, 5, 2); ctx.fillRect(x + 1, y + 19 - step, 5, 2);
       ctx.fillStyle = '#a77be4'; ctx.fillRect(x - 9, y + 7, 3, 2); ctx.fillRect(x + 7, y + 5, 3, 2);
+      }
     }
     ctx.restore(); drawAtmosphere(time, 'climb');
     if (state === 'hack') drawHack(time);
@@ -3123,6 +3368,10 @@
   }
 
   function finishFrame(time, dt) {
+    gameScene=gameSceneViewport(state);W=gameScene.width;H=gameScene.height;
+    ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);
+    ctx.fillStyle='#101819';ctx.fillRect(0,0,DISPLAY_W,DISPLAY_H);
+    ctx.translate(gameScene.x,gameScene.y);
     ctx.fillStyle = '#090f12'; ctx.fillRect(0, 0, W, H);
     if (state === 'title') { drawWorld(time, dt); }
     else if (state === 'drive') drawWorld(time, dt);
@@ -3135,7 +3384,8 @@
     if (flash > 0) { ctx.fillStyle = `rgba(203,255,224,${Math.min(.55, flash * .45)})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt * 1.4); }
     if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) toast.classList.remove('visible'); }
     syncGrappleButton();
-    syncBikeServiceCursor();
+    if(ignition.active)ignition.draw(time);
+    else syncBikeServiceCursor();
   }
   function drawEnding(time) {
     drawIsoMap(time); drawIsoDepthObjects(time, false);
@@ -3151,13 +3401,17 @@
   }
 
   function frame(now) {
+    gameScene=gameSceneViewport(state);W=gameScene.width;H=gameScene.height;
+    if(lastTime)gameDisplay.sampleFrame(now-lastTime);
     if (!lastTime) lastTime = now;
     const dt = Math.min(.045, (now - lastTime) / 1000); lastTime = now;
     gameTime += dt;
+    if(fuel<=0||bikeLife<=0)bikeEngineRunning=false;
+    if(ignition.active)ignition.update(dt);
     updateBikeGearbox(dt,state==='chase'||state==='grapple'?chaseSpeed:bike.speed,bikeControlsMounted()&&keys.has('w'));
-    if (bikeInspectOpen && (state !== 'drive' || mounted || distance(player,bike)>120)) bikeInspectOpen=false;
+    if (bikeInspectOpen && (state !== 'drive' || mounted || distance(player,bike)>120)) {bikeInspectOpen=false;bikeService=null;}
     if (bikeInspectOpen) updateBikeService(dt);
-    if(state!=='title'&&state!=='ending'&&!bikeInspectOpen)updateBikeCondition(dt,state==='chase'||state==='grapple'?chaseSpeed:state==='drive'&&mounted?bike.speed:0);
+    if(state!=='title'&&state!=='ending')updateBikeCondition(dt,state==='chase'||state==='grapple'?chaseSpeed:state==='drive'&&mounted?bike.speed:0);
     updateMachines(gameTime);
     hunger = Math.max(0, hunger - dt * .035); thirst = Math.max(0, thirst - dt * .06);
     if (state === 'explore') {
@@ -3190,8 +3444,8 @@
       const turn = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
       bike.steering+=(turn-bike.steering)*(1-Math.exp(-9*dt));
       const motorFactor = (.38 + .62 * bikeParts.motor / 100)*(.65+.35*Math.min(hunger,thirst)/100)*(.62+.38*Math.min(bikeParts.frontTire,bikeParts.rearTire)/100);
-      if (throttle && fuel > 0 && bikeLife > 0 && bikeShiftCooldown<=0) bike.speed += bikeGearAcceleration() * motorFactor * dt;
-      else if (reverse && bikeLife > 0) bike.speed += (bike.speed > 0 ? -300 : -105 * motorFactor) * dt;
+      if (throttle && bikeEngineRunning && fuel > 0 && bikeLife > 0 && bikeShiftCooldown<=0) bike.speed += bikeGearAcceleration() * motorFactor * dt;
+      else if (reverse && bikeLife > 0 && (bike.speed>0||bikeEngineRunning&&fuel>0)) bike.speed += (bike.speed > 0 ? -300 : -105 * motorFactor) * dt;
       else bike.speed = Math.sign(bike.speed) * Math.max(0, Math.abs(bike.speed) - 75 * dt);
       const maxForward=bikeGearSpeedLimit();
       // Engine braking brings a downshift into its new range without teleporting speed.
@@ -3204,7 +3458,7 @@
       moveWorldEntity(bike,rideX,rideY,12);
       const blockedFraction=Math.min(1,Math.hypot(rideX-(bike.x-previousX),rideY-(bike.y-previousY))/Math.max(.001,Math.hypot(rideX,rideY)));
       const tower = active();
-      if (tower && distance(bike, tower) < 155) { bike.speed *= .25; startChase(); }
+      if (tower && bikeEngineRunning && distance(bike, tower) < 155) { bike.speed *= .25; startChase(); }
       else if (blockedFraction>.15) {
         applyBikeImpact(impactSpeed*blockedFraction);
         bike.speed *= blockedFraction>.85?.38:.8;
@@ -3221,5 +3475,13 @@
 
   function drawTowerScene() { /* tower art is rendered from the top-down world and climbing scene */ }
   setObjective('Chegue à primeira máquina de moto.', 0);
+  const gameDisplay=initGameDisplay({canvas,onResize:resolution=>{
+    if(canvas.width===resolution.width&&canvas.height===resolution.height)return;
+    canvas.width=resolution.width;canvas.height=resolution.height;
+    RENDER_SCALE=canvas.width/DISPLAY_W;
+    ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);ctx.imageSmoothingEnabled=false;
+    bikeBlendLayer.width=Math.ceil(160*RENDER_SCALE);bikeBlendLayer.height=Math.ceil(160*RENDER_SCALE);
+    bikeBlendStamp='';
+  }});
   requestAnimationFrame(frame);
 })();

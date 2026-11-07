@@ -8,8 +8,9 @@ function runBikeMaintenanceTests(source) {
     const Math=Object.create(globalThis.Math);Math.random=random||globalThis.Math.random;
     let bikeService=null,repairKits=5,bikeLife=60,bikeInspectTab='Motor',bikeTireSelected='frontTire';
     let bikeWearClock=0,bikeCrashCooldown=0;
-    let bikeInspectOpen=true;
-    const W=480,H=270,canvas={getBoundingClientRect:()=>({left:0,top:0,width:480,height:270}),dataset:{},style:{},setPointerCapture(){},hasPointerCapture:()=>false,releasePointerCapture(){}};
+    let bikeInspectOpen=true,bikeInspectHover=null;
+    const bikeWorkshopWindow={x:null,y:null,full:false,drag:null};
+    const W=480,H=270,DISPLAY_W=480,DISPLAY_H=270,gameScene={x:0,y:0},canvas={getBoundingClientRect:()=>({left:0,top:0,width:480,height:270}),dataset:{},style:{},setPointerCapture(){},hasPointerCapture:()=>false,releasePointerCapture(){}};
     const bikeToolCursors=new Map();
     const gradient={addColorStop(){}},ctx=new Proxy({}, {get:(target,key)=>target[key]??((key==='createLinearGradient'||key==='createRadialGradient')?()=>gradient:()=>{}),set:(target,key,value)=>(target[key]=value,true)});
     const bikePartNames={motor:'Motor',handlebar:'Guidão',frontTire:'Dianteiro',rearTire:'Traseiro'},bikePartColor=()=>'#fff';
@@ -17,13 +18,15 @@ function runBikeMaintenanceTests(source) {
     const bikeFaults=Object.fromEntries(Object.keys(bikeParts).map(p=>[p,[60,60,60,60]]));
     const setToast=()=>{};
     ${jobs}\n${logic}\n${interaction}
+    const input=(x,y)=>{const view=bikeWorkshopViewport();return {clientX:view.x+x*view.scale,clientY:view.y+y*view.scale};};
     return {start:startBikeService,action:bikeServiceAction,update:updateBikeService,damage:damageBikePart,
       wear:updateBikeCondition,impact:applyBikeImpact,
-      render:drawBikeServiceContent,click:(x,y)=>handleBikeInspectPointer({button:0,clientX:x,clientY:y}),
-      down:(x,y)=>handleBikeInspectPointer({button:0,pointerId:1,clientX:x,clientY:y,preventDefault(){}}),
-      move:(x,y)=>moveBikeServiceGesture({pointerId:1,clientX:x,clientY:y,buttons:1}),
-      up:(x,y,type='pointerup')=>endBikeServiceGesture({pointerId:1,clientX:x,clientY:y,type}),
+      render:drawBikeServiceContent,click:(x,y)=>handleBikeInspectPointer({button:0,...input(x,y)}),
+      down:(x,y)=>handleBikeInspectPointer({button:0,pointerId:1,...input(x,y),preventDefault(){}}),
+      move:(x,y)=>moveBikeServiceGesture({pointerId:1,...input(x,y),buttons:1}),
+      up:(x,y,type='pointerup')=>endBikeServiceGesture({pointerId:1,...input(x,y),type}),
       cursor:syncBikeServiceCursor,get cursorStyle(){return canvas.style.cursor},
+      view:bikeWorkshopViewport,get window(){return bikeWorkshopWindow;},
       cancel(){bikeService=null},get service(){return bikeService},get kits(){return repairKits},
       resources(kits,life){repairKits=kits;bikeLife=life},
       get life(){return bikeLife},parts:bikeParts,faults:bikeFaults};
@@ -42,17 +45,33 @@ function runBikeMaintenanceTests(source) {
     if(mode==='torque'){for(let i=0;i<20;i++)h.action(1);h.action(2);}
     if(mode==='align'){while(s.value<0)h.action(1);while(s.value>0)h.action(0);h.action(2);}
         if(mode==='bolts')for(let i=0;i<4;i++)h.action(s.order.indexOf(i));
-    if(mode==='bearings')for(let i=0;i<4;i++) {
-      h.action(s.order.indexOf(i));
-      while(s.value>0)h.action(0);while(s.value<0)h.action(1);h.action(2);
-      for(let hit=0;hit<8;hit++){h.update(.25);h.action([0,2,1,3][hit%4]);h.render();}
-    }
+    if(mode==='bearings')for(let i=0;i<3;i++){h.action(0);h.update(.16);h.render();}
     if(mode==='clean')for(let i=0;i<4;i++)for(let j=0;j<3;j++)h.action(i);
     if(mode==='wires')for(let i=0;i<4;i++){h.action(i);h.action(4+s.links.indexOf(i));}
     check(s.phase==='done',mode+' completion');
     h.render();
     check(h.kits===4&&h.faults[part][index]===100,mode+' repair consumes exactly one kit');
     h.action(2);check(h.kits===4,mode+' cannot consume twice');
+  }
+  {
+    const h=create();h.start('motor',1);const service=h.service,before=h.view();
+    h.down(100,22);h.cursor();check(h.window.drag&&h.cursorStyle==='grabbing','workshop title bar starts window drag');
+    h.move(60,52);h.up(60,52);const moved=h.view();
+    check(Math.abs(moved.x-before.x+40*.64)<1e-6&&Math.abs(moved.y-before.y-30*.64)<1e-6,'dragging title bar moves workshop');
+    check(h.service===service&&!h.window.drag,'moving window preserves active repair');
+    h.down(100,22);h.move(-1000,-1000);h.up(0,0);const clamped=h.view();
+    check(clamped.x+13*clamped.scale>=3.999&&clamped.y+12*clamped.scale>=3.999,'dragging keeps workshop inside canvas');
+    h.click(445,22);const full=h.view();
+    check(h.window.full&&full.scale>moved.scale,'maximize button expands workshop');
+    check(full.x+13*full.scale>=3.999&&full.x+467*full.scale<=476.001,'maximized workshop fits screen width');
+    h.down(100,22);check(!h.window.drag,'maximized title bar does not move window');
+    h.click(445,22);const restored=h.view();
+    check(!h.window.full&&restored.x===clamped.x&&restored.y===clamped.y,'restore button returns to previous position');
+    check(h.service===service,'maximizing preserves active repair');
+    h.service.value=22;h.down(125,157);h.move(125,152);h.up(125,152);
+    check(h.service.value===12,'repair gestures still match moved window');
+    h.click(445,22);h.down(125,152);h.move(125,154);h.up(125,154);
+    check(h.service.value===16,'repair gestures match maximized window');
   }
   {
     const h=create();h.render();h.click(50,242);
@@ -120,8 +139,18 @@ function runBikeMaintenanceTests(source) {
     check(h.service.remaining[0]<3,'moving brush removes dirt');
     h.start('handlebar',0);const before=h.service.value;h.down(240,145);h.move(260,145);h.up(260,145);
     check(h.service.value>before,'handlebar drag changes alignment');
-    h.start('motor',1);const initialGap=h.service.value;h.down(200,150);h.move(180,150);h.up(180,150);
-    check(h.service.value<initialGap,'feeler drag adjusts valve clearance');
+    h.start('motor',1);h.service.value=22;
+    h.down(200,157);check(!h.service.drag,'valve blade cannot be grabbed away from handle');
+    h.down(125,157);check(h.service.drag?.kind==='feeler','valve tool can be grabbed by handle');
+    h.move(160,157);check(h.service.value===22,'horizontal handle movement does not change valve clearance');
+    h.move(160,152);check(h.service.value===12,'moving handle up reduces valve clearance');
+    h.move(160,154);check(h.service.value===16,'moving handle down increases valve clearance');
+    h.up(160,154);check(!h.service.drag,'releasing handle stops adjustment');
+    h.down(125,154);check(h.service.drag?.kind==='feeler','handle can be grabbed again at its new position');
+    h.move(125,-500);check(h.service.value===0,'valve handle stops at upper travel limit');
+    h.move(125,900);check(h.service.value===35,'valve handle stops at lower travel limit');h.up(125,900);
+    h.down(125,163.5);h.move(125,152);h.up(125,152);h.action(2);
+    check(h.service.progress===1,'valve adjusted by vertical drag can be confirmed');
   }
   {
     const h=create(()=>.99);h.start('frontTire',0);
@@ -199,21 +228,18 @@ function runBikeMaintenanceTests(source) {
     check(h.service.drag?.kind==='turn','torque handle can be grabbed again at its retained angle');
   }
   {
-    const h=create();h.start('handlebar',3);const s=h.service,index=s.order.indexOf(0);
-    const x=82+(index%2)*52,y=145+Math.floor(index/2)*40;
-    h.down(x,y);h.move(242,153);h.up(242,153);
-    check(s.bearingStage==='align'&&s.progress===0,'dragging a bearing starts alignment instead of completing it');
-    h.action(2);check(s.bearingStage==='align','misaligned bearing cannot be hammered');
-    while(s.value>0)h.action(0);while(s.value<0)h.action(1);h.action(2);
-    check(s.bearingStage==='hammer','centered bearing enables hammer');
-    h.update(.5);check(s.seated===0,'bearing does not seat without strikes');
-    h.action(0);const hits=s.hits;h.action(2);
-    check(s.hits===hits,'rapid strikes must wait for hammer recovery');
-    h.update(.25);h.action(1);
-    check(s.mistakes===1&&s.hits===1&&h.kits===5,'wrong side does not seat bearing or spend resources');
-    h.action(2);h.update(.25);h.action(1);h.update(.25);h.action(3);
-    check(s.hits===4&&s.seated===.5,'opposite alternating strikes seat the bearing evenly');
-    h.cancel();check(h.kits===5&&h.parts.handlebar===60,'cancelled bearing assembly preserves resources and condition');
+    const h=create();h.start('handlebar',3);const s=h.service;
+    check(s.bearingStage==='hammer'&&s.hits===0,'bearing repair starts ready to strike');
+    h.update(.5);check(s.hits===0,'bearing repair waits for input');
+    h.down(240,165);check(s.hits===1&&!s.drag,'clicking the bearing strikes without dragging');
+    h.action(0);check(s.hits===1,'duplicate immediate strike is ignored');
+    h.update(.16);h.click(240,203);
+    check(s.hits===2&&h.kits===5,'button adds second strike without spending kit');
+    h.update(.16);h.action(0);
+    check(s.phase==='done'&&s.seated===1&&h.kits===4,'third strike completes repair and uses one kit');
+    h.action(0);check(h.kits===4,'extra strike cannot consume another kit');
+    const cancelled=create();cancelled.start('handlebar',3);cancelled.action(0);cancelled.cancel();
+    check(cancelled.kits===5&&cancelled.parts.handlebar===60,'cancelling partial bearing repair preserves resources');
   }
   {
     const h=create();for(let i=0;i<600;i++)h.wear(1,150);
@@ -239,13 +265,13 @@ function runBikeMaintenanceTests(source) {
   }
   {
     const blendSource=source.slice(source.indexOf('  function bikeDirectionBlend('),source.indexOf('  function smoothBikeFacing('));
-    const blend=new Function('const BIKE_DIRECTION_COUNT=64,BIKE_DIRECTION_STEP=Math.PI*2/64;'+blendSource+';return bikeDirectionBlend;')();
-    const step=Math.PI*2/64;
+    const blend=new Function('const BIKE_DIRECTION_COUNT=128,BIKE_DIRECTION_STEP=Math.PI*2/128;'+blendSource+';return bikeDirectionBlend;')();
+    const step=Math.PI*2/128;
     const before=blend(2*Math.PI-.000001),after=blend(.000001);
-    check(before.direction===63&&before.next===0&&after.direction===0,'sprite blend crosses full rotation without wrapping backwards');
+    check(before.direction===127&&before.next===0&&after.direction===0,'sprite blend crosses full rotation without wrapping backwards');
     for(const angle of [-.0001,0,step*.5,Math.PI,Math.PI*2,Math.PI*8+.2]){
       const p=blend(angle);
-      check(p.direction>=0&&p.direction<64&&p.next>=0&&p.next<64&&p.weight>=0&&p.weight<1,'orientation blend remains valid across angle wraps');
+      check(p.direction>=0&&p.direction<128&&p.next>=0&&p.next<128&&p.weight>=0&&p.weight<1,'orientation blend remains valid across angle wraps');
     }
     const a=blend(step-.00001),b=blend(step+.00001);
     check(a.next===b.direction&&a.weight>.999&&b.weight<.001,'neighboring sprites meet continuously at orientation boundary');
@@ -254,30 +280,32 @@ function runBikeMaintenanceTests(source) {
     const transmission=source.slice(source.indexOf('  const BIKE_GEAR_LIMITS='),source.indexOf('  const player ='));
     const drive=source.slice(source.indexOf('      const motorFactor ='),source.indexOf('      if ((throttle || reverse)'));
     const createGearbox=new Function(`
-      let state='drive',mounted=true,fuel=100,bikeLife=100,hunger=100,thirst=100;
+      let state='drive',mounted=true,bikeEngineRunning=true,fuel=100,bikeLife=100,hunger=100,thirst=100;
       const bike={speed:0},bikeParts={motor:100,frontTire:100,rearTire:100},W=480,H=270;
-      const bikeServicePointer=e=>({x:e.clientX,y:e.clientY});
+      const bikeCanvasPointer=e=>({x:e.clientX,y:e.clientY});
       ${transmission}
       return {limit:bikeGearSpeedLimit,shift:shiftBikeGear,update:updateBikeGearbox,
         click:(x,y)=>handleBikeDashboardPointer({button:0,clientX:x,clientY:y}),
         drive(dt){const throttle=true,reverse=false;${drive}},
-        off(){mounted=false;bike.speed=0},on(){mounted=true},condition(){hunger=20;thirst=15;bikeParts.motor=45;bikeParts.frontTire=50;bikeParts.rearTire=45},get gear(){return bikeGear},get speed(){return bike.speed},get rpm(){return bikeRpm}};
+        off(){mounted=false;bike.speed=0},on(){mounted=true},engineOff(){bikeEngineRunning=false;bike.speed=0;},condition(){hunger=20;thirst=15;bikeParts.motor=45;bikeParts.frontTire=50;bikeParts.rearTire=45},get gear(){return bikeGear},get speed(){return bike.speed},get rpm(){return bikeRpm}};
     `);
     const h=createGearbox();
-    for(const [gear,kmh] of [[1,25],[2,60],[3,90],[4,125]])check(Math.abs(h.limit(gear)*.52-kmh)<1e-9,'gear '+gear+' has correct speed limit');
+    for(const [gear,kmh] of [[1,30],[2,60],[3,90],[4,125]])check(Math.abs(h.limit(gear)*.52-kmh)<1e-9,'gear '+gear+' has correct speed limit');
     for(let gear=1;gear<=4;gear++){
       for(let i=0;i<1800;i++){h.update(1/60,h.speed,true);h.drive(1/60);}
-      check(Math.abs(h.speed*.52-[0,25,60,90,125][gear])<.001,'riding reaches the selected gear limit');
+      check(Math.abs(h.speed*.52-[0,30,60,90,125][gear])<.001,'riding reaches the selected gear limit');
       if(gear<4){check(h.shift(1),'upshift succeeds');check(!h.shift(1),'shift cooldown prevents skipped gears');}
     }
     check(!h.shift(1),'gearbox cannot exceed fourth gear');
-    h.update(.3,h.speed,false);check(h.click(395,240)&&h.gear===3,'dashboard lower button shifts down');
-    h.update(.3,h.speed,false);check(h.click(440,240)&&h.gear===4,'dashboard upper button shifts up');
+    h.update(.3,h.speed,false);check(h.click(400,249)&&h.gear===3,'dashboard lower button shifts down');
+    h.update(.3,h.speed,false);check(h.click(451,249)&&h.gear===4,'dashboard upper button shifts up');
     h.off();h.update(.3,0,false);check(!h.shift(-1),'cannot shift while walking');
     check(Number.isFinite(h.rpm)&&h.rpm>=0,'rpm indicator remains finite');
     h.condition();h.on();
     for(let i=0;i<3600;i++){h.update(1/60,h.speed,true);h.drive(1/60);}
     check(h.gear===4&&Math.abs(h.speed*.52-125)<.001,'remounting with wear and low needs still reaches displayed maximum');
+    h.engineOff();for(let i=0;i<120;i++){h.update(1/60,h.speed,true);h.drive(1/60);}
+    check(h.speed===0&&h.rpm<1,'stopped engine cannot accelerate and rpm falls to zero');
   }
   return `${assertions} maintenance checks passed`;
 }

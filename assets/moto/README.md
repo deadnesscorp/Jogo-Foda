@@ -1,3 +1,5 @@
+> Folhas anteriores, preservadas como referência. O jogo agora usa os sprites em assets/sprites-128 (128 direções).
+
 # Moto com 64 direções
 
 O jogo usa duas folhas 8 × 4 intercaladas: `moto-64-pares.png` preserva os 32 ângulos já ajustados e `moto-64-impares.png` contém os 32 ângulos intermediários gerados pela ferramenta integrada de imagens. Os índices pares usam a primeira folha e os ímpares usam a segunda. Ordem por linha: 0°, 5,625°, 11,25°, ... 354,375°, começando para cima e seguindo no sentido horário.

@@ -1,0 +1,36 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Sprites 128 · Teste no jogo</title>
+<style>body{margin:0;background:#11101a;color:#eee2f4;font:14px system-ui}header{height:44px;padding:12px 20px}iframe{display:block;border:0;width:1280px;height:720px;margin:auto}#status{padding:12px 20px;color:#cbb4df}</style>
+<header>Teste de integração · sobrevivente montado · 128 direções</header><iframe title="Jogo em teste"></iframe><div id="status">Carregando…</div>
+<script>
+const frame=document.querySelector('iframe'),status=document.querySelector('#status');let failed=false;
+addEventListener('message',event=>{if(event.data?.spriteError){failed=true;status.textContent='ERRO: '+event.data.spriteError;status.style.color='#ff8c83';}});
+fetch('../index.html').then(response=>response.text()).then(html=>{
+  const base=new URL('../',location.href).href;
+  const trap='<script>addEventListener("error",event=>parent.postMessage({spriteError:event.message},"*"));<\/script>';
+  frame.srcdoc=html.replace('<head>','<head><base href="'+base+'">'+trap);
+});
+frame.onload=()=>{
+  const win=frame.contentWindow,doc=win.document;if(!doc.querySelector('#start-game'))return;
+  try{
+    const nativeRAF=win.requestAnimationFrame.bind(win);let callback=null;
+    win.requestAnimationFrame=fn=>{callback=fn;return 1;};
+    doc.querySelector('#start-game').click();doc.querySelector('#title-screen').style.display='none';
+    const key=key=>win.dispatchEvent(new win.KeyboardEvent('keydown',{key,bubbles:true}));
+    key('e');
+    const canvas=doc.querySelector('#game');canvas.setPointerCapture=()=>{};canvas.releasePointerCapture=()=>{};canvas.hasPointerCapture=()=>false;
+    const rect=canvas.getBoundingClientRect(),view={x:640/2-318*.72,y:360/2-131*.72};
+    const pointer=(type,x,y)=>canvas.dispatchEvent(new win.PointerEvent(type,{button:0,pointerId:1,bubbles:true,clientX:rect.left+(view.x+x*.72)/640*rect.width,clientY:rect.top+(view.y+y*.72)/360*rect.height}));
+    pointer('pointerdown',214,156);pointer('pointermove',318,131);pointer('pointerup',318,131);key('Enter');
+    nativeRAF(()=>{
+      try{
+        let now=win.performance.now()+100;
+        for(let i=0;i<90;i++){const run=callback;callback=null;if(run)run(now+=17);}
+        if(failed)return;
+        const started=doc.querySelector('#toast').textContent.includes('MOTO LIGADA');
+        if(!started)throw Error('O fluxo de montagem e ignição não terminou.');
+        status.textContent='PASSOU · jogo carregado · moto montada · ignição concluída · nenhuma exceção de renderização.';status.style.color='#b6dc9f';
+      }catch(error){status.textContent='ERRO: '+error.message;status.style.color='#ff8c83';}
+    });
+  }catch(error){status.textContent='ERRO: '+error.message;status.style.color='#ff8c83';}
+};
+</script></html>
