@@ -2,12 +2,12 @@
 function runBikeMaintenanceTests(source) {
   new Function(source); // Check the complete game's syntax as well as the extracted logic.
   const jobs=source.slice(source.indexOf('  const bikeJobs ='),source.indexOf('  const bikePartNames ='));
-  const logic=source.slice(source.indexOf('  function damageBikePart('),source.indexOf('  function handleBikeInspectPointer('));
+  const logic=source.slice(source.indexOf('  function bikeHoleSeverity('),source.indexOf('  function handleBikeInspectPointer('));
   const interaction=source.slice(source.indexOf('  function handleBikeInspectPointer('),source.indexOf('  function drawBikeInspectMenu('));
   const create=new Function('random',`
     const Math=Object.create(globalThis.Math);Math.random=random||globalThis.Math.random;
     let bikeService=null,repairKits=5,bikeLife=60,bikeInspectTab='Motor',bikeTireSelected='frontTire';
-    let bikeWearClock=0,bikeCrashCooldown=0;
+    let bikeWearClock=0,bikeCrashCooldown=0,fuel=100,bikeEngineRunning=false;
     let bikeInspectOpen=true,bikeInspectHover=null;
     const bikeWorkshopWindow={x:null,y:null,full:false,drag:null};
     const W=480,H=270,DISPLAY_W=480,DISPLAY_H=270,gameScene={x:0,y:0},canvas={getBoundingClientRect:()=>({left:0,top:0,width:480,height:270}),dataset:{},style:{},setPointerCapture(){},hasPointerCapture:()=>false,releasePointerCapture(){}};
@@ -29,16 +29,43 @@ function runBikeMaintenanceTests(source) {
       view:bikeWorkshopViewport,get window(){return bikeWorkshopWindow;},
       cancel(){bikeService=null},get service(){return bikeService},get kits(){return repairKits},
       resources(kits,life){repairKits=kits;bikeLife=life},
-      get life(){return bikeLife},parts:bikeParts,faults:bikeFaults};
+      get life(){return bikeLife},get fuel(){return fuel},leak:bikeFuelLeakRate,parts:bikeParts,faults:bikeFaults};
   `);
   let assertions=0;
   const check=(condition,message)=>{assertions++;if(!condition)throw Error(message);};
+  {
+    const h=create();h.faults.motor[2]=100;
+    check(h.leak()===0,'intact housing does not leak');
+    h.faults.motor[0]=0;check(h.leak()===0,'other engine faults do not create a hole');
+    h.faults.motor[2]=70;const small=h.leak();
+    h.faults.motor[2]=20;check(h.leak()>small,'larger hole leaks faster');
+    const before=h.fuel,rate=h.leak();h.wear(10,0);
+    check(Math.abs(h.fuel-(before-rate*10))<1e-8,'fuel leaks even while parked with engine off');
+    h.start('motor',2);h.render();const s=h.service;
+    for(let i=0;i<4;i++) {
+      const [x,y]=s.holes[i];h.down(x,y);h.update(.2);h.up(x,y);
+      check(s.sealWork[i]>0&&s.sealWork[i]<s.sealTime,'short hold makes partial sealing progress');
+      h.down(x,y);h.move(x+40,y);const work=s.sealWork[i];h.update(1.5);
+      check(s.sealWork[i]===work,'holding away from repair point does not seal');
+      h.move(x,y);h.update(1.5);h.up(x,y);
+    }
+    check(s.phase==='done'&&h.leak()===0&&h.kits===4,'sealing all points stops leak and consumes one kit');
+    const smallHole=create(),largeHole=create();smallHole.faults.motor[2]=80;largeHole.faults.motor[2]=0;
+    smallHole.start('motor',2);largeHole.start('motor',2);
+    check(largeHole.service.holeRadius>smallHole.service.holeRadius&&largeHole.service.sealTime>smallHole.service.sealTime,'larger holes look bigger and take longer to seal');
+    largeHole.action(0);largeHole.action(4);largeHole.cancel();
+    check(largeHole.leak()>0&&largeHole.kits===5,'cancelling does not repair the hole or consume a kit');
+    largeHole.wear(1000,0);check(largeHole.fuel===0,'leak cannot make fuel negative');
+    const smooth=create(),single=create();
+    for(let i=0;i<100;i++)smooth.wear(.1,0);single.wear(10,0);
+    check(Math.abs(smooth.fuel-single.fuel)<.0001,'leak is stable across frame rates despite gradual wear');
+  }
   for(const part of ['motor','handlebar','frontTire'])for(let index=0;index<4;index++) {
     const h=create();h.start(part,index);const s=h.service,mode=s.job[2];
     h.render();
     if(mode==='timing')for(let i=0;i<3;i++){s.clock=i*Math.PI/2.2;h.action(2);}
     if(mode==='sequence')for(let i=0;i<4;i++){while(s.value>12)h.action(0);while(s.value<10)h.action(1);h.action(2);}
-    if(mode==='route'){s.cells=[1,1,1,1];for(let i=0;i<4;i++)h.action(i);}
+    if(mode==='engineHole')for(let i=0;i<4;i++){h.action(i);for(let j=0;j<8;j++){h.action(4);h.update(.2);}}
     if(mode==='balance'){s.value=0;for(let i=0;i<65&&s.phase==='play';i++){s.value=0;h.update(.05);}}
     if(mode==='patch')for(let i=0;i<s.holes.length;i++){h.action(i);h.action(i);h.update(1.3);h.action(i);}
     if(mode==='pressure'){for(let i=0;i<8;i++)h.action(1);h.action(2);}

@@ -53,7 +53,7 @@ function runRenderCacheTests(source) {
     const bikeSpritesReady=()=>true,smoothBikeFacing=angle=>({angle,direction:Math.floor(angle)});
     const bikeOcclusionLayer={width:320,height:320},bikeOcclusionContext={clearRect(){},drawImage(){}};
     const bikeGroundLayout=(x,y)=>({sx:0,sy:0,sw:20,sh:20,left:x-10,top:y-20,width:20,height:20,contacts:[[x,y],[x+2,y]],riderOffsetX:0,riderOffsetY:0});
-    const bikeSpriteSource=()=>({}),drawBikeContactShadow=()=>{},drawBikeGroundShadow=()=>{};
+    const bikeSpriteSource=()=>({}),drawBikeContactShadow=()=>{},drawBikeGroundShadow=()=>{},drawBikeExhaust=()=>{};
     ${bikeDrawing}
     return {draw:drawBike,motion:bikeMotion,positions,get blends(){return blends;},get clears(){return clears;},resize(){bikeBlendStamp='';},mount(){mounted=true;}};
   `)();

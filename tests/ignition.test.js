@@ -2,12 +2,12 @@
 function runIgnitionTests(factory,source) {
   let assertions=0;
   const check=(condition,message)=>{assertions++;if(!condition)throw Error(message);};
-  function create(scale=1) {
+  function create(scale=1,random=()=>.9,getCondition=()=>100) {
     let started=0,cancelled=0,captured=null,labels=0;
     const gradient={addColorStop(){}},ctx=new Proxy({fillText(){labels++;}}, {get:(target,key)=>target[key]??((key==='createLinearGradient'||key==='createRadialGradient')?()=>gradient:()=>{}),set:(target,key,value)=>(target[key]=value,true)});
     const canvas={style:{},getBoundingClientRect:()=>({left:12,top:20,width:480*scale,height:270*scale}),
       setPointerCapture(id){captured=id;},hasPointerCapture:id=>captured===id,releasePointerCapture(){captured=null;}};
-    const game=factory({canvas,ctx,width:480,height:270,onStart(){started++;},onCancel(){cancelled++;}});
+    const game=factory({canvas,ctx,width:480,height:270,random,getCondition,onStart(){started++;},onCancel(){cancelled++;}});
     const event=(x,y,type='pointerup',button=0)=>{const view=game.viewport;return {button,pointerId:1,clientX:12+(view.x+x*view.scale)*scale,clientY:20+(view.y+y*view.scale)*scale,type,preventDefault(){}};};
     return {game,canvas,down:(x,y)=>game.down(event(x,y)),move:(x,y)=>game.move(event(x,y)),up:(x,y,type,button)=>game.up(event(x,y,type,button)),
       key:(key,repeat=false)=>game.key({key,repeat,preventDefault(){}}),get started(){return started;},get cancelled(){return cancelled;},get captured(){return captured;},get labels(){return labels;}};
@@ -56,7 +56,35 @@ function runIgnitionTests(factory,source) {
     h.up(0,0);h.down(443,27);check(h.game.active,'removed close label leaves no invisible button');
     h.key('Escape');check(!h.game.active&&h.cancelled===2,'escape still closes captionless ignition');
   }
+  {
+    const h=create(1,()=>0);h.game.open();h.down(214,156);h.up(318,131);
+    for(let i=0;i<5;i++) {
+      h.key('Enter');check(h.game.snapshot.phase==='failed'&&h.started===0,'failed turn never starts engine');
+      h.key('Enter');h.game.update(1);
+      check(h.game.snapshot.phase==='turn'&&h.game.snapshot.angle===0,'failed key returns for another attempt');
+      if(i===2){h.game.close(false);h.game.open();h.down(214,156);h.up(318,131);}
+    }
+    h.key('Enter');check(h.game.snapshot.phase==='success','sixth attempt succeeds even after cancelling and reopening');
+    h.game.update(1);check(h.started===1,'guaranteed start fires once');
+    h.game.open();h.down(214,156);h.up(318,131);h.key('Enter');
+    check(h.game.snapshot.phase==='failed','successful start resets consecutive failures');
+  }
+  {
+    for(const [condition,roll,expected] of [[100,.36,'success'],[50,.59,'failed'],[50,.61,'success'],[0,.84,'failed'],[0,.86,'success'],[-50,.86,'success'],[150,.36,'success']]) {
+      const h=create(1,()=>roll,()=>condition);h.game.open();h.down(214,156);h.up(318,131);h.key('Enter');
+      check(h.game.snapshot.phase===expected,'damage adjusts failure probability and clamps condition');
+    }
+    let condition=0;
+    const h=create(1,()=>.5,()=>condition);h.game.open();h.down(214,156);h.up(318,131);h.key('Enter');
+    check(h.game.snapshot.phase==='failed','damaged motorcycle fails at elevated probability');
+    h.game.update(1);condition=100;h.key('Enter');
+    check(h.game.snapshot.phase==='success','repair updates probability on the next turn');
+    const damaged=create(1,()=>0,()=>0);damaged.game.open();damaged.down(214,156);damaged.up(318,131);
+    for(let i=0;i<5;i++){damaged.key('Enter');damaged.game.update(1);}
+    damaged.key('Enter');check(damaged.game.snapshot.phase==='success','maximum damage still permits only five consecutive failures');
+  }
   if(source) {
+    check(source.includes('getCondition:()=>bikeParts.motor*.7+bikeLife*.3'),'starting condition combines motor and overall motorcycle health');
     const lifecycle=source.slice(source.indexOf('  function dismount()'),source.indexOf('  function startGrappleAim()'));
     const h=new Function(`
       let state='drive',mounted=false,bikeEngineRunning=false,approachedByBike=false,bikeRpm=0,opened=0;
@@ -73,8 +101,9 @@ function runIgnitionTests(factory,source) {
     h.mount();check(h.mounted&&h.opened===1,'remounting running engine skips ignition');
     h.bike.speed=30;h.off();check(h.running,'cannot switch off moving motorcycle');
     h.bike.speed=0;h.off();check(!h.running,'stationary motorcycle can be switched off');
-    h.dismount();h.mount();check(h.opened===2,'mounting after switching off reopens ignition');
-    h.dismount();h.player.x=200;h.mount();check(!h.mounted&&h.opened===2,'distant motorcycle cannot open ignition');
+    h.off();check(h.mounted&&h.opened===2,'stationary rider can reopen ignition without dismounting');
+    h.dismount();h.mount();check(h.opened===3,'mounting after switching off reopens ignition');
+    h.dismount();h.player.x=200;h.mount();check(!h.mounted&&h.opened===3,'distant motorcycle cannot open ignition');
     const frameSource=source.slice(source.indexOf('  function frame(now)'),source.indexOf('\n  setObjective(',source.indexOf('  function frame(now)')));
     const createWorld=new Function('igniting','repairing',`
       let lastTime=1000,gameTime=0,fuel=100,bikeLife=100,bikeEngineRunning=false,hunger=100,thirst=100;

@@ -1,8 +1,8 @@
 (function (root) {
   'use strict';
-  function createBikeIgnition({canvas,ctx,width:W,height:H,onStart,onCancel}) {
+  function createBikeIgnition({canvas,ctx,width:W,height:H,onStart,onCancel,onFail=()=>{},random=Math.random,getCondition=()=>100}) {
     const LOCK={x:318,y:131},HOME={x:214,y:156},TURN=1.2;
-    let session=null;
+    let session=null,failures=0;
     const viewport=()=>({x:W/2-LOCK.x*.72,y:H/2-LOCK.y*.72,scale:.72});
     const pointer=event=>{
       const bounds=canvas.getBoundingClientRect();
@@ -31,6 +31,15 @@
     function start() {
       if(session.phase!=='turn'||session.angle<TURN)return;
       const drag=session.drag;
+      const condition=Math.max(0,Math.min(100,getCondition()));
+      const failureChance=.35+(1-condition/100)*.5;
+      if(failures<5&&random()<failureChance) {
+        failures++;session.phase='failed';session.success=.65;session.drag=null;
+        session.message='O motor falhou. Gire a chave novamente.';
+        if(drag&&canvas.hasPointerCapture(drag.id))canvas.releasePointerCapture(drag.id);
+        canvas.style.cursor='default';onFail(failures);return;
+      }
+      failures=0;
       session.phase='success';session.success=.8;session.drag=null;
       if(drag&&canvas.hasPointerCapture(drag.id))canvas.releasePointerCapture(drag.id);
       session.message='Motor ligado. Boa viagem!';canvas.style.cursor='default';
@@ -38,7 +47,7 @@
     function down(event) {
       if(!session||event.button!==0)return;
       const p=pointer(event),s=session;
-      if(s.phase==='success')return;
+      if(s.phase==='success'||s.phase==='failed')return;
       const hit=s.phase==='place'?Math.abs(p.x-s.x)<23&&Math.abs(p.y-s.y)<17:Math.hypot(p.x-LOCK.x,p.y-LOCK.y)<28;
       if(!hit)return;
       event.preventDefault();
@@ -78,7 +87,7 @@
       event.preventDefault();if(event.repeat)return;
       const k=event.key.toLowerCase();
       if(k==='escape'){close(false);return;}
-      if(session.phase==='success')return;
+      if(session.phase==='success'||session.phase==='failed')return;
       if(['e','enter',' '].includes(k)) {
         if(session.phase==='turn'){session.angle=TURN;start();}
       } else if(k==='arrowright'||k==='d') {
@@ -88,6 +97,10 @@
     function update(dt) {
       if(!session)return;
       session.time+=dt;
+      if(session.phase==='failed') {
+        session.success-=dt;session.angle=TURN*Math.max(0,session.success/.65);
+        if(session.success<=0){session.phase='turn';session.angle=0;canvas.style.cursor='grab';}
+      }
       if(session.phase==='success'){session.success-=dt;if(session.success<=0)close(true);}
     }
     function charm(kind,x,y,scale=1,angle=0) {
@@ -150,7 +163,7 @@
       ctx.strokeStyle=success?'#addb99':'#a786c1';ctx.lineWidth=2;ctx.beginPath();ctx.arc(LOCK.x,LOCK.y,29,-Math.PI/2,-Math.PI/2+TURN);ctx.stroke();
       ctx.fillStyle='#080c12';ctx.beginPath();ctx.arc(365,157,5,0,Math.PI*2);ctx.fill();
       if(success){ctx.shadowColor='#b6ef91';ctx.shadowBlur=9;}
-      ctx.fillStyle=success?'#c2ef9f':'#5c513d';ctx.beginPath();ctx.arc(365,157,3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      ctx.fillStyle=success?'#c2ef9f':s.phase==='failed'?'#ef795e':'#5c513d';ctx.beginPath();ctx.arc(365,157,3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
       const cylinder=ctx.createLinearGradient(LOCK.x-17,LOCK.y-17,LOCK.x+17,LOCK.y+17);
       cylinder.addColorStop(0,'#c7d1d0');cylinder.addColorStop(.3,'#7c8b98');cylinder.addColorStop(.5,'#b2bfc3');cylinder.addColorStop(1,'#4b5b69');
       ctx.fillStyle='#050a12';ctx.beginPath();ctx.arc(LOCK.x,LOCK.y,19,0,Math.PI*2);ctx.fill();
@@ -188,6 +201,7 @@
       ctx.restore();
     }
     return {open,close,down,move,up,key,update,draw,
+      reset(){failures=0;},
       cancelDrag(){if(session?.drag)up({pointerId:session.drag.id,type:'pointercancel'});},
       get active(){return session!==null;},
       get viewport(){return viewport();},

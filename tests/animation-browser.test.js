@@ -79,6 +79,20 @@ async function main(){
       check(!document.fullscreenElement&&!!document.querySelector('#fullscreen-toggle')&&!document.body.classList.contains('game-fullscreen'),'Game must start inside the page with optional fullscreen');
       document.querySelector('#start-game').click();
       check(!document.fullscreenElement,'Starting must not enter fullscreen');
+      bikeInspectOpen=true;bikeInspectTab='Motor';startBikeService('motor',2);
+      check(bikeService.job[2]==='engineHole','Engine hole replaces circuit clearing');
+      finishFrame(0,.016);
+      const fuelBeforeLeak=fuel;updateBikeCondition(1,0);
+      check(fuel<fuelBeforeLeak,'Damaged housing leaks in the actual game');
+      for(let point=1;point<=4;point++) {
+        keyDown({key:String(point),repeat:false,preventDefault(){}});
+        for(let dose=0;dose<8&&bikeService.phase==='play';dose++) {
+          keyDown({key:'e',repeat:false,preventDefault(){}});updateBikeService(.2);
+          finishFrame(dose*.2,.016);
+        }
+      }
+      check(bikeService.phase==='done'&&bikeFuelLeakRate()===0,'Keyboard seals all four points and stops the leak');
+      startGame();
       bikeEngineRunning=true;bike.steering=.5;
       check(bikeSpriteSheets[1].width*bikeSpriteSheets[1].height===16*128*128,'Mounted atlas stores only the 16 visible poses');
       for(let direction=0;direction<128;direction+=8){

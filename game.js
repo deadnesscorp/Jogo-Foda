@@ -6,10 +6,14 @@
   let RENDER_SCALE = 2;
   const DISPLAY_W=640,DISPLAY_H=360;
   const ACTOR_VISUAL_SCALE=.75;
+  // Temporary starting condition for testing ignition failures; restore to 100 afterward.
+  const BIKE_TEST_START_CONDITION=20;
   let W=DISPLAY_W,H=DISPLAY_H,gameScene=gameSceneViewport('title');
   const ignition=createBikeIgnition({canvas,ctx,width:W,height:H,
+    getCondition:()=>bikeParts.motor*.7+bikeLife*.3,
     onStart:()=>{keys.clear();bike.speed=0;if(fuel<=0||bikeLife<=0){dismount();setToast('VERIFIQUE O COMBUSTÍVEL E O ESTADO DA MOTO.');return;}bikeEngineRunning=true;bikeRpm=1000;setToast('MOTO LIGADA — BOA VIAGEM!');updateObjective();},
-    onCancel:()=>{keys.clear();dismount();}
+    onCancel:()=>{keys.clear();setToast('PARTIDA CANCELADA — F PARA TENTAR NOVAMENTE.');updateObjective();},
+    onFail:()=>setToast('O MOTOR NÃO PEGOU — GIRE A CHAVE NOVAMENTE.')
   });
   ctx.scale(RENDER_SCALE, RENDER_SCALE);
   const spriteAtlas=SURVIVOR_ATLAS_128;
@@ -487,7 +491,7 @@
     motor: [
       ['Ignição fora de ponto', 'Sincronizar ignição', 'timing', 'Pare o marcador dentro da faixa verde, três vezes.'],
       ['Válvulas desreguladas', 'Regular válvulas', 'sequence', 'Pegue pelo cabo e arraste para cima ou para baixo. Confirme entre 0,10 e 0,15 mm.'],
-      ['Circuito de óleo obstruído', 'Desobstruir circuito', 'route', 'Ligue os trechos: gire cada conexão até formar uma linha.'],
+      ['Motor furado / vazamento de gasolina', 'Vedar furo do motor', 'engineHole', 'Segure sobre cada ponto para vedar. Teclado: 1–4 seleciona, E aplica.'],
       ['Mistura irregular', 'Ajustar mistura', 'balance', 'Use − / + para estabilizar a mistura no centro por 3 segundos.']
     ],
     tire: [
@@ -769,6 +773,7 @@
   function startGame() {
     startHour = Math.floor(Math.random() * 1440) / 60;
     bikeVisualFacings.clear();
+    ignition.reset();
     state = 'drive'; gameTime = 0; lastTime = 0; activeTower = 0; network = 0;
     bike.x = 180; bike.y = 3300; bike.angle = .87; bike.speed = 0; bike.wheel = 0; bike.steering=0;
     bikeGear=1;bikeShiftCooldown=0;bikeShiftFlash=0;bikeRpm=0;bikeEngineRunning=false;
@@ -778,6 +783,11 @@
     repairKits = 1; bikeLife = 100; bikeWearClock = 0; bikeCrashCooldown = 0; Object.keys(bikeParts).forEach(part => bikeParts[part] = 100);
     bikeInspectOpen = false;
     bikeService = null; Object.values(bikeFaults).forEach(faults => faults.fill(100));
+    bikeLife=BIKE_TEST_START_CONDITION;
+    Object.keys(bikeParts).forEach(part=>{
+      bikeParts[part]=BIKE_TEST_START_CONDITION;
+      bikeFaults[part].fill(BIKE_TEST_START_CONDITION);
+    });
     generateMapLayout(); camera.x = player.x; camera.y = player.y;
     supplies.forEach(s => { s.found = false; s.available = s.type === 'fuel' ? Math.random() < .28 : Math.random() < .24; });
     towers.forEach(t => t.disabled = false);
@@ -810,9 +820,12 @@
   function switchOffBike() {
     if(state!=='drive'||(!mounted&&distance(player,bike)>43))return;
     if(Math.abs(bike.speed)>2){setToast('PARE A MOTO ANTES DE DESLIGAR.');return;}
-    if(!bikeEngineRunning){setToast('SUBA NA MOTO PARA DAR A PARTIDA.');return;}
+    if(!bikeEngineRunning){
+      if(mounted){keys.clear();ignition.open();setObjective('Encaixe a chave e gire para ligar a moto.',activeTower);}
+      return;
+    }
     bikeEngineRunning=false;bikeRpm=0;bike.speed=0;keys.clear();
-    setToast('MOTOR DESLIGADO. DESÇA E SUBA PARA DAR A PARTIDA.');
+    setToast('MOTOR DESLIGADO — F PARA DAR A PARTIDA.');
   }
   function startGrappleAim() {
     if (!grappleAvailable) { setToast('APROXIME A MOTO DE UMA PERNA E MANTENHA O RITMO'); return; }
@@ -879,7 +892,7 @@
       if (nearbyBuilding(player.x, player.y) >= 0) { setToast('PROCURE A PORTA DA CONSTRUÇÃO PARA ENTRAR.'); return; }
       if (distance(player, bike) < 43) {
         if (bikeLife <= 0 && repairKits <= 0) { setToast('MOTO AVARIADA — PROCURE UM KIT DE REPARO'); return; }
-        if (bikeLife < 75 || Object.values(bikeParts).some(value => value < 70)) {
+        if (bikeLife <= 0) {
           bikeInspectOpen = true; bikeInspectTab = 'Info'; keys.clear(); return;
         }
         mount(); return;
@@ -975,7 +988,7 @@
         if (/^[1-8]$/.test(key)) bikeServiceAction(Number(key)-1);
         else if (['arrowleft','a','-'].includes(key)) bikeServiceAction(0);
         else if (['arrowright','d','+','='].includes(key)) bikeServiceAction(1);
-        else if (['e',' ','enter'].includes(key)) bikeServiceAction(2);
+        else if (['e',' ','enter'].includes(key)) bikeServiceAction(bikeService.job[2]==='engineHole'?4:2);
       }
       return;
     }
@@ -1261,8 +1274,40 @@
     objects.sort((a, b) => a.depth - b.depth).forEach(o => o.draw());
   }
 
+  function drawBikeExhaust(x,y,angle,speed,time,facing) {
+    const dt=Math.max(0,Math.min(.05,time-(facing.exhaustTime??time)));
+    facing.exhaustTime=time;
+    const puffs=facing.exhaustPuffs??(facing.exhaustPuffs=[]);
+    const forwardX=Math.sin(angle),forwardY=-Math.cos(angle);
+    for(let i=puffs.length-1;i>=0;i--) {
+      const p=puffs[i];p.age+=dt;
+      p.x+=(p.vx-forwardX*speed)*dt;p.y+=(p.vy-forwardY*speed)*dt;
+      if(p.age>=p.life)puffs.splice(i,1);
+    }
+    const running=bikeEngineRunning&&fuel>0&&bikeLife>0;
+    if(running) {
+      const power=Math.max(0,Math.min(1,(bikeRpm-1000)/6000));
+      facing.exhaustClock=(facing.exhaustClock||0)+dt;
+      const interval=.16-power*.08;
+      while(facing.exhaustClock>=interval&&puffs.length<32) {
+        facing.exhaustClock-=interval;
+        puffs.push({x:(-forwardX*13+Math.cos(angle)*5)*ACTOR_VISUAL_SCALE,
+          y:(-forwardY*13+Math.sin(angle)*5)*ACTOR_VISUAL_SCALE-2,
+          vx:-forwardX*(8+power*9)+3,vy:-forwardY*(8+power*9)-8,
+          age:0,life:.85+power*.25,power});
+      }
+    } else facing.exhaustClock=0;
+    ctx.save();
+    for(const p of puffs) {
+      const progress=p.age/p.life,radius=(1.1+progress*(4+p.power*2))*ACTOR_VISUAL_SCALE;
+      ctx.fillStyle=`rgba(167,175,171,${(1-progress)*(.24+p.power*.1)})`;
+      ctx.beginPath();ctx.ellipse(x+p.x,y+p.y,radius,radius*.8,0,0,Math.PI*2);ctx.fill();
+    }
+    ctx.restore();
+  }
   function drawBike(x, y, angle, speed, time, view = 'world') {
     const facing = smoothBikeFacing(angle, time, view);
+    drawBikeExhaust(x,y,facing.angle,speed,time,facing);
     if (!bikeSpritesReady()) {
       ctx.save();ctx.translate(x,y+5);ctx.scale(ACTOR_VISUAL_SCALE,ACTOR_VISUAL_SCALE);
       drawBikeFallback(0,-5,angle,speed,time);ctx.restore();
@@ -1328,6 +1373,12 @@
   function bikePartColor(value) {
     return value >= 100 ? '#edf1e5' : value >= 72 ? '#78d49a' : value >= 38 ? '#e5a44e' : '#e26052';
   }
+  function bikeHoleSeverity() {
+    return Math.max(0,Math.min(1,(95-bikeFaults.motor[2])/95));
+  }
+  function bikeFuelLeakRate() {
+    return .35*bikeHoleSeverity()**2;
+  }
   function damageBikePart(part, amount, impact = false) {
     if (impact) {
       const faults=bikeFaults[part].map((value,index)=>value>0?index:-1).filter(index=>index>=0);
@@ -1338,6 +1389,8 @@
     bikeParts[part] = bikeFaults[part].reduce((a,b)=>a+b,0)/4;
   }
   function updateBikeCondition(dt,speed=0) {
+    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt);
+    if(fuel<=0)bikeEngineRunning=false;
     bikeCrashCooldown=Math.max(0,bikeCrashCooldown-dt);
     const moving=Math.abs(speed)>8;
     if(moving)bikeWearClock+=dt;
@@ -1371,11 +1424,20 @@
       part, index, pulse:0, job: jobsForBikePart(part)[index], practice, clock: 0, progress: 0, mistakes: 0,
       value: 0, stable: 0, phase: 'play', message: '', selected: -1,
       sequence: Array.from({length:4},()=>Math.floor(Math.random()*4)),
-      cells: [1,2,3,1].sort(()=>Math.random()-.5),
       remaining: [3,3,3,3], cure:[0,0,0,0], sandWork:[0,0,0,0], order: [2,0,3,1].sort(()=>Math.random()-.5),
       links: [2,0,3,1], done: [false,false,false,false]
     };
     if (bikeService.job[2] === 'pressure') bikeService.value = 16;
+    if (bikeService.job[2] === 'engineHole') {
+      const severity=bikeHoleSeverity(),radius=12+severity*17;
+      bikeService.holeRadius=radius;
+      bikeService.sealTime=.5+severity*.9;
+      bikeService.sealWork=[0,0,0,0];
+      bikeService.holes=Array.from({length:4},(_,i)=>{
+        const a=i*Math.PI/2-Math.PI/2;
+        return [240+Math.cos(a)*(radius+6),161+Math.sin(a)*(radius+6)];
+      });
+    }
     if (bikeService.job[2] === 'patch') {
       // Randomize within the rubber annulus, keeping patches separated and reachable.
       const count=1+Math.floor(Math.random()*3),angle=Math.random()*Math.PI*2;
@@ -1415,7 +1477,7 @@
     s.message = '';
     s.pulse=.3;
     const mode = s.job[2];
-    if (!Number.isInteger(choice) || choice < 0 || choice >= (mode === 'wires' ? 8 : 4)) return;
+    if (!Number.isInteger(choice) || choice < 0 || choice >= (mode === 'wires' ? 8 : mode==='engineHole'?5:4)) return;
     if (mode === 'timing') {
       if(s.clock-(s.lastHit??-1)<.4){s.message='Espere o próximo ciclo de ignição.';return;}
       if (Math.min(Math.abs(Math.sin(s.clock*2.2)),Math.abs(Math.cos(s.clock*2.2))) < .25) { s.lastHit=s.clock;s.progress++; if (s.progress === 3) completeBikeService(); }
@@ -1424,8 +1486,14 @@
       if(choice<2){const step=s.value>110?100:s.value>25?10:1;s.value=Math.max(0,Math.min(2200,s.value+(choice===0?-step:step)));}
       else if(s.value>=10&&s.value<=15){s.progress++;s.value=(Math.random()<.5?1:22);if(s.progress===4)completeBikeService();}
       else bikeServiceMiss('A lâmina deve passar com leve resistência: 0,10–0,15 mm.');
-    } else if (mode === 'route') {
-      s.cells[choice] = (s.cells[choice]+1)%4; if(s.cells.every(v=>v%2===0)) completeBikeService();
+    } else if (mode === 'engineHole') {
+      if(choice===4&&s.selected>=0) {
+        // Keyboard applies sealant gradually; holding E cannot bypass the repair.
+        const index=s.selected;
+        if(s.clock-(s.lastSeal??-1)<.18)return;
+        s.lastSeal=s.clock;
+        s.sealWork[index]=Math.min(s.sealTime,s.sealWork[index]+.2);
+      } else if(choice<4)s.selected=choice;
     } else if (mode === 'balance') {
       if(choice<2) s.value = Math.max(-1,Math.min(1,s.value+(choice===0?-.12:.12)));
     } else if (mode === 'pressure' || mode === 'torque' || mode === 'align') {
@@ -1470,6 +1538,15 @@
     s.clock+=dt;
     s.pulse=Math.max(0,s.pulse-dt);
     s.cure=s.cure.map(value=>Math.max(0,value-dt));
+    if(s.job[2]==='engineHole') {
+      const d=s.drag;
+      if(d?.kind==='seal') {
+        const [x,y]=s.holes[d.index];
+        if(Math.hypot(d.x-x,d.y-y)<=14)s.sealWork[d.index]=Math.min(s.sealTime,s.sealWork[d.index]+dt);
+      }
+      s.progress=s.sealWork.filter(work=>work>=s.sealTime).length;
+      if(s.progress===4){completeBikeService();s.drag=null;}
+    }
     if(s.drag?.kind==='press') {
       const d=s.drag,[x,y]=s.holes[d.index];
       if(s.cure[d.index]<=0&&Math.hypot(d.x-x,d.y-y)<14) {
@@ -1508,6 +1585,7 @@
       if(bikeService.phase!=='play')return;
       if(beginBikeServiceGesture(event,x,y))return;
       const mode=bikeService.job[2];
+      if(mode==='engineHole')return;
       if(mode==='bearings') {
         if(x>=170&&x<=310&&y>=120&&y<=212)bikeServiceAction(0);
         return;
@@ -1568,12 +1646,13 @@
     const s=bikeService;if(!s)return 'wrench';
     const mode=s.job[2];
     if(mode==='bearings'&&s.bearingStage==='hammer')return 'mallet';
+    if(mode==='engineHole')return 'glue';
     if(mode==='patch') {
       const ready=s.remaining.findIndex((stage,i)=>!s.done[i]&&s.cure[i]<=0);
       const index=s.drag?.index??(s.hoverIndex>=0?s.hoverIndex:ready);
       return s.remaining[Math.max(0,index)]===3?'sandpaper':s.remaining[Math.max(0,index)]===2?'glue':'patch';
     }
-    return ({clean:'brush',pressure:'pump',wires:'pliers',sequence:'gauge',route:'screwdriver',balance:'screwdriver',timing:'screwdriver',bearings:'patch',align:'wrench',torque:'wrench',bolts:'wrench'})[mode]||'wrench';
+    return ({clean:'brush',pressure:'pump',wires:'pliers',sequence:'gauge',balance:'screwdriver',timing:'screwdriver',bearings:'patch',align:'wrench',torque:'wrench',bolts:'wrench'})[mode]||'wrench';
   }
   function syncBikeServiceCursor() {
     if(bikeWorkshopWindow.drag){canvas.style.cursor='grabbing';return;}
@@ -1635,6 +1714,10 @@
     if((y<116||y>212)&&!grip)return false;
     let kind='',index=-1,cx=240,cy=153;
     if(mode==='bearings')return false;
+    if(mode==='engineHole') {
+      index=s.holes.findIndex(([px,py])=>Math.hypot(x-px,y-py)<=14);
+      if(index>=0&&s.sealWork[index]<s.sealTime){kind='seal';s.selected=index;}
+    }
     if(mode==='torque'&&Math.hypot(x-cx,y-cy)<61)kind='turn';
     if(mode==='pressure'&&x>304&&x<399&&y<181)kind='pump';
     if(mode==='align'&&x>110&&x<370&&y<178)kind='align';
@@ -1828,6 +1911,47 @@
     button('− [←]',100,182);button('+ [→]',190,182);button('Confirmar [E]',280,182,85);
     text(mode==='torque'?'Gire sem exceder o torque e confirme.':mode==='pressure'?'Bombeie com movimentos completos; − alivia a pressão.':mode==='align'?'Compare a roda com a linha de referência.':'Cima diminui a folga; baixo aumenta. Confirme com E.',80,220,7,'#b6c6c2');
   }
+  function drawBikeEngineHoleService(s,text) {
+    ctx.save();
+    const metal=ctx.createLinearGradient(0,119,0,222);
+    metal.addColorStop(0,'#617079');metal.addColorStop(.5,'#29363e');metal.addColorStop(1,'#17242b');
+    ctx.fillStyle=metal;ctx.strokeStyle='#9ca8a6';ctx.lineWidth=1;
+    ctx.beginPath();ctx.roundRect(153,119,174,86,9);ctx.fill();ctx.stroke();
+    for(let i=0;i<6;i++){ctx.fillStyle='#121e25';ctx.fillRect(159,124+i*13,162,3);}
+    const radius=s.holeRadius;
+    ctx.fillStyle='#070d10';ctx.strokeStyle='#c39b74';ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let i=0;i<16;i++){
+      const a=i*Math.PI/8,r=radius*(i%2?.83:1);
+      const x=240+Math.cos(a)*r,y=161+Math.sin(a)*r;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.closePath();ctx.fill();ctx.stroke();
+    const severity=bikeHoleSeverity(),drops=Math.ceil(severity*6);
+    if(fuel>0)for(let i=0;i<drops;i++){
+      const t=(s.clock*(.7+severity)+i/drops)%1;
+      ctx.fillStyle=`rgba(219,177,89,${(1-t)*.8})`;
+      ctx.beginPath();ctx.ellipse(237+Math.sin(i*4)*radius*.3,170+t*38,1+severity,2+severity,0,0,Math.PI*2);ctx.fill();
+    }
+    s.holes.forEach(([x,y],i)=>{
+      const fraction=s.sealWork[i]/s.sealTime,done=fraction>=1;
+      ctx.fillStyle=done?'#87ad8a':'#382f38';ctx.strokeStyle=s.selected===i?'#ecd99a':'#a5aaa3';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(x,y,10,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='#afc79c';ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(x,y,11,-Math.PI/2,-Math.PI/2+fraction*Math.PI*2);ctx.stroke();
+      text(done?'OK':String(i+1),x-4,y+3,6,done?'#13251c':'#f0e2c6');
+    });
+    text('FURO NO MOTOR',54,134,8,'#e7bc92');
+    text('Tamanho: '+Math.round(severity*100)+'%',54,150,7,'#c6b4a0');
+    text('Gasolina perdida:',54,170,7,'#c6b4a0');
+    text((bikeFuelLeakRate()*60).toFixed(1)+'% / min',54,184,9,'#e5b76f');
+    text('VEDAÇÃO',349,138,7,'#c3d3c4');
+    text(s.progress+'/4 pontos',349,154,8,'#b8d4ab');
+    text('Segure o mouse',339,178,6,'#b5c2be');
+    text('sobre os pontos.',339,189,6,'#b5c2be');
+    text('1–4 seleciona · E aplica selante · concluir estanca o vazamento',54,221,6,'#b9c8c1');
+    ctx.restore();
+  }
   function drawBikeEngineService(s,mode,text,button) {
     const metal=ctx.createLinearGradient(0,118,0,215);
     metal.addColorStop(0,'#394950');metal.addColorStop(.45,'#202d33');metal.addColorStop(1,'#111c21');
@@ -1842,38 +1966,7 @@
       ctx.fillStyle='#0c151a';ctx.beginPath();ctx.arc(x,y,2.6,0,Math.PI*2);ctx.fill();
       ctx.strokeStyle='#829298';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(x-1.4,y+1);ctx.lineTo(x+1.4,y-1);ctx.stroke();
     });
-    if(mode==='route') {
-      let flowing=true;
-      s.cells.forEach((cell,i)=>{
-        const x=55+i*92,cx=x+41,cy=159,open=cell%2===0;
-        const supplied=flowing;flowing=flowing&&open;
-        ctx.fillStyle='#0a1318';ctx.fillRect(x,128,82,69);
-        ctx.strokeStyle=open?'#547c72':'#66564b';ctx.strokeRect(x+.5,128.5,81,68);
-        // Main oil gallery remains visible between the rotating access ports.
-        ctx.strokeStyle='#0b0e10';ctx.lineWidth=12;ctx.beginPath();ctx.moveTo(x-5,cy);ctx.lineTo(x+87,cy);ctx.stroke();
-        ctx.strokeStyle='#71818a';ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(x-5,cy);ctx.lineTo(x+87,cy);ctx.stroke();
-        ctx.strokeStyle='#17272c';ctx.lineWidth=6;ctx.stroke();
-        ctx.save();ctx.translate(cx,cy);ctx.rotate(cell*Math.PI/2);
-        ctx.fillStyle='#233039';ctx.strokeStyle='#72868e';ctx.lineWidth=1.2;
-        ctx.beginPath();ctx.arc(0,0,21,0,Math.PI*2);ctx.fill();ctx.stroke();
-        ctx.strokeStyle='#0a1115';ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(-21,0);ctx.lineTo(21,0);ctx.stroke();
-        ctx.strokeStyle=supplied&&open?'#cc9b4e':'#39484c';ctx.lineWidth=4;ctx.stroke();
-        if(supplied&&open)for(let j=0;j<3;j++){
-          const px=-21+((s.clock*25+j*14+i*7)%42);
-          ctx.fillStyle='#f5d788';ctx.fillRect(px,-1,4,2);
-        }
-        ctx.fillStyle='#88999e';ctx.fillRect(-2,-16,4,5);ctx.fillRect(-2,11,4,5);
-        ctx.restore();
-        if(!open){ctx.fillStyle='#a47546';for(let j=0;j<5;j++)ctx.fillRect(cx-11+j*5,cy-3+(j%2)*4,3,3);}
-        text('0'+(i+1)+' / '+(open?'LIVRE':'BLOQUEADO'),x+7,139,5.5,open?'#9fc4af':'#cfa77e');
-        text(open?'FLUXO ALINHADO':'GIRAR CONEXÃO',x+8,188,5.5,open?'#83b69b':'#a7b6bd');
-        ctx.fillStyle=flowing?'#76bc94':'#38464a';ctx.fillRect(x+8,201,66,2);
-      });
-      const count=s.cells.filter(v=>v%2===0).length;
-      text('ÓLEO  →',59,214,6,'#ddb369');
-      text('Clique nas conexões ou use 1–4',161,214,6,'#a9bbc0');
-      text(count+'/4 livres',365,214,6,'#92b9a3');
-    } else if(mode==='timing') {
+    if(mode==='timing') {
       const cx=133,cy=167,r=39,phase=s.clock*2.2,ready=Math.min(Math.abs(Math.sin(phase)),Math.abs(Math.cos(phase)))<.25;
       ctx.fillStyle='#080f14';ctx.strokeStyle='#576d76';ctx.lineWidth=1.4;
       ctx.beginPath();ctx.arc(cx,cy,r+5,0,Math.PI*2);ctx.fill();ctx.stroke();
@@ -2260,7 +2353,9 @@
 
       } else if(['pressure','torque','align','sequence'].includes(mode)) {
         drawBikeServiceInstrument(s,mode,text,button);
-      } else if(['timing','balance','route'].includes(mode)) {
+      } else if(mode==='engineHole') {
+        drawBikeEngineHoleService(s,text);
+      } else if(['timing','balance'].includes(mode)) {
         drawBikeEngineService(s,mode,text,button);
       } else if(mode==='patch') {
         drawBikePatchService(s,text);
@@ -2272,23 +2367,18 @@
           ctx.fillStyle='#211b26';ctx.fillRect(x,128,82,69);ctx.strokeStyle='#9b6cac';ctx.strokeRect(x,128,82,69);
           let label='';
           if(mode==='sequence')label=s.phase==='memorize'?String(s.sequence[i]+1):String(i+1);
-          if(mode==='route')label=['──','│','──','│'][s.cells[i]];
           if(mode==='clean')label=s.remaining[i]?'SUJEIRA '+s.remaining[i]+'/3':'✓ LIMPO';
           if(mode==='clean') {
             for(let j=0;j<s.remaining[i]*4;j++){ctx.fillStyle='#796044';ctx.fillRect(x+6+(j*17)%67,135+(j*11)%46,3,2);}
             if(s.pulse>0){const bx=x+15+Math.sin(s.clock*25)*8;ctx.fillStyle='#b7a48b';ctx.fillRect(bx,137,26,5);ctx.fillStyle='#ded2b5';for(let j=0;j<7;j++)ctx.fillRect(bx+j*4,142,1,9);}
           }
-          if(mode==='route') {
-            ctx.save();ctx.translate(x+41,149);ctx.rotate(s.cells[i]*Math.PI/2);ctx.strokeStyle='#6c8993';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(-31,0);ctx.lineTo(31,0);ctx.stroke();
-            ctx.fillStyle='#d6b36a';ctx.fillRect(-30+(s.clock*25)%60,-1,5,2);ctx.restore();
-          }
           if(mode==='bearings') {
             ctx.strokeStyle='#dbb4ef';ctx.beginPath();ctx.arc(x+41,153,7+s.order[i]*4,0,Math.PI*2);ctx.stroke();
             label=s.order[i]<s.progress?'✓':'Ø '+(s.order[i]+1)*10;
           }
-          text(label,x+9,mode==='bearings'?188:166,mode==='route'?22:9);
+          text(label,x+9,mode==='bearings'?188:166,9);
         }
-        text(mode==='sequence'?(s.phase==='memorize'?'MEMORIZE · os números somem em 4 segundos':'Repita: '+s.progress+'/4 · teclas 1 a 4'):mode==='route'?'Clique para girar as conexões · teclas 1 a 4':mode==='bolts'?'Ordem de aperto em cruz: 1 → 2 → 3 → 4':'Clique nas peças · teclas 1 a 4',65,216,8);
+        text(mode==='sequence'?(s.phase==='memorize'?'MEMORIZE · os números somem em 4 segundos':'Repita: '+s.progress+'/4 · teclas 1 a 4'):mode==='bolts'?'Ordem de aperto em cruz: 1 → 2 → 3 → 4':'Clique nas peças · teclas 1 a 4',65,216,8);
       }
       text(s.message,30,110,7,'#f2bf8d');button('Cancelar / Esc',30,229,130);
       return;
@@ -2532,9 +2622,9 @@
     }
     drawMinimap(); drawSurvivalHud();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? 'W ACELERA · S FREIA/RÉ · A/D VIRA · Q/R MARCHA · F DESLIGA · E DESCE' : 'W A S D MOVER  ·  E EXPLORAR / MOTO', W - 12, H - 7);
+    ctx.fillText(mounted ? `W ACELERA · S FREIA/RÉ · A/D VIRA · Q/R MARCHA · F ${bikeEngineRunning?'DESLIGA':'LIGA'} · E DESCE` : 'W A S D MOVER  ·  E EXPLORAR / MOTO', W - 12, H - 7);
     if (!mounted && nearbyEntrance(player.x, player.y) >= 0) hint('E  ENTRAR PELA PORTA', W / 2, 31, time);
-    else if (!mounted && distance(player,bike)<55 && (bikeLife<75 || Object.values(bikeParts).some(value=>value<70))) hint(repairKits>0?'E  USAR KIT E REPARAR A MOTO':'PROCURE UM KIT DE FERRAMENTAS',W/2,31,time);
+    else if (!mounted && distance(player,bike)<55 && (bikeLife<75 || Object.values(bikeParts).some(value=>value<70))) hint(repairKits>0?'F  REPARAR MOTO · E  MONTAR':'F  INSPECIONAR · PROCURE UM KIT',W/2,31,time);
     else if (tower && !mounted && distance(player, bike) < 55) hint('E  MONTAR NA MOTO', W / 2, 31, time);
     else if (tower && mounted && distance(bike, tower) < 205) hint('APROXIME-SE PARA INICIAR A PERSEGUIÇÃO', W / 2, 31, time);
     if (!mounted && distance(player,bike)<85) hint('F  INSPECIONAR MOTO',W/2,50,time);
