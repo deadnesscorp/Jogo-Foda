@@ -1,6 +1,10 @@
 # Jogo-Foda
 Um jogo que deve rodar no navegador
 
+Pressione **P** ou clique no botão **Tela cheia** para alternar a exibição. **Esc** também sai da tela cheia. O jogo abre dentro da página e só expande quando solicitado.
+
+Segure **Shift** junto com WASD ou as setas para correr a pé, tanto no mapa quanto dentro dos prédios. Caminhada: **20 km/h**; corrida: **40 km/h**, usando a mesma conversão do painel da moto. Esses são os valores com fome e sede cheias; a condição do personagem pode reduzi-los. Soltar Shift volta à caminhada. A diagonal mantém a mesma velocidade, e as colisões continuam ativas.
+
 ## Manutenção da moto
 
 Desmonte da moto, aproxime-se e pressione F. As abas Motor, Pneus e Guidão mantêm os diagnósticos existentes. Clique em um serviço para reparar.
@@ -22,4 +26,8 @@ A partida começa a pé, ao lado da moto desligada. O minigame aparece somente a
 Verificação: node tests/ignition.test.js.
 
 ## Sobrevivente e moto em 128 direções
-O personagem foi redesenhado a partir da folha de referência, com capacete gasto, máscara, mochila e corda. A moto estacionada, o conjunto com piloto e o personagem a pé possuem 128 quadros transparentes por folha (384 no total), com transições de direção suavizadas e animação das botas ao caminhar. A prévia fica em assets/sprites-128/preview.html; detalhes e prompts em assets/sprites-128/README.md e prompts.json. Verificação: node tests/sprites-128.test.js.
+O personagem tem aparência andrógina, cabelo prateado curto, capacete escuro, máscara e uniforme angular, sem lenço vermelho. Roupa remendada, mochila costurada, botas reparadas e equipamento gasto mostram os efeitos da sobrevivência solitária. A caminhada usa 64 quadros completos: oito passos em oito direções, com braços e mochila acompanhando o movimento. Parado e na moto, são usadas 16 poses estáveis, mantendo a escala e a posição recuada no banco. A prévia animada fica em `assets/sprites-128/andar-preview.html`; detalhes e prompts em `assets/sprites-128/README.md` e `prompts.json`.
+
+O jogo abre dentro da página. As poses, máscaras do farol e sombras são reutilizadas; os prédios compartilham a geometria projetada entre sombra e desenho. Arquivos antigos, capturas sem uso e a pasta interna vazia foram removidos.
+
+Verificações: `node tests/sprites-128.test.js`, `node tests/render-cache.test.js`, `node tests/bike-maintenance.test.js`, `node tests/ignition.test.js` e `node tests/display.test.js`. O teste `node tests/animation-browser.test.js` usa Chrome ou Edge instalado para conferir a renderização e gerar uma prévia, sem instalar dependências.

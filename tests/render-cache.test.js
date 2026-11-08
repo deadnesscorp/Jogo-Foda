@@ -30,17 +30,32 @@ function runRenderCacheTests(source) {
   check(!api.visible(shape(100,-200))&&!api.visible(shape(100,1000)),'buildings beyond vertical limits are skipped');
   check(api.visible(shape(100,500,200)),'tall building remains visible when its base is below screen');
   check(api.visible(shape(100,550,100)),'smoke and roof details retain a conservative margin');
+  const geometrySource=source.slice(source.indexOf('  const buildingGeometryCache='),source.indexOf('  function isoBuildingVisible('));
+  const geometry=new Function(`
+    let W=640,H=360,calls=0;const camera={x:0,y:0};
+    const projectPoint=(x,y)=>{calls++;return {x:W/2+x-camera.x,y:H/2+y-camera.y};};
+    ${geometrySource}
+    return {get:isoBuildingGeometry,get calls(){return calls;},move(){camera.x++;},resize(){W++;}};
+  `)();
+  const building=geometry.get(10,20,80,60,0),projections=geometry.calls;
+  check(geometry.get(10,20,80,60,0)===building&&geometry.calls===projections,'shadows and building rendering reuse the same projected geometry');
+  check(geometry.get(10,20,81,60,0)!==building,'changing a building invalidates its cached geometry');
+  geometry.move();const moved=geometry.get(10,20,80,60,0);
+  check(moved.base[0].x===building.base[0].x-1,'moving the camera reprojects cached buildings');
+  geometry.resize();check(geometry.get(10,20,80,60,0)!==moved,'resizing invalidates projected geometry');
   const bikeDrawing=source.slice(source.indexOf('  function drawBike(x,'),source.indexOf('  function drawBikeFallback('));
   const blended=new Function(`
     let RENDER_SCALE=2,bikeBlendStamp='',blends=0,clears=0,mounted=false;
-    const positions=[],ctx={save(){},restore(){},drawImage(image,x,y){positions.push([x,y]);}};
+    const bike={steering:.5},bikeEngineRunning=true,ACTOR_VISUAL_SCALE=.75;
+    ${source.slice(source.indexOf('  function bikeMotion('),source.indexOf('  function smoothBikeFacing('))}
+    const positions=[],ctx={save(){},restore(){},translate(){},transform(){},drawImage(image,x,y){positions.push([x,y]);}};
     const bikeBlendLayer={width:320,height:320},bikeBlendContext={setTransform(){},clearRect(){clears++;},drawImage(){blends++;}};
-    const bikeSpritesReady=()=>true,smoothBikeFacing=angle=>({angle,direction:0}),bikeSpritePose=()=>({direction:0,frame:0});
-    const bikeDirectionBlend=angle=>({direction:Math.floor(angle),next:Math.floor(angle)+1,weight:.5});
+    const bikeSpritesReady=()=>true,smoothBikeFacing=angle=>({angle,direction:Math.floor(angle)});
+    const bikeOcclusionLayer={width:320,height:320},bikeOcclusionContext={clearRect(){},drawImage(){}};
     const bikeGroundLayout=(x,y)=>({sx:0,sy:0,sw:20,sh:20,left:x-10,top:y-20,width:20,height:20,contacts:[[x,y],[x+2,y]],riderOffsetX:0,riderOffsetY:0});
     const bikeSpriteSource=()=>({}),drawBikeContactShadow=()=>{},drawBikeGroundShadow=()=>{};
     ${bikeDrawing}
-    return {draw:drawBike,positions,get blends(){return blends;},get clears(){return clears;},resize(){bikeBlendStamp='';},mount(){mounted=true;}};
+    return {draw:drawBike,motion:bikeMotion,positions,get blends(){return blends;},get clears(){return clears;},resize(){bikeBlendStamp='';},mount(){mounted=true;}};
   `)();
   blended.draw(100,100,0,0,0);const draws=blended.blends;
   blended.draw(200,200,0,100,1);
@@ -51,6 +66,13 @@ function runRenderCacheTests(source) {
   check(blended.blends>beforeResize,'resizing invalidates cached sprite');
   const beforeMount=blended.blends;blended.mount();const rider=blended.draw(200,200,1,0,4);
   check(blended.blends>beforeMount&&rider.integrated,'mounting refreshes sprite and embeds rider in motorcycle');
+  const parked=blended.motion(0,1,false);
+  check(parked.compression===1&&parked.lean===0,'parked motorcycle stays still with engine off');
+  check(blended.motion(0,1,true).compression!==1,'mounted motorcycle has a subtle engine vibration');
+  for(const speed of [-300,30,110,300])for(let time=0;time<2;time+=.05){
+    const motion=blended.motion(speed,time,true);
+    check(Math.abs(motion.compression-1)<.014&&Math.abs(motion.lean)<=.055,'suspension and corner lean stay bounded at every speed');
+  }
   return assertions+' render cache checks passed';
 }
 if(typeof module!=='undefined'&&typeof require==='function') {

@@ -264,17 +264,19 @@ function runBikeMaintenanceTests(source) {
     check(fast.parts.frontTire<light.parts.frontTire,'stronger impacts cause greater damage');
   }
   {
-    const blendSource=source.slice(source.indexOf('  function bikeDirectionBlend('),source.indexOf('  function smoothBikeFacing('));
-    const blend=new Function('const BIKE_DIRECTION_COUNT=128,BIKE_DIRECTION_STEP=Math.PI*2/128;'+blendSource+';return bikeDirectionBlend;')();
+    const blendSource=source.slice(source.indexOf('  function smoothBikeFacing('),source.indexOf('  function bikeGroundLayout('));
+    const {blend,smooth}=new Function('const BIKE_DIRECTION_COUNT=128,BIKE_DIRECTION_STEP=Math.PI*2/128,VISUAL_DIRECTION_STRIDE=8,VISUAL_DIRECTION_STEP=BIKE_DIRECTION_STEP*8,bikeVisualFacings=new Map();'+blendSource+';return {blend:bikeSpritePose,smooth:smoothBikeFacing};')();
     const step=Math.PI*2/128;
     const before=blend(2*Math.PI-.000001),after=blend(.000001);
-    check(before.direction===127&&before.next===0&&after.direction===0,'sprite blend crosses full rotation without wrapping backwards');
+    check(before.direction===0&&after.direction===0,'rear pose stays intact across the full rotation wrap');
     for(const angle of [-.0001,0,step*.5,Math.PI,Math.PI*2,Math.PI*8+.2]){
       const p=blend(angle);
-      check(p.direction>=0&&p.direction<128&&p.next>=0&&p.next<128&&p.weight>=0&&p.weight<1,'orientation blend remains valid across angle wraps');
+      check(p.direction>=0&&p.direction<128&&p.direction%8===0,'orientation uses one complete pose across angle wraps');
     }
     const a=blend(step-.00001),b=blend(step+.00001);
-    check(a.next===b.direction&&a.weight>.999&&b.weight<.001,'neighboring sprites meet continuously at orientation boundary');
+    check(a.direction===b.direction,'nearby headings reuse a stable silhouette');
+    const initial=smooth(Math.PI/16-.01,0,'test').direction;
+    for(let i=1;i<=20;i++)check(smooth(Math.PI/16+(i%2?.01:-.01),i/60,'test').direction===initial,'steering jitter does not flicker between poses');
   }
   {
     const transmission=source.slice(source.indexOf('  const BIKE_GEAR_LIMITS='),source.indexOf('  const player ='));

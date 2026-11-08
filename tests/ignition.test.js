@@ -75,7 +75,7 @@ function runIgnitionTests(factory,source) {
     h.bike.speed=0;h.off();check(!h.running,'stationary motorcycle can be switched off');
     h.dismount();h.mount();check(h.opened===2,'mounting after switching off reopens ignition');
     h.dismount();h.player.x=200;h.mount();check(!h.mounted&&h.opened===2,'distant motorcycle cannot open ignition');
-    const frameSource=source.slice(source.indexOf('  function frame(now)'),source.indexOf('  function drawTowerScene()'));
+    const frameSource=source.slice(source.indexOf('  function frame(now)'),source.indexOf('\n  setObjective(',source.indexOf('  function frame(now)')));
     const createWorld=new Function('igniting','repairing',`
       let lastTime=1000,gameTime=0,fuel=100,bikeLife=100,bikeEngineRunning=false,hunger=100,thirst=100;
       let W=480,H=270,gameScene=null;const gameSceneViewport=()=>({x:0,y:0,width:480,height:270});
@@ -85,7 +85,7 @@ function runIgnitionTests(factory,source) {
       const ignition={active:igniting,update(){ignitionTicks++;}};
       const gameDisplay={sampleFrame(){}},updateBikeGearbox=()=>{},bikeControlsMounted=()=>false,distance=()=>0;
       const updateBikeService=()=>repairTicks++,updateBikeCondition=()=>wearTicks++,updateMachines=()=>machineTicks++;
-      const updateObjective=()=>{},active=()=>null,finishFrame=()=>rendered++,requestAnimationFrame=()=>{};
+      const updateObjective=()=>{},active=()=>null,finishFrame=()=>rendered++,requestAnimationFrame=()=>{},footMovementSpeed=()=>5/.52;
       ${frameSource}
       frame(1016);
       return {machineTicks,wearTicks,ignitionTicks,repairTicks,rendered,hunger,thirst};

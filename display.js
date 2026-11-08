@@ -25,39 +25,37 @@
   }
   function initGameDisplay({canvas,onResize}) {
     const frame=canvas.closest('.game-frame'),button=document.querySelector('#fullscreen-toggle');
-    let expanded=true;
-    document.body.classList.add('game-expanded');
+    let expanded=false,pending=false;
     const budget=createRenderBudget(()=>resize());
     function resize(){const bounds=canvas.getBoundingClientRect();onResize(gameRenderResolution(bounds.width,bounds.height,window.devicePixelRatio||1,budget.quality));}
+    function active(){return document.fullscreenElement===frame||expanded;}
     function sync(){
-      const active=document.fullscreenElement===frame||expanded;
-      button.setAttribute('aria-pressed',String(active));
-      button.setAttribute('aria-label',active?'Minimizar jogo':'Expandir jogo');
-      button.title=active?'Modo compacto (Alt + Enter)':'Expandir jogo (Alt + Enter)';
-      button.querySelector('span').textContent=active?'MINIMIZAR':'EXPANDIR';
-      requestAnimationFrame(resize);
+      document.body.classList.toggle('game-fullscreen',expanded);
+      if(button){
+        const label=active()?'Sair da tela cheia':'Tela cheia';
+        button.setAttribute('aria-pressed',String(active()));button.setAttribute('aria-label',label+' (P)');button.title=label+' (P)';
+        button.querySelector('span').textContent=active()?'SAIR':'TELA CHEIA';
+      }
+      resize();
     }
     async function toggle(){
-      try {
-        if(document.fullscreenElement===frame){expanded=false;document.body.classList.remove('game-expanded');await document.exitFullscreen();}
-        else if(expanded){expanded=false;document.body.classList.remove('game-expanded');}
-        else {expanded=true;document.body.classList.add('game-expanded');if(frame.requestFullscreen)await frame.requestFullscreen();}
-      } catch {
-        document.body.classList.toggle('game-expanded',expanded);
-      }
-      sync();
+      if(pending)return;
+      pending=true;const entering=!active();
+      try{
+        if(!entering){expanded=false;if(document.fullscreenElement===frame)await document.exitFullscreen();}
+        else if(frame.requestFullscreen)await frame.requestFullscreen();
+        else expanded=true;
+      }catch{if(entering)expanded=true;}
+      finally{pending=false;sync();}
     }
-    button.addEventListener('click',toggle);
+    button?.addEventListener('click',toggle);
     document.addEventListener('fullscreenchange',sync);
-    window.addEventListener('resize',resize);
     window.addEventListener('keydown',event=>{
-      if(event.altKey&&event.key==='Enter'){
-        event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)toggle();
-      }
+      if(event.key==='Escape'&&expanded){event.preventDefault();event.stopImmediatePropagation();expanded=false;sync();return;}
+      if(event.key.toLowerCase()!=='p'||event.ctrlKey||event.metaKey||event.altKey||event.target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName||''))return;
+      event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)return toggle();
     },true);
-    document.querySelector('#start-game')?.addEventListener('click',()=>{
-      if(expanded&&!document.fullscreenElement&&frame.requestFullscreen)frame.requestFullscreen().catch(()=>{});
-    });
+    window.addEventListener('resize',resize);
     if(window.ResizeObserver)new window.ResizeObserver(resize).observe(canvas);
     sync();
     return {sampleFrame(ms){if(!document.hidden)budget.sampleFrame(ms);},get quality(){return budget.quality;}};

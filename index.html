@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#111b20">
   <meta name="description" content="Um jogo de aventura em pixel art sobre reconectar a humanidade." />
   <title>OUTLINE — Além do Silêncio</title>
-  <link rel="stylesheet" href="style.css?v=20261106-display-2">
+  <link rel="stylesheet" href="style.css?v=20261108-fullscreen-p">
 </head>
-<body class="game-expanded">
+<body>
   <main class="game-shell">
     <header class="site-header">
       <a class="brand" href="#topo"><span class="brand-mark">O</span><span>OUTLINE<small>JOGO DE AVENTURA</small></span></a>
@@ -18,17 +18,14 @@
 
     <section class="game-frame" id="topo" aria-label="Jogo OUTLINE: Além do Silêncio">
       <canvas id="game" width="1280" height="720" aria-label="Jogo de aventura em pixel art com perspectiva isométrica"></canvas>
-      <button id="fullscreen-toggle" class="fullscreen-toggle" type="button" aria-label="Minimizar jogo" aria-pressed="true" title="Modo compacto (Alt + Enter)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/></svg>
-        <span>MINIMIZAR</span>
-      </button>
+      <button id="fullscreen-toggle" class="fullscreen-toggle" type="button" aria-label="Tela cheia (P)" aria-pressed="false" title="Tela cheia (P)"><span>TELA CHEIA</span><kbd>P</kbd></button>
       <button id="grapple-action" class="grapple-action" type="button" hidden>LANÇAR RAPEL</button>
       <div class="title-screen" id="title-screen">
         <div class="title-kicker"><span></span> UMA HISTÓRIA DE UM MUNDO DESLIGADO</div>
         <h1>ALÉM DO<br><em>SILÊNCIO</em></h1>
         <p>As máquinas cortaram a humanidade do resto do mundo.<br>Encontre o caminho. Suba. Reconecte tudo.</p>
         <button id="start-game" class="start-button" type="button"><span>▶</span> INICIAR MISSÃO</button>
-        <div class="title-controls">W A S D <span>—</span> MOVER <i>·</i> E <span>—</span> INTERAGIR</div>
+        <div class="title-controls">W A S D <span>—</span> MOVER <i>·</i> SHIFT <span>—</span> CORRER <i>·</i> E <span>—</span> INTERAGIR</div>
       </div>
       <div class="toast" id="toast" role="status"></div>
     </section>
@@ -36,14 +33,14 @@
     <section class="mission-bar" aria-live="polite">
       <div class="mission-objective"><span class="objective-index" id="objective-index">01</span><span><small>OBJETIVO ATUAL</small><strong id="objective">Chegue à primeira máquina de moto.</strong></span></div>
       <div class="mission-progress"><div class="progress-label"><span>REDE RESTAURADA</span><span id="network-count">0 / 3</span></div><div class="progress-track"><i id="network-progress"></i></div></div>
-      <div class="mission-controls"><kbd>W A S D</kbd><span>MOVER</span><kbd>E</kbd><span>INTERAGIR</span></div>
+      <div class="mission-controls"><kbd>W A S D</kbd><span>MOVER</span><kbd>SHIFT</kbd><span>CORRER</span><kbd>E</kbd><span>INTERAGIR</span></div>
     </section>
 
     <footer class="site-footer"><span>✦ <b>UMA FREQUÊNCIA DE CADA VEZ</b></span><span>FEITO PARA JOGAR NO NAVEGADOR <i>·</i> SEM INSTALAÇÃO</span></footer>
   </main>
-  <script src="assets/sprites-128/atlas.js?v=20261107-survivor-1"></script>
+  <script src="assets/sprites-128/atlas.js?v=20261108-survivor-walk-7"></script>
   <script src="ignition.js?v=20261106-key-3"></script>
-  <script src="display.js?v=20261106-sharpness-1"></script>
-  <script src="game.js?v=20261107-survivor-128"></script>
+  <script src="display.js?v=20261108-fullscreen-p"></script>
+  <script src="game.js?v=20261108-actors-75"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@
   ctx.imageSmoothingEnabled = false;
   let RENDER_SCALE = 2;
   const DISPLAY_W=640,DISPLAY_H=360;
+  const ACTOR_VISUAL_SCALE=.75;
   let W=DISPLAY_W,H=DISPLAY_H,gameScene=gameSceneViewport('title');
   const ignition=createBikeIgnition({canvas,ctx,width:W,height:H,
     onStart:()=>{keys.clear();bike.speed=0;if(fuel<=0||bikeLife<=0){dismount();setToast('VERIFIQUE O COMBUSTÍVEL E O ESTADO DA MOTO.');return;}bikeEngineRunning=true;bikeRpm=1000;setToast('MOTO LIGADA — BOA VIAGEM!');updateObjective();},
@@ -12,27 +13,32 @@
   });
   ctx.scale(RENDER_SCALE, RENDER_SCALE);
   const spriteAtlas=SURVIVOR_ATLAS_128;
-  const bikeSpriteSheets=['bike','mounted'].map(kind=>{
+  const bikeSpriteSheets=['bike'].map(kind=>{
     const image=new Image();image.src='assets/sprites-128/'+spriteAtlas[kind].file;return image;
   });
   const survivorSpriteSheet=new Image();survivorSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.file;
+  const survivorWalkSpriteSheet=new Image();survivorWalkSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.walk.file;
   function bikeSpriteSource(direction,riding=false){return bikeSpriteSheets[riding?1:0];}
   function bikeSpriteMetadata(riding=false){return spriteAtlas[riding?'mounted':'bike'];}
-  function bikeSpritesReady(){return bikeSpriteSheets.every(image=>image.complete&&image.naturalWidth>0);}
+  let mountedSpritesBuilt=false;
+  function bikeSpritesReady(){return mountedSpritesBuilt;}
   const BIKE_DIRECTION_COUNT=128,BIKE_SPRITE_COLUMNS=16;
   const BIKE_DIRECTION_STEP=Math.PI*2/BIKE_DIRECTION_COUNT;
+  const VISUAL_DIRECTION_STRIDE=8,VISUAL_DIRECTION_STEP=BIKE_DIRECTION_STEP*VISUAL_DIRECTION_STRIDE;
   const bikeSpriteBounds=spriteAtlas.bike.frames;
-  const bikeWheelContacts=spriteAtlas.bike.wheelContacts;
-  const bikeHeadlightAnchors=spriteAtlas.bike.headlightAnchors;
   const bikeVisualFacings = new Map();
   const bikeBlendLayer=document.createElement('canvas');
   bikeBlendLayer.width=160*RENDER_SCALE;bikeBlendLayer.height=160*RENDER_SCALE;
   const bikeBlendContext=bikeBlendLayer.getContext('2d');
+  const bikeOcclusionLayer=document.createElement('canvas');
+  bikeOcclusionLayer.width=bikeBlendLayer.width;bikeOcclusionLayer.height=bikeBlendLayer.height;
+  const bikeOcclusionContext=bikeOcclusionLayer.getContext('2d');
   let bikeBlendStamp='';
-  function bikeDirectionBlend(angle) {
-    const heading=((angle%(Math.PI*2)+Math.PI*2)%(Math.PI*2))/BIKE_DIRECTION_STEP;
-    const direction=Math.floor(heading)%BIKE_DIRECTION_COUNT;
-    return {direction,next:(direction+1)%BIKE_DIRECTION_COUNT,weight:heading-Math.floor(heading)};
+  function bikeMotion(speed,time,riding,phase=0) {
+    const travel=Math.min(1,Math.abs(speed)/110);
+    const idle=riding&&bikeEngineRunning ? .08 : 0;
+    return {compression:1-(Math.sin(phase)*.008*travel+Math.sin(time*32)*idle*.012),
+      lean:Math.max(-.055,Math.min(.055,bike.steering*.035))*travel};
   }
   function smoothBikeFacing(angle, time, view) {
     let facing = bikeVisualFacings.get(view);
@@ -47,30 +53,21 @@
     facing.time = time;
     const fromSprite = Math.atan2(Math.sin(facing.angle - facing.direction * BIKE_DIRECTION_STEP), Math.cos(facing.angle - facing.direction * BIKE_DIRECTION_STEP));
     // A small deadband prevents flicker when steering near a sprite boundary.
-    if (Math.abs(fromSprite) > BIKE_DIRECTION_STEP / 2 + Math.min(.025,BIKE_DIRECTION_STEP*.15)) facing.direction = bikeSpritePose(facing.angle, 0, time).direction;
+    if (Math.abs(fromSprite) > VISUAL_DIRECTION_STEP*.6) facing.direction = bikeSpritePose(facing.angle, 0, time).direction;
     return facing;
   }
   function bikeSpritePose(angle, speed, time) {
     const turn = Math.PI * 2;
     const heading = ((angle % turn + turn) % turn) / BIKE_DIRECTION_STEP;
-    const direction = Math.round(heading) % BIKE_DIRECTION_COUNT;
+    const direction = Math.round(heading/VISUAL_DIRECTION_STRIDE)*VISUAL_DIRECTION_STRIDE % BIKE_DIRECTION_COUNT;
     return { direction,
       frame: Math.abs(speed) > 2 ? Math.floor(time * Math.min(12, 4 + Math.abs(speed) / 25)) % 4 : 0 };
   }
-  function drawBikeSprite(x, y, size, direction, frame) {
-    if (!bikeSpritesReady()) return false;
-    const sheet = bikeSpriteSource(direction);
-    const [sx, sy, sw, sh] = bikeSpriteBounds[direction];
-    const scale = size / (sheet.naturalWidth / BIKE_SPRITE_COLUMNS);
-    const bounce = [0, -.4, 0, .4][frame] * size / 50;
-    ctx.drawImage(sheet, sx, sy, sw, sh,
-      x + size / 2 - sw * scale / 2, y + size * .93 - sh * scale + bounce, sw * scale, sh * scale);
-    return true;
-  }
-  function bikeGroundLayout(x, y, size, direction, riding=false) {
+  function bikeGroundLayout(x, y, size, direction, riding=false,visualScale=ACTOR_VISUAL_SCALE) {
     const metadata=bikeSpriteMetadata(riding);
     const [sx, sy, sw, sh] = metadata.frames[direction];
-    const scale = size / (bikeSpriteSource(direction,riding).naturalWidth / BIKE_SPRITE_COLUMNS);
+    const sheet=bikeSpriteSource(direction,riding);
+    const scale = (metadata.pixelsPerUnit ? size/50/metadata.pixelsPerUnit : size / ((sheet.naturalWidth||sheet.width) / BIKE_SPRITE_COLUMNS))*visualScale;
     const contacts = metadata.wheelContacts[direction];
     const anchorX = contacts.reduce((sum, point) => sum + point[0], 0) / contacts.length;
     const anchorY = contacts.reduce((sum, point) => sum + point[1], 0) / contacts.length;
@@ -79,6 +76,78 @@
       riderOffsetX: (sw / 2 - anchorX) * scale,
       riderOffsetY: -5.5 + (sh - anchorY) * scale,
       contacts: contacts.map(([px, py]) => [left + px * scale, top + py * scale])};
+  }
+  function buildMountedSprites() {
+    if(mountedSpritesBuilt||!bikeSpriteSheets.every(image=>image.complete&&image.naturalWidth>0)||!survivorSpriteSheet.complete||!survivorSpriteSheet.naturalWidth)return;
+    // Assemble the same motorcycle and survivor used on foot. A fixed-size
+    // seated torso replaces the independently drawn riders in the old atlas.
+    const cell=128,unit=2,originX=cell/2,originY=90;
+    const sheet=document.createElement('canvas');sheet.width=cell*16;sheet.height=cell;
+    const painter=sheet.getContext('2d');painter.imageSmoothingEnabled=false;
+    const metadata={file:'composed-at-runtime',width:sheet.width,height:sheet.height,pixelsPerUnit:unit,frames:[],wheelContacts:[],headlightAnchors:[],riderAnchors:[]};
+    const person=spriteAtlas.survivor;
+    const colors=person.palette;
+    for(let direction=0;direction<128;direction+=VISUAL_DIRECTION_STRIDE) {
+      const angle=direction*BIKE_DIRECTION_STEP,fx=Math.sin(angle),fy=-Math.cos(angle)*.5,rx=Math.cos(angle),ry=Math.sin(angle)*.5;
+      // Compose at canonical size; the finished bike and rider shrink together.
+      const ground=bikeGroundLayout(0,0,50,direction,false,1);
+      const [lampX,lampY]=spriteAtlas.bike.headlightAnchors[direction],baseScale=ground.width/ground.sw;
+      const lamp={x:ground.left+lampX*baseScale,y:ground.top+lampY*baseScale};
+      const col=direction/VISUAL_DIRECTION_STRIDE*cell,row=0;
+      const hip={x:-fx*6,y:5-fy*6-14};
+      painter.save();painter.beginPath();painter.rect(col,row,cell,cell);painter.clip();
+      painter.translate(col+originX,row+originY);painter.scale(unit,unit);
+      painter.lineCap='round';painter.lineJoin='round';
+      // Bent legs sit behind the tank, with boots resting beside the engine.
+      const drawLeg=side=>{
+        const knee={x:hip.x+fx*3+rx*side*5,y:hip.y+6+ry*side*5};
+        const foot={x:rx*side*6,y:1+ry*side*6};
+        painter.strokeStyle='#111a1b';painter.lineWidth=4;
+        painter.beginPath();painter.moveTo(hip.x+rx*side*2,hip.y+ry*side*2);painter.lineTo(knee.x,knee.y);painter.lineTo(foot.x,foot.y);painter.stroke();
+        painter.strokeStyle=colors.trousers;painter.lineWidth=2.4;painter.stroke();
+        if(side===-1){painter.fillStyle=colors.patch;painter.fillRect(knee.x-1.1,knee.y-1,2.2,2);}
+        painter.strokeStyle=colors.boot;painter.lineWidth=3;
+        painter.beginPath();painter.moveTo(foot.x,foot.y);painter.lineTo(foot.x+fx*2,foot.y+fy*2);painter.stroke();
+      };
+      const nearSide=ry>=0?1:-1;drawLeg(-nearSide);
+      painter.drawImage(bikeSpriteSheets[0],ground.sx,ground.sy,ground.sw,ground.sh,ground.left,ground.top,ground.width,ground.height);
+      drawLeg(nearSide);
+      const [sx,sy,sw,sh]=person.frames[direction],torso=Math.floor(sh*.66);
+      const height=25,scale=height/torso,width=sw*scale*.86,left=hip.x-width/2,top=hip.y-height;
+      painter.save();painter.translate(left,top);
+      painter.transform(1,0,-fx*.10,1,fx*height*.10,0);
+      // Keep the helmet/backpack and jacket, excluding the standing arms/legs.
+      painter.beginPath();painter.moveTo(0,0);painter.lineTo(width,0);painter.lineTo(width,height*.48);
+      painter.lineTo(width*.77,height*.66);painter.lineTo(width*.74,height);painter.lineTo(width*.26,height);
+      painter.lineTo(width*.23,height*.66);painter.lineTo(0,height*.48);painter.closePath();painter.clip();
+      painter.drawImage(survivorSpriteSheet,sx,sy,sw,torso,0,0,width,height);painter.restore();
+      // Gloves follow the grips while the shoulders remain behind the tank.
+      for(const side of [-1,1]) {
+        const shoulder={x:hip.x+fx*1.5+rx*side*3,y:hip.y-13+ry*side*3};
+        const hand={x:lamp.x-fx*2+rx*side*6,y:lamp.y-4+ry*side*6};
+        painter.strokeStyle='#111a1b';painter.lineWidth=4.8;
+        painter.beginPath();painter.moveTo(shoulder.x,shoulder.y);painter.lineTo(shoulder.x+fx*3,shoulder.y+6);painter.lineTo(hand.x,hand.y);painter.stroke();
+        painter.strokeStyle=colors.sleeve;painter.lineWidth=3.2;painter.stroke();
+        if(side===-1){
+          painter.strokeStyle=colors.tape;painter.lineWidth=3.4;
+          const ex=shoulder.x+fx*3,ey=shoulder.y+6;
+          painter.beginPath();painter.moveTo(ex+(hand.x-ex)*.55,ey+(hand.y-ey)*.55);painter.lineTo(ex+(hand.x-ex)*.68,ey+(hand.y-ey)*.68);painter.stroke();
+        }
+        painter.fillStyle=colors.glove;painter.fillRect(hand.x-1.3,hand.y-1.1,2.6,2.2);
+      }
+      painter.restore();
+      metadata.frames[direction]=[col,row,cell,cell];
+      const point=([x,y])=>[originX+x*unit,originY+y*unit];
+      metadata.wheelContacts[direction]=ground.contacts.map(point);
+      metadata.headlightAnchors[direction]=point([lamp.x,lamp.y]);
+      metadata.riderAnchors[direction]={hip:point([hip.x,hip.y]),height:height*unit,rearOffset:6*unit};
+    }
+    for(let direction=0;direction<128;direction++){
+      const pose=Math.round(direction/VISUAL_DIRECTION_STRIDE)*VISUAL_DIRECTION_STRIDE%128;
+      for(const field of ['frames','wheelContacts','headlightAnchors','riderAnchors'])metadata[field][direction]=metadata[field][pose];
+    }
+    bikeSpriteSheets[1]=sheet;spriteAtlas.mounted=metadata;mountedSpritesBuilt=true;
+    bikeBlendStamp='';bikeShadowMasks.clear();
   }
   const DAY_LENGTH_SECONDS = 180;
   let startHour = 15;
@@ -135,8 +204,10 @@
     return mask;
   }
   bikeSpriteSheets.forEach(image => image.addEventListener('load', () => {
-    if (bikeSpritesReady()) for (let direction = 0; direction < BIKE_DIRECTION_COUNT; direction++) bikeShadowMask(direction);
+    buildMountedSprites();
+    // Shadow masks are created lazily for the poses actually drawn.
   }));
+  survivorSpriteSheet.addEventListener('load',buildMountedSprites);
   function bikeLightPose(view = 'world') {
     if (!bikeSpritesReady()) return null;
     const chase = view === 'chase';
@@ -144,13 +215,11 @@
     const facing = bikeVisualFacings.get(chase ? 'chase' : 'world');
     const angle = facing ? facing.angle : chase ? 0 : projectFacing(bike.angle);
     const direction = facing ? facing.direction : bikeSpritePose(angle,0,0).direction;
-    const blend=bikeDirectionBlend(angle);
     const riding=chase||mounted,metadata=bikeSpriteMetadata(riding);
-    const anchors=[blend.direction,blend.next].map(index=>{
-      const ground=bikeGroundLayout(center.x,center.y,50,index,riding),[mx,my]=metadata.headlightAnchors[index],scale=ground.width/ground.sw;
-      return {x:ground.left+mx*scale,y:ground.top+my*scale};
-    });
-    const x=anchors[0].x+(anchors[1].x-anchors[0].x)*blend.weight,y=anchors[0].y+(anchors[1].y-anchors[0].y)*blend.weight;
+    const ground=bikeGroundLayout(center.x,center.y,50,direction,riding),[mx,my]=metadata.headlightAnchors[direction],scale=ground.width/ground.sw;
+    const motion=facing?.motion||{compression:1,lean:0};
+    const rawX=ground.left+mx*scale,rawY=ground.top+my*scale;
+    const x=rawX+motion.lean*(rawY-center.y-5),y=center.y+5+(rawY-center.y-5)*motion.compression;
     // Direction zero shows the rear: the front lamp is hidden behind the tank.
     // Fade its lens glow into view only as the front turns toward the camera.
     const visibility=Math.max(0,Math.min(1,(.3-Math.cos(angle))/.6));
@@ -171,7 +240,7 @@
     const wheelbase = Math.hypot(last[0]-first[0],last[1]-first[1]);
     const rotation = wheelbase > 1 ? Math.atan2(last[1]-first[1],last[0]-first[0]) : -Math.PI/2;
     ctx.save();
-    const radius = Math.max(8,wheelbase/2+5);
+    const radius = Math.max(8*ACTOR_VISUAL_SCALE,wheelbase/2+5*ACTOR_VISUAL_SCALE);
     ctx.translate((first[0]+last[0])/2,(first[1]+last[1])/2);
     ctx.rotate(rotation);ctx.scale(1,.38);
     const contact = ctx.createRadialGradient(0,0,0,0,0,radius);
@@ -180,9 +249,10 @@
     ctx.save();
     ground.contacts.forEach(([px,py])=>{
       ctx.save();ctx.translate(px,py+.25);ctx.scale(1,.42);
-      const tire=ctx.createRadialGradient(0,0,.6,0,0,4.5);
+      const tireRadius=4.5*ACTOR_VISUAL_SCALE;
+      const tire=ctx.createRadialGradient(0,0,.6*ACTOR_VISUAL_SCALE,0,0,tireRadius);
       tire.addColorStop(0,'#010508d9');tire.addColorStop(.45,'#01050899');tire.addColorStop(1,'#01050800');
-      ctx.fillStyle=tire;ctx.fillRect(-4.5,-4.5,9,9);ctx.restore();
+      ctx.fillStyle=tire;ctx.fillRect(-tireRadius,-tireRadius,tireRadius*2,tireRadius*2);ctx.restore();
     });
     ctx.restore();
   }
@@ -213,7 +283,7 @@
   }
   function drawPersonCastShadow(x,y,height,light,target) {
     const castX=light.shadowX*light.shadowLength/24,castY=light.shadowY*light.shadowLength/24;
-    target.save();target.translate(x,y+5);target.transform(1,0,-castX,-castY,0,0);
+    target.save();target.translate(x,y+5);target.scale(ACTOR_VISUAL_SCALE,ACTOR_VISUAL_SCALE);target.transform(1,0,-castX,-castY,0,0);
     target.fillStyle='#03060b';target.beginPath();target.arc(0,-height+3,3,0,Math.PI*2);target.fill();
     target.fillRect(-4,-height+6,8,height-11);target.fillRect(-6,-height+8,12,3);
     target.fillRect(-4,-5,3,5);target.fillRect(1,-5,3,5);target.restore();
@@ -236,6 +306,8 @@
     const light=worldLighting(time),target=worldShadowContext;
     target.clearRect(0,0,worldShadowLayer.width,worldShadowLayer.height);target.save();target.fillStyle='#03060b';
     buildings.forEach(([x,y,w,h],index)=>{
+      const corner=projectPoint(x,y),pad=184;
+      if(corner.x+w*1.65*ISO_X < -pad||corner.x-h*1.65*ISO_X>W+pad||corner.y>H+pad||corner.y+(w+h)*1.65*ISO_Y < -pad)return;
       const shape=isoBuildingGeometry(x,y,w,h,index);
       const projected=shape.roof.map((roof,i)=>{
         const distance=Math.min(180,(shape.base[i].y-roof.y)*light.shadowLength/24);
@@ -293,16 +365,21 @@
       } else {
         const center=projectPoint(bike.x,bike.y);target.translate(center.x,center.y);
       }
-      target.drawImage(bikeBlendLayer,-80,-80,160,160);target.restore();
+      const motion=bikeVisualFacings.get(view)?.motion||{compression:1,lean:0};
+      target.translate(0,5);target.transform(1,0,motion.lean,motion.compression,0,0);target.translate(0,-5);
+      // Make even cross-faded edge pixels fully occlude the road beam.
+      target.drawImage(bikeOcclusionLayer,-80,-80,160,160);
+      target.restore();
       nightContext.globalCompositeOperation='destination-out';
       nightContext.drawImage(headlightLayer,0,0);
       nightContext.globalCompositeOperation='source-over';
     }
     ctx.drawImage(nightLayer,0,0);
     if(lamp && lamp.visibility>0) {
-      const glow=ctx.createRadialGradient(lamp.x,lamp.y,0,lamp.x,lamp.y,5);
+      const radius=5*ACTOR_VISUAL_SCALE;
+      const glow=ctx.createRadialGradient(lamp.x,lamp.y,0,lamp.x,lamp.y,radius);
       glow.addColorStop(0,'rgba(255,226,158,'+(.7*light.night*lamp.visibility)+')');glow.addColorStop(1,'rgba(255,210,128,0)');
-      ctx.globalCompositeOperation='screen';ctx.fillStyle=glow;ctx.fillRect(lamp.x-5,lamp.y-5,10,10);
+      ctx.globalCompositeOperation='screen';ctx.fillStyle=glow;ctx.fillRect(lamp.x-radius,lamp.y-radius,radius*2,radius*2);
     }
     ctx.restore();
   }
@@ -893,7 +970,7 @@
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
     if (bikeInspectOpen && key !== 'f') {
       e.preventDefault();
-      if(!bikeService&&['w','a','s','d'].includes(key)){keys.add(key);return;}
+      if(!bikeService&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift'].includes(key)){keys.add(key);return;}
       if (!e.repeat && bikeService) {
         if (/^[1-8]$/.test(key)) bikeServiceAction(Number(key)-1);
         else if (['arrowleft','a','-'].includes(key)) bikeServiceAction(0);
@@ -970,15 +1047,6 @@
     });
     fenceSegments.forEach(([x,y,length,angle]) => drawFence(x,y,length,angle));
   }
-  function drawBuilding(x, y, w, h, i) {
-    ctx.fillStyle = '#182426'; ctx.fillRect(x - 5, y - 4, w + 12, h + 12);
-    ctx.fillStyle = '#4a5147'; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = '#303b39'; ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-    ctx.fillStyle = '#67705e'; ctx.fillRect(x + 7, y + 6, Math.max(7, w * .32), 4);
-    ctx.fillStyle = '#d08e5b'; ctx.fillRect(x + w - 10, y + h - 8, 4, 4);
-    ctx.fillStyle = '#151f21'; ctx.fillRect(x + 9, y + h - 1, 12, 5);
-    if (i % 3 === 0) { ctx.fillStyle = '#3a4641'; ctx.fillRect(x + w * .55, y - 7, 4, 8); ctx.fillRect(x + w * .55 + 5, y - 11, 3, 12); }
-  }
   function drawFence(x, y, length, angle) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
     for (let i = 0; i < length; i += 14) { if ((i / 14) % 4 !== 2) { ctx.fillStyle = '#4d554d'; ctx.fillRect(i, 0, 3, 15); } }
@@ -993,13 +1061,22 @@
     for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
     ctx.closePath(); ctx.fill();
   }
+  const buildingGeometryCache=new Map();
+  let buildingGeometryView='';
   function isoBuildingGeometry(x, y, w, h, index) {
+    const view=camera.x+':'+camera.y+':'+W+':'+H;
+    if(view!==buildingGeometryView){buildingGeometryCache.clear();buildingGeometryView=view;}
+    const cached=buildingGeometryCache.get(index);
+    if(cached&&cached.x===x&&cached.y===y&&cached.width===w&&cached.height===h)return cached.shape;
+    const width=w,height=h;
     w *= 1.65; h *= 1.65;
     const base = [projectPoint(x, y), projectPoint(x + w, y), projectPoint(x + w, y + h), projectPoint(x, y + h)];
     const floors = index === 10 ? 1 : w >= 115 && h >= 99 ? 3 + index % 4 : 1 + index % 2;
     const lift = 20 + floors * 13 + h * .26;
     const roof = base.map((p, i) => ({ x: p.x, y: p.y - lift - ((index + i * 2) % 5 === 0 ? 9 + index % 3 * 3 : 0) }));
-    return {w,h,base,roof,lift};
+    const shape={w,h,base,roof,lift};
+    buildingGeometryCache.set(index,{x,y,width,height,shape});
+    return shape;
   }
   function isoBuildingVisible(shape) {
     return !(
@@ -1183,56 +1260,43 @@
     }
     objects.sort((a, b) => a.depth - b.depth).forEach(o => o.draw());
   }
-  function drawTerminal(tower) {
-    const source = projectPoint(tower.x, tower.y), term = projectPoint(tower.x, tower.y + 108);
-    ctx.strokeStyle = '#79d8b288'; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(term.x, term.y); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = '#10181977'; ctx.beginPath(); ctx.ellipse(term.x + 2, term.y + 7, 17, 7, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#53645a'; ctx.fillRect(term.x - 13, term.y - 7, 26, 14); ctx.fillStyle = '#192726'; ctx.fillRect(term.x - 9, term.y - 6, 18, 10);
-    ctx.fillStyle = '#8de0bd'; ctx.fillRect(term.x - 7, term.y - 4, 14, 6); ctx.fillStyle = '#c7f2cb'; ctx.fillRect(term.x - 2, term.y - 2, 4, 3);
-  }
 
   function drawBike(x, y, angle, speed, time, view = 'world') {
     const facing = smoothBikeFacing(angle, time, view);
-    const pose = bikeSpritePose(facing.angle, speed, time);
-    pose.direction = facing.direction;
     if (!bikeSpritesReady()) {
-      drawBikeFallback(x, y, angle, speed, time);
+      ctx.save();ctx.translate(x,y+5);ctx.scale(ACTOR_VISUAL_SCALE,ACTOR_VISUAL_SCALE);
+      drawBikeFallback(0,-5,angle,speed,time);ctx.restore();
       return {x, y};
     }
-    const blend=bikeDirectionBlend(facing.angle);
+    const direction=facing.direction;
     const riding=view==='chase'||mounted;
-    const first=bikeGroundLayout(x,y,50,blend.direction,riding),second=bikeGroundLayout(x,y,50,blend.next,riding);
-    const mix=(a,b)=>a+(b-a)*blend.weight;
-    const ground={...first,
-      contacts:[0,1].map(i=>{
-        const a=first.contacts[Math.min(i,first.contacts.length-1)],b=second.contacts[Math.min(i,second.contacts.length-1)];
-        return [mix(a[0],b[0]),mix(a[1],b[1])];
-      })};
+    const ground=bikeGroundLayout(x,y,50,direction,riding);
     ctx.save();
     if (view === 'world') drawBikeContactShadow(x,y,ground);
-    else drawBikeGroundShadow(x,y,bikeGroundLayout(x,y,50,pose.direction,riding),pose.direction,time);
-    // Blend into a transparent layer additively: overlapping silhouettes stay opaque.
-    // Both views use their own wheel anchors, so changing crop sizes cannot move the bike.
+    else drawBikeGroundShadow(x,y,ground,direction,time);
+    // Cache the complete pose; the lamp mask uses this exact same silhouette.
     const painter=bikeBlendContext;
-    const stamp=blend.direction+':'+blend.next+':'+Math.round(blend.weight*1e6)+':'+RENDER_SCALE+':'+riding;
+    const stamp=direction+':'+RENDER_SCALE+':'+riding;
     if(stamp!==bikeBlendStamp){
     painter.setTransform(1,0,0,1,0,0);painter.clearRect(0,0,bikeBlendLayer.width,bikeBlendLayer.height);
     painter.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,80*RENDER_SCALE,80*RENDER_SCALE);
-    painter.imageSmoothingEnabled=false;painter.globalCompositeOperation='lighter';
-    for(const [direction,layout,alpha] of [[blend.direction,first,1-blend.weight],[blend.next,second,blend.weight]]) {
-      if(alpha<=.001)continue;
-      painter.globalAlpha=alpha;
-      painter.drawImage(bikeSpriteSource(direction,riding),layout.sx,layout.sy,layout.sw,layout.sh,
-        layout.left-x,layout.top-y,layout.width,layout.height);
-    }
-    painter.globalAlpha=1;painter.globalCompositeOperation='source-over';
+    painter.imageSmoothingEnabled=false;
+    painter.drawImage(bikeSpriteSource(direction,riding),ground.sx,ground.sy,ground.sw,ground.sh,
+      ground.left-x,ground.top-y,ground.width,ground.height);
+    bikeOcclusionContext.clearRect(0,0,bikeOcclusionLayer.width,bikeOcclusionLayer.height);
+    for(let i=0;i<8;i++)bikeOcclusionContext.drawImage(bikeBlendLayer,0,0);
     bikeBlendStamp=stamp;
     }
+    const motionDt=Math.max(0,Math.min(.05,time-(facing.motionTime??time)));
+    facing.travelPhase=(facing.travelPhase||0)+Math.abs(speed)*motionDt*.16;
+    facing.motionTime=time;
+    const motion=bikeMotion(speed,time,riding,facing.travelPhase);facing.motion=motion;
+    ctx.translate(x,y+5);ctx.transform(1,0,motion.lean,motion.compression,0,0);ctx.translate(-x,-y-5);
     ctx.imageSmoothingEnabled=false;ctx.drawImage(bikeBlendLayer,x-80,y-80,160,160);
     ctx.restore();
     const bounce=Math.sin(time*Math.min(12,4+Math.abs(speed)/25)*Math.PI*2)*Math.min(.3,Math.abs(speed)/150);
-    return { integrated:riding,x: x + mix(first.riderOffsetX,second.riderOffsetX) - 6 * Math.sin(facing.angle),
-      y: y + mix(first.riderOffsetY,second.riderOffsetY) - 14 + 2 * Math.cos(facing.angle) + bounce };
+    return { integrated:riding,x: x + ground.riderOffsetX - 6 * ACTOR_VISUAL_SCALE * Math.sin(facing.angle),
+      y: y + ground.riderOffsetY - (14-2*Math.cos(facing.angle)-bounce)*ACTOR_VISUAL_SCALE };
   }
   function drawBikeFallback(x, y, angle, speed, time) {
     ctx.save(); ctx.translate(x + 3, y + 6); ctx.scale(1, .62); ctx.fillStyle = '#07101188'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 15, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
@@ -1671,17 +1735,6 @@
       else s.selected=-1;
     }
     if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
-  }
-  function drawBikeServiceTool(s,mode) {
-    ctx.save();ctx.translate(48,151);
-    ctx.rotate((s.pulse>0?Math.sin(s.pulse*30)*.4:Math.sin(s.clock*2)*.08));
-    ctx.strokeStyle=s.pulse>0?'#a9e2b2':'#a3aab0';ctx.lineWidth=3;
-    ctx.beginPath();ctx.moveTo(0,14);ctx.lineTo(0,-10);ctx.stroke();
-    ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,-13,5,0,Math.PI*1.55);ctx.stroke();
-    if(mode==='pressure') {
-      ctx.strokeStyle='#667b88';ctx.beginPath();ctx.moveTo(4,8);ctx.bezierCurveTo(23,8,21,-8,31,-8);ctx.stroke();
-    }
-    ctx.restore();
   }
   function drawBikePressureService(s,text,button) {
     ctx.save();
@@ -2391,30 +2444,38 @@
     label('Selecione uma peça para abrir o diagnóstico.',211,249,5.5,'#c1a7d1');
     ctx.restore();
   }
+  const FOOT_WALK_KMH=20,FOOT_RUN_KMH=40;
+  function footSpeedMultiplier() {
+    return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?FOOT_RUN_KMH/FOOT_WALK_KMH:1;
+  }
+  function footMovementSpeed() {
+    const condition=.55+.45*Math.min(hunger,thirst)/100;
+    return FOOT_WALK_KMH/BIKE_SPEED_TO_KMH*footSpeedMultiplier()*condition;
+  }
+  function footAnimationMultiplier() {
+    if(!((state==='drive'&&!mounted)||state==='explore'))return 1;
+    return footSpeedMultiplier()>1?1.3:.8;
+  }
   function drawSurvivorSprite(x,y,angle,time,moving) {
     if(!survivorSpriteSheet.complete||survivorSpriteSheet.naturalWidth===0)return false;
     const facing=smoothBikeFacing(angle,time,'survivor');
-    const direction=bikeSpritePose(facing.angle,0,time).direction;
-    const metadata=spriteAtlas.survivor,[sx,sy,sw,sh]=metadata.frames[direction];
-    const [anchorX,anchorY]=metadata.wheelContacts[direction][0];
-    const scale=34/(metadata.width/BIKE_SPRITE_COLUMNS),left=x-anchorX*scale,top=y+5-anchorY*scale;
+    const direction=facing.direction??bikeSpritePose(facing.angle,0,time).direction;
+    const metadata=spriteAtlas.survivor,walk=metadata.walk;
+    let sheet=survivorSpriteSheet,frame=metadata.frames[direction],anchor=metadata.wheelContacts[direction][0],height=frame[3];
+    const dt=Math.max(0,Math.min(.05,time-(facing.walkTime??time)));facing.walkTime=time;
+    if(moving&&survivorWalkSpriteSheet.complete&&survivorWalkSpriteSheet.naturalWidth>0){
+      facing.walkPhase=(facing.walkPhase||0)+dt*walk.fps*footAnimationMultiplier();
+      const heading=Math.round(direction/16)%walk.directions,step=Math.floor(facing.walkPhase)%walk.frameCount;
+      sheet=survivorWalkSpriteSheet;frame=walk.frames[heading][step];anchor=walk.anchors[heading][step];height=walk.bodyHeights[heading];
+    } else if(!moving)facing.walkPhase=0;
+    const [sx,sy,sw,sh]=frame,scale=34*ACTOR_VISUAL_SCALE/height,scaleX=scale*.90;
     ctx.save();ctx.imageSmoothingEnabled=false;
-    if(!moving)ctx.drawImage(survivorSpriteSheet,sx,sy,sw,sh,left,top,sw*scale,sh*scale);
-    else {
-      const step=Math.sin(time*13),split=Math.floor(sh*.82),half=Math.floor(sw/2);
-      const bob=-Math.abs(step)*.35;
-      ctx.drawImage(survivorSpriteSheet,sx,sy,sw,split+1,left,top+bob,sw*scale,(split+1)*scale);
-      for(let side=0;side<2;side++){
-        const offset=side?half:0,width=side?sw-half:half,stride=step*(side?1:-1)*.65;
-        ctx.drawImage(survivorSpriteSheet,sx+offset,sy+split,width,sh-split,
-          left+offset*scale+stride*Math.cos(facing.angle)*.3,top+split*scale+stride,width*scale,(sh-split)*scale);
-      }
-    }
+    ctx.drawImage(sheet,sx,sy,sw,sh,x-anchor[0]*scaleX,y+5-anchor[1]*scale,sw*scaleX,sh*scale);
     ctx.restore();return true;
   }
   function drawPerson(x, y, angle, time, moving, bikePose = false) {
     if(!bikePose&&drawSurvivorSprite(x,y,angle,time,moving))return;
-    ctx.save(); ctx.translate(x, y); ctx.scale(.72, .72);
+    ctx.save(); ctx.translate(x, y); ctx.scale(.72*ACTOR_VISUAL_SCALE, .72*ACTOR_VISUAL_SCALE);
     const sideFacing = Math.abs(Math.sin(angle)) > Math.abs(Math.cos(angle));
     if (sideFacing && Math.sin(angle) < 0) ctx.scale(-1, 1);
     const step = moving ? Math.sin(time * 13) * 2 : 0;
@@ -2440,8 +2501,9 @@
     ctx.restore();
   }
   function drawFootWorld(x, y, angle, time) {
-    ctx.fillStyle = '#080f1088'; ctx.beginPath(); ctx.ellipse(x + 2, y + 5, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-    drawPerson(x, y, angle, time, keys.has('w') || keys.has('s') || keys.has('a') || keys.has('d'), mounted);
+    ctx.fillStyle = '#080f1088'; ctx.beginPath(); ctx.ellipse(x + 2*ACTOR_VISUAL_SCALE, y + 5, 6*ACTOR_VISUAL_SCALE, 3.5*ACTOR_VISUAL_SCALE, 0, 0, Math.PI * 2); ctx.fill();
+    const moving=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(key=>keys.has(key));
+    drawPerson(x, y, angle, time, moving, mounted);
   }
   function drawMinimap() {
     const x = W - 89, y = 12, w = 77, h = 53;
@@ -2623,7 +2685,7 @@
       }
     }
     const p = { x: explorer.x, y: explorer.y };
-    ctx.fillStyle = '#080d0e88'; ctx.beginPath(); ctx.ellipse(p.x,p.y + 7,8,4,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#080d0e88'; ctx.beginPath(); ctx.ellipse(p.x,p.y + 5,8*ACTOR_VISUAL_SCALE,4*ACTOR_VISUAL_SCALE,0,0,Math.PI*2); ctx.fill();
     const walkX=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0);
     const walkY=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0);
     if(walkX||walkY)explorer.spriteAngle=Math.atan2(walkX,-walkY);
@@ -2851,135 +2913,7 @@
     hookReady = grappleAvailable;
     if (state === 'grapple' && gameTime - grappleStartedAt > 6) { state = 'chase'; chaseLives = Math.max(1, chaseLives - 1); chaseLag = Math.min(390, chaseLag + 60); updateObjective(); setToast('A JANELA DO RAPEL FECHOU — VOLTE A PERSEGUIR', 2); }
   }
-  function drawChaseSideLegacy(time) {
-    const tower = active();
-    ctx.fillStyle = '#111b20'; ctx.fillRect(0, 0, W, H);
-    for (let i = 0; i < 8; i++) {
-      const width = 58 + (i % 3) * 21, height = 110 + (i * 37 % 95);
-      const x = ((i * 116 - chaseProgress * (.16 + i % 3 * .08)) % 820 + 820) % 820 - 170;
-      ctx.fillStyle = i % 2 ? '#1b282d' : '#202f34';
-      const roofY = 222 - height;
-      ctx.beginPath(); ctx.moveTo(x, 222); ctx.lineTo(x + 1, roofY + 34); ctx.lineTo(x + width * .18, roofY + 24); ctx.lineTo(x + width * .3, roofY + 29 - i % 3 * 5); ctx.lineTo(x + width * .48, roofY + 3); ctx.lineTo(x + width * .56, roofY + 21); ctx.lineTo(x + width * .82, roofY + 17); ctx.lineTo(x + width, roofY + 36); ctx.lineTo(x + width, 222); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#344b4c'; ctx.fillRect(x + width * .35, 222 - height + 12, 4, height - 23);
-      for (let wy = 222 - height + 22; wy < 211; wy += 22) { ctx.fillStyle = (i + Math.floor(wy / 22) + Math.floor(time * 2)) % 5 === 0 ? '#b88353' : '#344e4d'; ctx.fillRect(x + 8, wy, 5, 3); ctx.fillRect(x + width - 17, wy, 5, 3); }
-      ctx.fillStyle = '#10191c'; ctx.fillRect(x + width * .58, 222 - height + 3, 3, height - 9);
-      ctx.fillStyle = '#0c1417'; ctx.fillRect(x + width * .28, roofY + height * .4, 13, 23); ctx.fillRect(x + width * .7, roofY + height * .66, 8, 17);
-      ctx.strokeStyle = '#111a1d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + width * .48, roofY + 3); ctx.lineTo(x + width * .46, roofY - 13); ctx.lineTo(x + width * .53, roofY - 19); ctx.stroke();
-      if (i % 2 === 0) { const smoke = (time * 11 + i * 17) % 43; ctx.globalAlpha = .18 * (1 - smoke / 50); ctx.fillStyle = '#89908a'; ctx.beginPath(); ctx.ellipse(x + width * .48 + smoke * .12, roofY - smoke * .45, 4 + smoke * .13, 3 + smoke * .1, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
-    }
-    ctx.fillStyle = '#263331'; ctx.fillRect(0, 222, W, 48); ctx.fillStyle = '#4f5a4b'; ctx.fillRect(0, 222, W, 4);
-    for (let x = -((chaseProgress * 1.6) % 40); x < W; x += 40) { ctx.fillStyle = '#65705a'; ctx.fillRect(x, 242, 18, 3); ctx.fillStyle = '#182526'; ctx.fillRect(x + 9, 229, 3, 5); }
-    // Each machine has a distinct moving silhouette and gait.
-    const pose = chaseMachinePose(time, tower);
-    const { phase, step, planted, bodyX } = pose;
-    const legX = bodyX + Math.sin(phase) * 45;
-    const shell = tower.design === 0 ? '#596963' : tower.design === 1 ? '#6b5a45' : '#536579';
-    const trim = tower.design === 0 ? '#92a095' : tower.design === 1 ? '#c09a61' : '#91adbf';
-    const core = tower.disabled ? '#78d4aa' : '#ed765b';
-    const dark = '#0b1215';
-    ctx.save(); ctx.translate(bodyX, 222 + Math.sin(phase * 2) * 1.3); ctx.scale(CHASE_MACHINE_SCALE_X, CHASE_MACHINE_SCALE_Y); ctx.translate(-bodyX, -222);
-    ctx.fillStyle = dark; ctx.fillRect(bodyX - 72, 35, 145, 63);
-    if (tower.design === 0) {
-      ctx.fillStyle = shell; ctx.beginPath(); ctx.moveTo(bodyX - 67, 79); ctx.lineTo(bodyX - 56, 43); ctx.lineTo(bodyX - 40, 35); ctx.lineTo(bodyX + 42, 35); ctx.lineTo(bodyX + 67, 51); ctx.lineTo(bodyX + 60, 88); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#293739'; ctx.fillRect(bodyX - 22, 27, 45, 22); ctx.fillRect(bodyX - 13, 14, 27, 19);
-      ctx.fillStyle = core; ctx.fillRect(bodyX - 9, 19, 19, 5); ctx.fillStyle = trim; ctx.fillRect(bodyX - 43, 48, 3, 26); ctx.fillRect(bodyX + 38, 49, 4, 23);
-      ctx.fillStyle = '#242f32'; ctx.fillRect(bodyX + 46, 64, 32, 10); ctx.fillStyle = trim; ctx.fillRect(bodyX + 67, 67, 11, 3);
-    } else if (tower.design === 1) {
-      ctx.fillStyle = shell; ctx.fillRect(bodyX - 78, 44, 156, 43); ctx.fillRect(bodyX - 53, 34, 107, 13);
-      ctx.fillStyle = '#252f30'; ctx.fillRect(bodyX - 63, 53, 126, 8); ctx.fillStyle = trim; ctx.fillRect(bodyX - 52, 56, 67, 2);
-      ctx.fillStyle = '#192325'; ctx.fillRect(bodyX - 77, 65, 19, 28); ctx.fillRect(bodyX + 58, 65, 19, 28);
-      ctx.fillStyle = core; ctx.fillRect(bodyX - 72, 72, 10, 5); ctx.fillRect(bodyX + 62, 72, 10, 5);
-      ctx.fillStyle = '#d1ab69'; for (let i = 0; i < 6; i++) ctx.fillRect(bodyX - 25 + i * 11, 81, 6, 4);
-    } else if (tower.design === 2) {
-      ctx.fillStyle = shell; ctx.beginPath(); ctx.moveTo(bodyX - 64, 83); ctx.lineTo(bodyX - 44, 39); ctx.lineTo(bodyX - 20, 28); ctx.lineTo(bodyX + 39, 37); ctx.lineTo(bodyX + 67, 76); ctx.lineTo(bodyX + 36, 91); ctx.lineTo(bodyX - 41, 91); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#243136'; ctx.fillRect(bodyX - 13, 44, 48, 17); ctx.fillStyle = core; ctx.fillRect(bodyX + 9, 49, 22, 5);
-      ctx.fillStyle = '#28343a'; ctx.beginPath(); ctx.moveTo(bodyX + 37, 62); ctx.lineTo(bodyX + 73, 53); ctx.lineTo(bodyX + 95, 60); ctx.lineTo(bodyX + 71, 69); ctx.lineTo(bodyX + 38, 70); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = trim; ctx.fillRect(bodyX + 72, 59, 20, 2); ctx.fillStyle = '#202b31'; ctx.fillRect(bodyX - 4, 23, 7, 17); ctx.fillRect(bodyX - 27, 29, 54, 4);
-    }
-    // Heavy legs reach the ground; knees and piston highlights animate with each gait.
-    const drawLeg = (hipX, kneeX, footX, offset, color) => {
-      const swing = Math.sin(phase + offset) * 13;
-      const hipY = tower.design === 1 ? 83 : 88;
-      const kneeY = 143 + Math.max(0, Math.cos(phase * 2.1 + offset) * 11);
-      const footY = 211 + Math.max(0, Math.sin(phase * 2.1 + offset) * 8);
-      ctx.strokeStyle = dark; ctx.lineWidth = 17; ctx.lineCap = 'square'; ctx.beginPath(); ctx.moveTo(bodyX + hipX, hipY); ctx.lineTo(bodyX + kneeX + swing * .45, kneeY); ctx.lineTo(bodyX + footX + swing, footY); ctx.stroke();
-      ctx.strokeStyle = color; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(bodyX + hipX, hipY); ctx.lineTo(bodyX + kneeX + swing * .45, kneeY); ctx.lineTo(bodyX + footX + swing, footY); ctx.stroke();
-      ctx.fillStyle = '#202c2e'; ctx.fillRect(bodyX + kneeX + swing * .45 - 8, kneeY - 8, 16, 16); ctx.fillStyle = trim; ctx.fillRect(bodyX + kneeX + swing * .45 - 3, kneeY - 3, 6, 6);
-      ctx.fillStyle = dark; ctx.fillRect(bodyX + footX + swing - 13, footY - 4, 26, 11); ctx.fillStyle = trim; ctx.fillRect(bodyX + footX + swing - 8, footY - 3, 15, 2);
-    };
-    drawLeg(-48, -64, -83, 0, shell); drawLeg(0, 8, 4, Math.PI, shell); drawLeg(legX - bodyX, 28, legX - bodyX + 5, 0, trim);
-    if (tower.design === 0) drawLeg(48, 61, 72, Math.PI, shell);
-    if (tower.design === 1) { drawLeg(49, 66, 83, Math.PI, '#76634a'); drawLeg(-22, -37, -50, Math.PI * .5, '#76634a'); drawLeg(60, 79, 96, Math.PI * .5, '#76634a'); }
-    // Shared belly armor bridges every limb into one continuous machine body.
-    ctx.fillStyle = dark; ctx.fillRect(bodyX - 65, 82, 130, 19);
-    ctx.fillStyle = shell; ctx.fillRect(bodyX - 53, 86, 106, 9);
-    ctx.fillStyle = trim; ctx.fillRect(bodyX - 29, 89, 58, 2);
-    ctx.restore();
-    drawChaseBikeSideLegacy(chaser.x, chaser.feet, time);
-    chaseObstacles.forEach(o => {
-      if (o.cleared) return;
-      const x = 360 + o.at - chaseProgress;
-      if (x < -35 || x > W + 35) return;
-      if (o.kind === 'scrap') {
-        ctx.fillStyle = '#101718'; ctx.beginPath(); ctx.ellipse(x, 219, 17, 4, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#101718'; ctx.fillRect(x - 13, 203, 27, 16); ctx.fillStyle = '#8b7657'; ctx.fillRect(x - 8, 197, 16, 11);
-        ctx.fillStyle = '#4d5145'; ctx.fillRect(x + 5, 207, 9, 8); ctx.fillStyle = '#d07859'; ctx.fillRect(x - 4, 200, 4, 3);
-      } else {
-        ctx.fillStyle = '#12191a'; ctx.fillRect(x - 14, 149, 28, 9); ctx.fillRect(x - 9, 157, 18, 43);
-        ctx.fillStyle = '#d07859'; ctx.fillRect(x - 3, 159, 6, 37); ctx.fillStyle = '#414b48'; ctx.fillRect(x - 13, 148, 26, 3);
-      }
-      if (x > chaser.x + 35 && x < chaser.x + 155) {
-        const blink = Math.sin(time * 13) > -.25;
-        ctx.fillStyle = blink ? '#f0c477' : '#a86b53'; ctx.beginPath(); ctx.moveTo(x, o.kind === 'scrap' ? 181 : 137); ctx.lineTo(x - 6, o.kind === 'scrap' ? 170 : 126); ctx.lineTo(x + 6, o.kind === 'scrap' ? 170 : 126); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#171e20'; ctx.fillRect(x - 1, o.kind === 'scrap' ? 173 : 129, 2, 5);
-      }
-    });
-    const targetX = pose.legX;
-    const targetY = 222 + (190 + (planted ? 0 : 13) - 222) * CHASE_MACHINE_SCALE_Y;
-    if (hookReady) { ctx.strokeStyle = '#8ce5b6'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(targetX, targetY, 13 + Math.sin(time * 12) * 2, 0, Math.PI * 2); ctx.stroke(); hint('E  LANÇAR RAPEL', W / 2, 27, time); }
-    drawAtmosphere(time, 'chase');
-    panel(11, 10, 109, 31, '#101a1deF', '#667a6e'); ctx.fillStyle = '#a6b5a5'; ctx.textAlign = 'left'; ctx.font = '6px monospace'; ctx.fillText(`PERSEGUIÇÃO · NÓ 0${activeTower + 1}`, 18, 22); ctx.fillStyle = '#df8d66'; ctx.fillText('INTEGRIDADE', 18, 34); for (let i = 0; i < 3; i++) { ctx.fillStyle = i < chaseLives ? '#df8d66' : '#3a4140'; ctx.fillRect(74 + i * 12, 28, 8, 6); }
-    panel(W - 87, 10, 76, 30, '#101a1deF', '#667a6e');
-    ctx.textAlign = 'right'; ctx.fillStyle = '#a6b5a5'; ctx.fillText('VELOCIDADE', W - 18, 21); ctx.fillStyle = '#dfc68d'; ctx.fillText(`${Math.round(chaseSpeed*BIKE_SPEED_TO_KMH)} KM/H`, W - 18, 33);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#a6b5a5'; ctx.fillText('A/D DESVIAR · W ACELERAR · S FREAR/ABAIXAR · ESPAÇO SALTO', W - 12, H - 9);
-    if (!hookReady && chaseProgress > 350) { ctx.textAlign = 'center'; ctx.fillStyle = '#d0b878'; ctx.fillText('ESPERE A PERNA TOCAR O CHÃO PARA LANÇAR O RAPEL', W / 2, H - 22); }
-  }
 
-  function drawChaseBikeSideLegacy(x, feet, time) {
-    const bounce = chaser.grounded ? Math.abs(Math.sin(time * 17)) * Math.min(1, chaseSpeed / 180) : 0;
-    const y = feet + bounce;
-    const spin = time * 8 + chaseProgress * .045;
-    ctx.fillStyle = '#05090aaa'; ctx.beginPath(); ctx.ellipse(x - 2, 220, 34, 5, 0, 0, Math.PI * 2); ctx.fill();
-    if (chaseInvulnerable > 0 && Math.floor(time * 14) % 2) ctx.globalAlpha = .3;
-    for (const wx of [x - 18, x + 18]) {
-      ctx.fillStyle = '#070b0e'; ctx.beginPath(); ctx.arc(wx, y - 6, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#69716e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(wx, y - 6, 5.5, 0, Math.PI * 2); ctx.stroke();
-      ctx.save(); ctx.translate(wx, y - 6); ctx.rotate(spin); ctx.strokeStyle = '#a77be4'; ctx.lineWidth = 1;
-      for (let spoke = 0; spoke < 4; spoke++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 5); ctx.stroke(); }
-      ctx.restore(); ctx.fillStyle = '#b8aaa0'; ctx.fillRect(wx - 1.5, y - 7.5, 3, 3);
-    }
-    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.max(-.13, Math.min(.13, -chaser.vy * .0004)));
-    // Side profile: linked frame, engine, tank, front fairing and purple bar.
-    ctx.strokeStyle = '#11181b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-18, -10); ctx.lineTo(-5, -22); ctx.lineTo(9, -10); ctx.lineTo(-4, -8); ctx.lineTo(-18, -10); ctx.moveTo(-5, -22); ctx.lineTo(17, -18); ctx.lineTo(9, -10); ctx.stroke();
-    ctx.fillStyle = '#252b2d'; ctx.fillRect(-8, -17, 14, 10); ctx.fillStyle = '#454b49'; ctx.fillRect(-5, -15, 8, 5);
-    ctx.fillStyle = '#11171a'; ctx.beginPath(); ctx.moveTo(-10, -24); ctx.lineTo(-4, -29); ctx.lineTo(9, -27); ctx.lineTo(13, -21); ctx.lineTo(5, -17); ctx.lineTo(-7, -18); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#46504e'; ctx.fillRect(-4, -27, 11, 2); ctx.fillStyle = '#a77be4'; ctx.fillRect(-1, -26, 5, 2);
-    ctx.fillStyle = '#151a1c'; ctx.beginPath(); ctx.moveTo(8, -25); ctx.lineTo(17, -29); ctx.lineTo(22, -25); ctx.lineTo(19, -13); ctx.lineTo(13, -12); ctx.lineTo(9, -18); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#c4c8bb'; ctx.fillRect(17, -23, 4, 3); ctx.fillStyle = '#7954b3'; ctx.fillRect(15, -30, 10, 2); ctx.fillRect(21, -32, 3, 5);
-    ctx.strokeStyle = '#665a4c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-18, -11); ctx.lineTo(-24, -6); ctx.lineTo(-30, -6); ctx.stroke();
-    ctx.fillStyle = '#151a1b'; ctx.fillRect(-29, -8, 11, 3); ctx.fillStyle = '#777a72'; ctx.fillRect(-27, -7, 8, 1);
-    // Rider stays tucked to the tank; the S control lowers the helmet under beams.
-    const tuck = chaser.duck * 7;
-    ctx.fillStyle = '#252f30'; ctx.beginPath(); ctx.moveTo(-9, -26); ctx.lineTo(-3, -35 + tuck); ctx.lineTo(6, -33 + tuck); ctx.lineTo(12, -26); ctx.lineTo(4, -22); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#61766d'; ctx.fillRect(-3, -32 + tuck, 8, 3);
-    ctx.strokeStyle = '#a17a57'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(2, -28 + tuck); ctx.lineTo(14, -26); ctx.lineTo(20, -28); ctx.stroke();
-    ctx.fillStyle = '#a77be4'; ctx.fillRect(17, -30, 5, 3);
-    ctx.strokeStyle = '#161d20'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-1, -23); ctx.lineTo(-4, -16); ctx.lineTo(4, -12); ctx.moveTo(4, -23); ctx.lineTo(2, -17); ctx.lineTo(10, -14); ctx.stroke();
-    ctx.fillStyle = '#887052'; ctx.fillRect(1, -14, 8, 3); ctx.fillStyle = '#14191b'; ctx.fillRect(-7, -37 + tuck, 13, 9);
-    ctx.fillStyle = '#dbc69a'; ctx.fillRect(-7, -38 + tuck, 12, 3); ctx.fillStyle = '#9f70d2'; ctx.fillRect(1, -35 + tuck, 5, 3); ctx.fillStyle = '#b08b64'; ctx.fillRect(11, -26, 5, 3);
-    ctx.fillStyle = '#df7658'; ctx.fillRect(20, -17, 3, 3); ctx.restore(); ctx.globalAlpha = 1;
-    if (chaseSpeed > 130) { ctx.fillStyle = '#b28a61'; ctx.globalAlpha = .55; ctx.fillRect(x - 31 - (time * 17) % 14, y - 7, 2, 2); ctx.fillRect(x - 36 - (time * 11) % 12, y - 3, 2, 2); ctx.globalAlpha = 1; }
-  }
 
   function drawChase(time) {
     const tower = active(), pose = chaseMachinePose(time, tower), scroll = chaseProgress * .27;
@@ -3417,8 +3351,10 @@
     if (state === 'explore') {
       const dx = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
       const dy = (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0);
-      const nextX = Math.max(58, Math.min(408, explorer.x + dx * 82 * dt)), nextY = Math.max(95, Math.min(280, explorer.y + dy * 64 * dt));
-      const hitsWall = (x,y) => interiorWalls.some(w => x+7>w.x && x-7<w.x+w.w && y+7>w.y && y-7<w.y+w.h);
+      const step=footMovementSpeed()*dt/(Math.hypot(dx,dy)||1);
+      const nextX = Math.max(58, Math.min(408, explorer.x + dx*step)), nextY = Math.max(95, Math.min(280, explorer.y + dy*step));
+      const radius=7*ACTOR_VISUAL_SCALE;
+      const hitsWall = (x,y) => interiorWalls.some(w => x+radius>w.x && x-radius<w.x+w.w && y+radius>w.y && y-radius<w.y+w.h);
       if (!hitsWall(nextX, explorer.y)) explorer.x = nextX;
       if (!hitsWall(explorer.x, nextY)) explorer.y = nextY;
       exploreStep += dt; explorer.invulnerable = Math.max(0, explorer.invulnerable - dt);
@@ -3430,11 +3366,11 @@
       }
     }
     if (state === 'drive' && !mounted) {
-      const p = 98 * dt * (.55 + .45 * Math.min(hunger, thirst) / 100);
       const dx = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
       const dy = (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0);
       if (dx || dy) {
-        moveWorldEntity(player, dx * p, dy * p, 7); player.angle = Math.atan2(dx, -dy); walkCycle += dt * 12;
+        const p=footMovementSpeed()*dt/Math.hypot(dx,dy);
+        moveWorldEntity(player, dx * p, dy * p, 7*ACTOR_VISUAL_SCALE); player.angle = Math.atan2(dx, -dy); walkCycle += dt * 12;
       }
       if (active() && Math.hypot(player.x - active().x, player.y - active().y) > 205 && !mounted) { /* the machine remains safely out of reach on foot */ }
       updateObjective();
@@ -3455,7 +3391,7 @@
       bike.angle += bike.steering * dt * (.7 + Math.abs(bike.speed) / 115) * (.2 + .8*bikeParts.handlebar/100) * (.5 + .5*Math.min(bikeParts.frontTire,bikeParts.rearTire)/100) * (bike.speed<0?-1:1);
       const previousX=bike.x,previousY=bike.y,impactSpeed=bike.speed;
       const rideX=Math.sin(bike.angle)*bike.speed*dt,rideY=-Math.cos(bike.angle)*bike.speed*dt;
-      moveWorldEntity(bike,rideX,rideY,12);
+      moveWorldEntity(bike,rideX,rideY,12*ACTOR_VISUAL_SCALE);
       const blockedFraction=Math.min(1,Math.hypot(rideX-(bike.x-previousX),rideY-(bike.y-previousY))/Math.max(.001,Math.hypot(rideX,rideY)));
       const tower = active();
       if (tower && bikeEngineRunning && distance(bike, tower) < 155) { bike.speed *= .25; startChase(); }
@@ -3473,7 +3409,6 @@
     requestAnimationFrame(frame);
   }
 
-  function drawTowerScene() { /* tower art is rendered from the top-down world and climbing scene */ }
   setObjective('Chegue à primeira máquina de moto.', 0);
   const gameDisplay=initGameDisplay({canvas,onResize:resolution=>{
     if(canvas.width===resolution.width&&canvas.height===resolution.height)return;
@@ -3481,6 +3416,7 @@
     RENDER_SCALE=canvas.width/DISPLAY_W;
     ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);ctx.imageSmoothingEnabled=false;
     bikeBlendLayer.width=Math.ceil(160*RENDER_SCALE);bikeBlendLayer.height=Math.ceil(160*RENDER_SCALE);
+    bikeOcclusionLayer.width=bikeBlendLayer.width;bikeOcclusionLayer.height=bikeBlendLayer.height;
     bikeBlendStamp='';
   }});
   requestAnimationFrame(frame);
