@@ -6,13 +6,11 @@
   let RENDER_SCALE = 2;
   const DISPLAY_W=640,DISPLAY_H=360;
   const ACTOR_VISUAL_SCALE=.75;
-  // Temporary starting condition for testing ignition failures; restore to 100 afterward.
-  const BIKE_TEST_START_CONDITION=20;
   let W=DISPLAY_W,H=DISPLAY_H,gameScene=gameSceneViewport('title');
   const ignition=createBikeIgnition({canvas,ctx,width:W,height:H,
     getCondition:()=>bikeParts.motor*.7+bikeLife*.3,
     onStart:()=>{keys.clear();bike.speed=0;if(fuel<=0||bikeLife<=0){dismount();setToast('VERIFIQUE O COMBUSTÍVEL E O ESTADO DA MOTO.');return;}bikeEngineRunning=true;bikeRpm=1000;setToast('MOTO LIGADA — BOA VIAGEM!');updateObjective();},
-    onCancel:()=>{keys.clear();setToast('PARTIDA CANCELADA — F PARA TENTAR NOVAMENTE.');updateObjective();},
+    onCancel:()=>{keys.clear();setToast('PARTIDA CANCELADA — E PARA TENTAR NOVAMENTE.');updateObjective();},
     onFail:()=>setToast('O MOTOR NÃO PEGOU — GIRE A CHAVE NOVAMENTE.')
   });
   ctx.scale(RENDER_SCALE, RENDER_SCALE);
@@ -779,21 +777,17 @@
     bikeGear=1;bikeShiftCooldown=0;bikeShiftFlash=0;bikeRpm=0;bikeEngineRunning=false;
     player.x = bike.x; player.y = bike.y; player.angle = bike.angle; player.hp = 3;
     mounted = false; approachedByBike = false; totalRide = 0; fuel = 68; hunger = 100; thirst = 100;
+    bikeFuelStains.length=0;bikeFuelDripClock=0;
     player.x=bike.x+Math.cos(bike.angle)*19;player.y=bike.y+Math.sin(bike.angle)*19;
     repairKits = 1; bikeLife = 100; bikeWearClock = 0; bikeCrashCooldown = 0; Object.keys(bikeParts).forEach(part => bikeParts[part] = 100);
     bikeInspectOpen = false;
     bikeService = null; Object.values(bikeFaults).forEach(faults => faults.fill(100));
-    bikeLife=BIKE_TEST_START_CONDITION;
-    Object.keys(bikeParts).forEach(part=>{
-      bikeParts[part]=BIKE_TEST_START_CONDITION;
-      bikeFaults[part].fill(BIKE_TEST_START_CONDITION);
-    });
     generateMapLayout(); camera.x = player.x; camera.y = player.y;
     supplies.forEach(s => { s.found = false; s.available = s.type === 'fuel' ? Math.random() < .28 : Math.random() < .24; });
     towers.forEach(t => t.disabled = false);
     randomizeTowerSpawns();
     titleScreen.classList.add('dismissed'); keys.clear(); updateObjective();
-    setToast('E PARA SUBIR NA MOTO E DAR A PARTIDA');
+    setToast('F PARA SUBIR NA MOTO E DAR A PARTIDA');
   }
   document.querySelector('#start-game').addEventListener('click', startGame);
 
@@ -805,7 +799,7 @@
     player.y = bike.y + Math.sin(bike.angle) * 19;
     player.angle = bike.angle;
     bike.speed = 0;
-    setToast('A PÉ — A MOTO FICOU ESTACIONADA AQUI. E PARA VOLTAR'); updateObjective();
+    setToast('A PÉ — A MOTO FICOU ESTACIONADA AQUI. F PARA VOLTAR'); updateObjective();
   }
   function mount() {
     if (distance(player, bike) > 43) { setToast('A MOTO ESTÁ FORA DE ALCANCE.'); return; }
@@ -825,7 +819,7 @@
       return;
     }
     bikeEngineRunning=false;bikeRpm=0;bike.speed=0;keys.clear();
-    setToast('MOTOR DESLIGADO — F PARA DAR A PARTIDA.');
+    setToast('MOTOR DESLIGADO — E PARA DAR A PARTIDA.');
   }
   function startGrappleAim() {
     if (!grappleAvailable) { setToast('APROXIME A MOTO DE UMA PERNA E MANTENHA O RITMO'); return; }
@@ -899,7 +893,7 @@
       }
       const tower = active();
       if (tower && distance(player, tower) < 180) setToast('A MÁQUINA ESTÁ EM MOVIMENTO. ALCANCE-A DE MOTO.');
-      else setToast('E  MONTAR NA MOTO ESTACIONADA.');
+      else setToast('F  MONTAR NA MOTO ESTACIONADA.');
     } else if (state === 'explore') {
       if (Math.hypot(explorer.x - 78, explorer.y - 200) > 42) { setToast('A SAÍDA FICA NA PORTA — SIGA O MARCADOR.'); return; }
       state = 'drive'; player.x = worldReturn.x; player.y = worldReturn.y; mounted = false; keys.clear(); setToast('VOCÊ VOLTA À ESTRADA.'); updateObjective();
@@ -977,11 +971,11 @@
   }
 
   function keyDown(e) {
-    if(ignition.active&&e.key.toLowerCase()==='f'){e.preventDefault();if(!e.repeat)ignition.close(false);return;}
+    if(ignition.active&&['e','f'].includes(e.key.toLowerCase())){e.preventDefault();if(!e.repeat){ignition.close(false);if(e.key.toLowerCase()==='f')dismount();}return;}
     if(ignition.active){ignition.key(e);return;}
     const key = e.key.toLowerCase();
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
-    if (bikeInspectOpen && key !== 'f') {
+    if (bikeInspectOpen && key !== 'f' && (key !== 'e' || bikeService)) {
       e.preventDefault();
       if(!bikeService&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift'].includes(key)){keys.add(key);return;}
       if (!e.repeat && bikeService) {
@@ -995,9 +989,10 @@
     if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) e.preventDefault();
     if (state === 'title') { if (key === 'enter') startGame(); return; }
     if (state === 'ending') { if (key === 'enter') { state = 'title'; titleScreen.classList.remove('dismissed'); } return; }
-    if(key==='f'&&state==='drive'&&mounted&&!e.repeat){switchOffBike();return;}
+    if(key==='f'&&state==='drive'&&!e.repeat){bikeInspectOpen=false;bikeService=null;if(mounted)dismount();else mount();return;}
+    if(key==='e'&&state==='drive'&&mounted&&!e.repeat){switchOffBike();return;}
     if(bikeControlsMounted()&&['r','q'].includes(key)){e.preventDefault();if(!e.repeat)shiftBikeGear(key==='r'?1:-1);return;}
-    if (state === 'drive' && !mounted && key === 'f' && !e.repeat) {
+    if (state === 'drive' && !mounted && key === 'e' && !e.repeat && (bikeInspectOpen || distance(player,bike)<=85)) {
       if (distance(player,bike) <= 85) { bikeInspectOpen = !bikeInspectOpen; keys.clear(); bikeInspectTab = 'Info'; bikeService = null; }
       else setToast('CHEGUE PERTO DA MOTO PARA INSPECIONÁ-LA.');
       return;
@@ -1237,12 +1232,47 @@
     ctx.restore();
     ctx.fillStyle = '#d4dac3'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillText(tower.name, screenCenter.x, screenCenter.y - 180);
   }
+  const bikeFuelStains=[];
+  let bikeFuelDripClock=0;
+  function updateBikeFuelTrail(dt) {
+    for(let i=bikeFuelStains.length-1;i>=0;i--) {
+      bikeFuelStains[i].age+=dt;
+      if(bikeFuelStains[i].age>=90)bikeFuelStains.splice(i,1);
+    }
+    const severity=bikeHoleSeverity();
+    if(fuel<=0||severity<=0){bikeFuelDripClock=0;return;}
+    bikeFuelDripClock+=dt;
+    const interval=.12+.6*(1-severity);
+    if(bikeFuelDripClock<interval)return;
+    bikeFuelDripClock%=interval;
+    const x=bike.x+Math.cos(bike.angle)*3,y=bike.y+Math.sin(bike.angle)*3;
+    const last=bikeFuelStains[bikeFuelStains.length-1];
+    if(last&&Math.hypot(x-last.x,y-last.y)<5) {
+      last.radius=Math.min(10,last.radius+.15+severity*.25);last.age=0;
+    } else {
+      bikeFuelStains.push({x,y,radius:1.8+severity*2,age:0});
+      if(bikeFuelStains.length>400)bikeFuelStains.shift();
+    }
+  }
+  function drawBikeFuelTrail() {
+    ctx.save();
+    for(const stain of bikeFuelStains) {
+      ctx.globalAlpha=.65*Math.min(1,(90-stain.age)/25);
+      ctx.fillStyle='#9c4d1f';ctx.beginPath();
+      ctx.ellipse(stain.x,stain.y,stain.radius*1.35,stain.radius,.3,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha*=.65;
+      ctx.fillStyle='#f2a348';ctx.beginPath();
+      ctx.ellipse(stain.x-stain.radius*.25,stain.y-stain.radius*.2,stain.radius*.7,stain.radius*.25,.3,0,Math.PI*2);ctx.fill();
+    }
+    ctx.restore();
+  }
   function drawIsoMap(time) {
     ctx.save();
     const camX = (camera.x - camera.y) * ISO_X, camY = (camera.x + camera.y) * ISO_Y;
     ctx.translate(W / 2 - camX, H / 2 - camY);
     ctx.transform(ISO_X, ISO_Y, -ISO_X, ISO_Y, 0, 0);
     drawGround(time);
+    drawBikeFuelTrail();
     ctx.restore();
   }
   function drawIsoDepthObjects(time, includeActors) {
@@ -1409,7 +1439,7 @@
     damageBikePart(part,amount,true);
     bikeLife=Math.max(0,bikeLife-amount*.25);bikeCrashCooldown=1.5;
     const loss=before-bikeParts[part];
-    setToast(label+' · '+bikePartNames[part]+' −'+loss.toFixed(1)+'% · inspecione com F');
+    setToast(label+' · '+bikePartNames[part]+' −'+loss.toFixed(1)+'% · inspecione com E');
     return true;
   }
   function selectedBikePart() {
@@ -1417,6 +1447,7 @@
   }
   function jobsForBikePart(part) { return bikeJobs[part.includes('Tire') ? 'tire' : part]; }
   function startBikeService(part, index) {
+    if(bikeEngineRunning){setToast('DESLIGUE O MOTOR ANTES DE CONSERTAR A MOTO. MONTE COM F E DESLIGUE COM E.');return;}
     if (!Object.hasOwn(bikeParts,part) || !Number.isInteger(index) || index<0 || index>3) return;
     const practice = bikeFaults[part][index] >= 99.5 && bikeLife >= 99.5;
     if (!practice && repairKits <= 0) { setToast('SEM KIT — PROCURE FERRAMENTAS. Peças íntegras permitem treino.'); return; }
@@ -2622,12 +2653,12 @@
     }
     drawMinimap(); drawSurvivalHud();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? `W ACELERA · S FREIA/RÉ · A/D VIRA · Q/R MARCHA · F ${bikeEngineRunning?'DESLIGA':'LIGA'} · E DESCE` : 'W A S D MOVER  ·  E EXPLORAR / MOTO', W - 12, H - 7);
+    ctx.fillText(mounted ? `W ACELERA · S FREIA/RÉ · A/D VIRA · Q/R MARCHA · E ${bikeEngineRunning?'DESLIGA':'LIGA'} · F DESCE` : 'W A S D MOVER  ·  E INTERAGIR  ·  F MONTAR', W - 12, H - 7);
     if (!mounted && nearbyEntrance(player.x, player.y) >= 0) hint('E  ENTRAR PELA PORTA', W / 2, 31, time);
-    else if (!mounted && distance(player,bike)<55 && (bikeLife<75 || Object.values(bikeParts).some(value=>value<70))) hint(repairKits>0?'F  REPARAR MOTO · E  MONTAR':'F  INSPECIONAR · PROCURE UM KIT',W/2,31,time);
-    else if (tower && !mounted && distance(player, bike) < 55) hint('E  MONTAR NA MOTO', W / 2, 31, time);
+    else if (!mounted && distance(player,bike)<55 && (bikeLife<75 || Object.values(bikeParts).some(value=>value<70))) hint(repairKits>0?'E  REPARAR MOTO · F  MONTAR':'E  INSPECIONAR · PROCURE UM KIT',W/2,31,time);
+    else if (tower && !mounted && distance(player, bike) < 55) hint('F  MONTAR NA MOTO', W / 2, 31, time);
     else if (tower && mounted && distance(bike, tower) < 205) hint('APROXIME-SE PARA INICIAR A PERSEGUIÇÃO', W / 2, 31, time);
-    if (!mounted && distance(player,bike)<85) hint('F  INSPECIONAR MOTO',W/2,50,time);
+    if (!mounted && distance(player,bike)<85) hint('E  INSPECIONAR MOTO',W/2,50,time);
     if (bikeInspectOpen && !mounted) drawBikeInspectMenu();
   }
   function hint(text, x, y, time) {
@@ -3436,6 +3467,7 @@
     if (bikeInspectOpen && (state !== 'drive' || mounted || distance(player,bike)>120)) {bikeInspectOpen=false;bikeService=null;}
     if (bikeInspectOpen) updateBikeService(dt);
     if(state!=='title'&&state!=='ending')updateBikeCondition(dt,state==='chase'||state==='grapple'?chaseSpeed:state==='drive'&&mounted?bike.speed:0);
+    if(state!=='title'&&state!=='ending')updateBikeFuelTrail(dt);
     updateMachines(gameTime);
     hunger = Math.max(0, hunger - dt * .035); thirst = Math.max(0, thirst - dt * .06);
     if (state === 'explore') {

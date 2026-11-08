@@ -29,10 +29,18 @@ function runBikeMaintenanceTests(source) {
       view:bikeWorkshopViewport,get window(){return bikeWorkshopWindow;},
       cancel(){bikeService=null},get service(){return bikeService},get kits(){return repairKits},
       resources(kits,life){repairKits=kits;bikeLife=life},
+      engine(running){bikeEngineRunning=running;},
       get life(){return bikeLife},get fuel(){return fuel},leak:bikeFuelLeakRate,parts:bikeParts,faults:bikeFaults};
   `);
   let assertions=0;
   const check=(condition,message)=>{assertions++;if(!condition)throw Error(message);};
+  {
+    const h=create();h.engine(true);h.start('motor',2);
+    check(!h.service,'running engine prevents starting repairs');
+    check(h.kits===5,'blocked repair does not consume a kit');
+    h.engine(false);h.start('motor',2);
+    check(!!h.service,'stopped engine permits repairs');
+  }
   {
     const h=create();h.faults.motor[2]=100;
     check(h.leak()===0,'intact housing does not leak');

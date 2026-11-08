@@ -15,7 +15,7 @@ function runIgnitionTests(factory,source) {
   for(const scale of [1,2,.75]) {
     const h=create(scale);h.game.open();h.game.draw(0);const home=h.game.snapshot,view=h.game.viewport;
     check(Math.abs(view.x+318*view.scale-240)<1e-9&&Math.abs(view.y+131*view.scale-135)<1e-9,'lock is centered exactly on the canvas');
-    check(h.labels===0,'ignition renders without captions');
+    check(h.labels>0,'ignition displays instructions and current status');
     check(h.game.active&&home.phase==='place','ignition starts awaiting insertion');
     h.down(50,50);check(!h.game.snapshot.dragging,'background cannot grab the key');
     h.down(home.x,home.y);check(h.game.snapshot.dragging&&h.captured===1,'key handle captures pointer');
@@ -29,7 +29,9 @@ function runIgnitionTests(factory,source) {
     check(h.game.snapshot.phase==='turn'&&h.captured===null,'left release over lock connects at any canvas scale');
     h.game.draw(.5);h.down(338,131);h.move(318,111);
     check(h.game.snapshot.angle===0&&h.started===0,'turning counterclockwise cannot start engine');
-    h.up(318,111);h.down(338,131);h.move(318,151);
+    h.up(318,111);h.down(338,131);h.move(332.142,145.142);
+    check(h.game.snapshot.phase==='turn'&&h.started===0,'partial turn is insufficient to start engine');
+    h.move(318,151);
     check(h.game.snapshot.phase==='success'&&h.started===0,'clockwise turn enters success animation');
     check(h.captured===null,'successful turn releases captured pointer');
     h.game.draw(1);h.game.update(.4);check(h.game.active,'success animation remains visible briefly');
@@ -114,6 +116,7 @@ function runIgnitionTests(factory,source) {
       const ignition={active:igniting,update(){ignitionTicks++;}};
       const gameDisplay={sampleFrame(){}},updateBikeGearbox=()=>{},bikeControlsMounted=()=>false,distance=()=>0;
       const updateBikeService=()=>repairTicks++,updateBikeCondition=()=>wearTicks++,updateMachines=()=>machineTicks++;
+      const updateBikeFuelTrail=()=>{};
       const updateObjective=()=>{},active=()=>null,finishFrame=()=>rendered++,requestAnimationFrame=()=>{},footMovementSpeed=()=>5/.52;
       ${frameSource}
       frame(1016);

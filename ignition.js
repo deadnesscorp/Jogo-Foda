@@ -1,7 +1,7 @@
 (function (root) {
   'use strict';
   function createBikeIgnition({canvas,ctx,width:W,height:H,onStart,onCancel,onFail=()=>{},random=Math.random,getCondition=()=>100}) {
-    const LOCK={x:318,y:131},HOME={x:214,y:156},TURN=1.2;
+    const LOCK={x:318,y:131},HOME={x:214,y:156},TURN=Math.PI/2;
     let session=null,failures=0;
     const viewport=()=>({x:W/2-LOCK.x*.72,y:H/2-LOCK.y*.72,scale:.72});
     const pointer=event=>{
@@ -135,7 +135,6 @@
       const s=session;if(!s)return;
       const inserted=s.phase!=='place',success=s.phase==='success';
       const view=viewport();ctx.save();ctx.translate(view.x,view.y);ctx.scale(view.scale,view.scale);
-      // The ignition floats over the live world without a panel backdrop.
       ctx.lineWidth=.7;
       // Cast metal steering clamp with a round black ignition switch.
       const clamp=ctx.createLinearGradient(0,88,0,187);clamp.addColorStop(0,'#44464e');clamp.addColorStop(.4,'#252a33');clamp.addColorStop(1,'#111720');
@@ -156,11 +155,6 @@
       ctx.fillStyle=rim;ctx.beginPath();ctx.arc(LOCK.x,LOCK.y,39,0,Math.PI*2);ctx.fill();
       ctx.fillStyle='#10141d';ctx.beginPath();ctx.arc(LOCK.x,LOCK.y,34,0,Math.PI*2);ctx.fill();
       ctx.strokeStyle='#d2dbe145';ctx.lineWidth=.6;ctx.beginPath();ctx.arc(LOCK.x,LOCK.y,37,-Math.PI*.95,-Math.PI*.05);ctx.stroke();
-      for(let i=0;i<9;i++){
-        const a=-Math.PI/2+i*TURN/8;ctx.strokeStyle=i===8?'#ddbb7a':'#7a818d';ctx.lineWidth=i===8?1.5:.8;
-        ctx.beginPath();ctx.moveTo(LOCK.x+Math.cos(a)*26,LOCK.y+Math.sin(a)*26);ctx.lineTo(LOCK.x+Math.cos(a)*29,LOCK.y+Math.sin(a)*29);ctx.stroke();
-      }
-      ctx.strokeStyle=success?'#addb99':'#a786c1';ctx.lineWidth=2;ctx.beginPath();ctx.arc(LOCK.x,LOCK.y,29,-Math.PI/2,-Math.PI/2+TURN);ctx.stroke();
       ctx.fillStyle='#080c12';ctx.beginPath();ctx.arc(365,157,5,0,Math.PI*2);ctx.fill();
       if(success){ctx.shadowColor='#b6ef91';ctx.shadowBlur=9;}
       ctx.fillStyle=success?'#c2ef9f':s.phase==='failed'?'#ef795e':'#5c513d';ctx.beginPath();ctx.arc(365,157,3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
@@ -198,6 +192,8 @@
         ctx.strokeStyle='#a4a5ad';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(ringX,ringY+17);ctx.quadraticCurveTo(cx,ringY+19,cx,cy-12);ctx.stroke();
         charm(kind,cx,cy,.62,swing*(i%2?1:-1));
       }
+      ctx.textAlign='center';ctx.font='7px monospace';ctx.fillStyle='#c6b9cc';
+      ctx.fillText(success?'MOTOR LIGADO':s.phase==='failed'?'TENTE GIRAR NOVAMENTE':inserted?'ARRASTE EM SENTIDO HORÁRIO':'ARRASTE A CHAVE ATÉ A FECHADURA',296,207);
       ctx.restore();
     }
     return {open,close,down,move,up,key,update,draw,
