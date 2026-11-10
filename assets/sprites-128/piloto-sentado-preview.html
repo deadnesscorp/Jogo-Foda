@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<title>Piloto sentado — sprites separados</title>
+<style>
+body{margin:24px;background:#171c23;color:#eee;font:16px system-ui}main{max-width:1000px;margin:auto}canvas{display:block;width:384px;height:384px;max-width:100%;image-rendering:pixelated;background:repeating-conic-gradient(#28333c 0% 25%,#34404a 0% 50%) 0/24px 24px;margin:20px 0}input{width:min(100%,600px)}img{width:100%;background:#34404a}button{padding:8px 16px}a{color:#b5d6ff}
+</style>
+<main>
+<h1>Piloto sentado, separado da moto</h1>
+<p>128 quadros em grade 16 × 8, com fundo transparente. Arte separada para ajustar o encaixe na moto.</p>
+<button id="play">Pausar</button> <output id="status"></output>
+<canvas width="384" height="384"></canvas>
+<input id="direction" type="range" min="0" max="127" value="0" aria-label="Direção">
+<p>As vistas geradas têm ângulos aproximados. O encaixe das mãos e do banco precisa ser calibrado antes de usar no jogo.</p>
+<p><a href="sobrevivente-piloto-sentado-128.png" download>Baixar PNG</a> · <a href="sobrevivente-piloto-sentado-128.json" download>Metadados dos quadros</a></p>
+<img src="sobrevivente-piloto-sentado-128.png" alt="Folha completa com 128 sprites do protagonista sentado na posição de pilotagem, sem a moto">
+</main>
+<script>
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),slider=document.querySelector('#direction'),status=document.querySelector('#status'),button=document.querySelector('#play');
+const image=new Image();let metadata,playing=true,last=0;
+function draw(){if(!metadata||!image.naturalWidth)return;const index=Number(slider.value),[x,y,w,h]=metadata.frames[index];ctx.clearRect(0,0,384,384);ctx.imageSmoothingEnabled=false;const scale=320/Math.max(w,h);ctx.drawImage(image,x,y,w,h,(384-w*scale)/2,(384-h*scale)/2,w*scale,h*scale);status.textContent=`Quadro ${index+1} / 128`;}
+slider.oninput=()=>{playing=false;button.textContent='Girar';draw();};
+button.onclick=()=>{playing=!playing;button.textContent=playing?'Pausar':'Girar';};
+image.onload=draw;image.src='sobrevivente-piloto-sentado-128.png';
+fetch('sobrevivente-piloto-sentado-128.json').then(r=>r.json()).then(data=>{metadata=data;draw();}).catch(()=>{status.textContent='Abra esta prévia por um servidor HTTP local.';});
+function animate(time){if(playing&&time-last>85){slider.value=(Number(slider.value)+1)%128;draw();last=time;}requestAnimationFrame(animate);}requestAnimationFrame(animate);
+</script>
+</html>

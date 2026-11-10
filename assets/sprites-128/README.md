@@ -1,38 +1,66 @@
-# Sobrevivente e moto — 128 direções
+# Sprites do protagonista e da moto
 
-Folhas geradas com a ferramenta integrada de imagens, a partir das referências militares fornecidas. O personagem tem aparência andrógina, cabelo prateado curto, uniforme angular, máscara e capacete gasto, sem lenço. Roupa remendada, costuras improvisadas, botas reparadas, mochila remendada, cantil amassado, cobertor enrolado e mapa dobrado sugerem sobrevivência solitária prolongada. A moto preta e roxa foi preservada.
+O jogo mantém 128 orientações lógicas. As vistas geradas têm espaçamento angular
+aproximado e são calibradas antes da seleção dos quadros.
 
-## Arquivos usados pelo jogo
+## Arte montada atual
 
-- `moto-128.png`: moto sem piloto, 128 quadros.
-- `sobrevivente-solitario-idle-16.png`: 16 poses paradas em grade 4 × 4, também usadas na composição montada.
-- `sobrevivente-solitario-andar-64.png`: caminhada completa em oito direções, com oito quadros por direção, grade 8 × 8.
-- `andar-preview.html`: prévia animada com direção, velocidade, pausa e seleção dos oito quadros.
-- `atlas.js` e `atlas.json`: recortes, contato dos pneus/solas e origem do farol.
-- `preview.html`: prévia das duas folhas utilizadas, com rotação, pausa e seleção de direção. Para conferir a composição montada, execute `node tests/animation-browser.test.js` e abra a imagem indicada pelo teste.
-- `prompts.json`: conjunto exato dos prompts finais e ferramenta utilizada.
+`piloto-moto-angular.png` contém piloto e moto desenhados juntos, com roupa e
+membros menos arredondados, conforme o protagonista a pé. A posição das
+mãos, do banco e das pernas pertence à própria arte. O jogo não combina máscaras
+de pernas, braços ou metades do piloto.
 
-A moto mantém a grade 16 × 8; o novo personagem utiliza somente 16 poses em grade 4 × 4. `columns` e `rows` descrevem cada folha. Os 128 índices lógicos cobrem uma volta a partir da vista traseira; o personagem seleciona a pose mais próxima em passos de 22,5°. A altura a pé é normalizada em 34 unidades do jogo e a do tronco montado em 25, independentemente da resolução da imagem. Não há mistura entre desenhos, evitando silhuetas duplicadas.
+A folha contém 112 desenhos físicos em 16 colunas e sete fileiras, mapeados para
+128 orientações. `piloto-moto-unificado.js` e o JSON correspondente contêm os
+recortes das silhuetas conectadas, os contatos dos pneus e a origem do farol.
+Os recortes seguem o sprite inteiro, mesmo quando atravessa a grade nominal.
 
-A caminhada desenha um quadro completo por vez, sem recortar ou deformar pernas. Joelhos, botas, braços e mochila se movem juntos. A fase continua ao virar e volta à pose parada ao soltar o movimento. A escala é fixa durante todo o ciclo; pontos da cabeça e do chão estabilizam os recortes. As três imagens são carregadas uma única vez. A composição montada continua com 16 poses em um canvas de 2048 × 128 pixels (1 MiB), mantendo a posição recuada no banco e os apoios da moto.
+`mounted-rider.js` prepara 128 poses e nove inclinações, com altura visual estável.
+Não lê pixels no navegador, permitindo abrir `index.html` diretamente. As sombras
+usam os contatos dos pneus medidos na arte montada e acompanham sua escala reduzida.
+O arquivo anterior `piloto-moto-unificado.png` foi preservado como referência.
 
-Os pontos de apoio e de luz são medidos nos pixels das folhas atuais. A prévia marca os contatos no chão em verde para facilitar ajustes visuais. Estudos antigos e capturas sem uso foram removidos.
+Os sprites separados `sobrevivente-piloto-sentado-128.png`,
+`sobrevivente-piloto-sentado-128.json`, `piloto-recortes.js` e
+`piloto-sentado-preview.html` estão preservados como material de origem e não são
+sobrepostos à moto durante o jogo.
 
-## Reconstruir metadados
+## Outros assets
 
-As direções lógicas são calibradas separadamente para cada folha em
-`tools/build-sprite-metadata.ps1`. `sourceDirections` indica a célula física usada
-por cada direção. A moto antiga exige calibração; o personagem tem uma volta completa
-em 16 poses. Não use o índice lógico diretamente como célula.
-Os contatos dos pneus e a posição da lente são medidos nos pixels da própria
-folha, sem copiar os apoios da moto antiga. O renderizador não aplica escala por direção.
+- `moto-128.png`: moto estacionada, com 128 quadros físicos calibrados.
+- `sobrevivente-parado-direcional-16.png`: poses paradas atuais, com 16 vistas alinhadas à caminhada.
+- `sobrevivente-solitario-idle-16.png`: folha parada anterior, preservada como referência.
+- `sobrevivente-solitario-andar-64.png`: oito vistas com oito quadros de caminhada.
+- `atlas.js` e `atlas.json`: recortes e âncoras dos sprites a pé e da moto original.
+- `andar-preview.html` e `preview.html`: prévias das folhas originais.
 
-Na raiz do projeto:
+A altura a pé é normalizada em 34 unidades, com escala visual global de 0,75.
+As vistas intermediárias a pé são interpoladas para as 128 orientações lógicas.
+A última orientação de movimento é guardada por modo de jogo e permanece fixa
+ao parar, mesmo que o renderizador receba outro ângulo durante a imobilidade.
+
+## Reconstrução e verificação
+
+Para reconstruir os recortes montados:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-mounted-metadata.ps1
+```
+
+Para reconstruir os metadados originais:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-sprite-metadata.ps1
 ```
 
-O script lê os pixels sem alterar as imagens, valida 208 células não vazias e escreve os metadados das três folhas, incluindo os 64 quadros de caminhada. `atlas.json` é usado pelas ferramentas e testes; `atlas.js` carrega os mesmos dados no navegador.
+Para verificar a arte montada em Chromium e gerar as prévias:
 
-Validação: `node tests/sprites-128.test.js`.
+```powershell
+$env:JOGO_MOUNTED_PREVIEW='1'
+node tests/animation-browser.test.js
+```
+
+O teste verifica as 128 orientações, os apoios dos pneus, os limites dos recortes,
+um único desenho por pose e o carregamento por HTTP e por arquivo local.
+`piloto-moto-preview.png` mostra 16 vistas; `piloto-moto-laterais.png` mostra
+seis vistas ampliadas para inspeção visual.

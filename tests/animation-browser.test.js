@@ -73,6 +73,110 @@ async function main(){
     await fullscreenState(expected);
   }
   console.log('Fullscreen keyboard P and button toggles passed in Chromium.');
+  if(process.env.JOGO_FOOT_IDLE_PREVIEW==='1'){
+    const result=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+      startGame();mounted=false;
+      canvas.width=1600;canvas.height=1000;ctx.setTransform(2.5,0,0,2.5,0,0);
+      ctx.fillStyle='#29323c';ctx.fillRect(0,0,640,400);
+      let checks=0;
+      const inputNames=['W','W + D','D','D + S','S (baixo)','S + A','A (esquerda)','A + W'];
+      for(let i=0;i<8;i++){
+        const angle=projectFacing(i*Math.PI/4),expected=bikeSpritePose(angle,0,0).direction,time=10+i,x=80+(i%4)*160,y=110+Math.floor(i/4)*200;
+        bikeVisualFacings.clear();smoothBikeFacing(angle+Math.PI/2,time,'survivor');
+        drawSurvivorSprite(x-24,y,angle,time+1/60,true);
+        if(bikeVisualFacings.get('survivor').direction!==expected)throw Error('Walking did not follow '+inputNames[i]);checks++;
+        drawSurvivorSprite(x+24,y,0,time+2/60,false);
+        if(bikeVisualFacings.get('survivor').direction!==expected)throw Error('Stopping changed facing for '+inputNames[i]);checks++;
+        drawSurvivorSprite(-100,-100,Math.PI/4,time+.5,false);
+        if(bikeVisualFacings.get('survivor').direction!==expected)throw Error('Idle facing drifted for '+inputNames[i]);checks++;
+        ctx.fillStyle='#d9e3ed';ctx.font='8px sans-serif';ctx.fillText(inputNames[i],x-18,y+22);
+        ctx.font='6px sans-serif';ctx.fillText('andando',x-38,y+38);ctx.fillText('parado',x+13,y+38);
+      }
+      return {checks,preview:canvas.toDataURL('image/png')};
+    })()` )})`);
+    if(errors.length||missingResources.length)throw Error([...errors,...missingResources].join('\n'));
+    const output=path.join(root,'assets/sprites-128/parar-direcao-preview.png');
+    fs.writeFileSync(output,Buffer.from(result.preview.split(',')[1],'base64'));
+    console.log(result.checks+' quick-turn and idle-facing browser checks passed');console.log('Preview: '+output);
+    return;
+  }
+  if(process.env.JOGO_MOUNTED_PREVIEW==='1'){
+    const result=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+      startGame();mounted=true;bikeEngineRunning=false;
+      canvas.width=1600;canvas.height=1000;ctx.setTransform(2.5,0,0,2.5,0,0);
+      ctx.fillStyle='#29323c';ctx.fillRect(0,0,640,400);
+      let checks=0;
+      if(spriteAtlas.mounted.file!=='unified-mounted-art')throw Error('Old layered rider compositor is still active');
+      checks++;
+      const originalDraw=CanvasRenderingContext2D.prototype.drawImage,drawSources=[];
+      CanvasRenderingContext2D.prototype.drawImage=function(image,...args){drawSources.push(image);return originalDraw.call(this,image,...args);};
+      try{
+        createMountedRiderAtlas({rider:seatedRiderSpriteSheet,bike:bikeSpriteSheets[0],atlas:spriteAtlas,layout:d=>bikeGroundLayout(0,0,50,d,false,1)});
+      }finally{CanvasRenderingContext2D.prototype.drawImage=originalDraw;}
+      if(drawSources.length!==128*9||drawSources.some(image=>image!==seatedRiderSpriteSheet))throw Error('Each mounted pose must draw only one unified sprite, without duplicate limbs or motorcycle overlays');
+      checks++;
+      for(let direction=0;direction<128;direction++){
+        const ground=bikeGroundLayout(0,0,50,direction,true);
+        const source=spriteAtlas.mounted.sourceDirections[direction],crop=MOUNTED_BIKE_ART.frames[source],contacts=MOUNTED_BIKE_ART.wheelContacts[source];
+        const ax=contacts.reduce((n,p)=>n+p[0],0)/contacts.length,ay=contacts.reduce((n,p)=>n+p[1],0)/contacts.length;
+        const artScale=36/crop[3]*ACTOR_VISUAL_SCALE;
+        if(!ground.contacts.every((p,i)=>Math.hypot(p[0]-(contacts[i][0]-ax)*artScale,p[1]-5-(contacts[i][1]-ay)*artScale)<1e-8))throw Error('Shadow does not follow mounted tire scale at '+direction);
+        checks++;
+        const [x,y,w,h]=spriteAtlas.mounted.frames[direction];
+        if(x<0||y<0||x+w>bikeSpriteSheets[1].width||y+h>bikeSpriteSheets[1].height)throw Error('Mounted frame outside sheet');
+        checks++;
+        const pixels=bikeSpriteSheets[1].getContext('2d');
+        for(const [px,py] of spriteAtlas.mounted.wheelContacts[direction]){
+          const sample=pixels.getImageData(Math.floor(x+px)-1,Math.floor(y+py)-1,3,3).data;
+          let touches=false;for(let i=3;i<sample.length;i+=4)if(sample[i]>64)touches=true;
+          if(!touches)throw Error('Tire anchor points into empty space at '+direction);
+          checks++;
+        }
+      }
+      for(let i=0;i<16;i++){
+        const x=80+(i%4)*160,y=80+Math.floor(i/4)*100,angle=i*Math.PI/8;
+        bikeVisualFacings.clear();drawBike(x,y,angle,0,30+i);
+        ctx.fillStyle='#d9e3ed';ctx.font='9px sans-serif';ctx.fillText(String(i*8)+' / 128',x-18,y+22);
+      }
+      const preview=canvas.toDataURL('image/png');
+      canvas.width=1800;canvas.height=900;ctx.setTransform(6,0,0,6,0,0);
+      ctx.fillStyle='#29323c';ctx.fillRect(0,0,300,150);
+      [24,32,40,88,96,104].forEach((direction,i)=>{
+        const x=50+(i%3)*100,y=60+Math.floor(i/3)*75;
+        bikeVisualFacings.clear();drawBike(x,y,direction*Math.PI*2/128,0,60+i);
+        ctx.fillStyle='#d9e3ed';ctx.font='4px sans-serif';ctx.fillText(direction+' / 128',x-8,y+10);
+      });
+      return {checks,preview,detail:canvas.toDataURL('image/png')};
+    })()` )})`);
+    if(errors.length||missingResources.length)throw Error([...errors,...missingResources].join('\n'));
+    const output=path.join(root,'assets/sprites-128/piloto-moto-preview.png');
+    fs.writeFileSync(output,Buffer.from(result.preview.split(',')[1],'base64'));
+    fs.writeFileSync(path.join(root,'assets/sprites-128/piloto-moto-laterais.png'),Buffer.from(result.detail.split(',')[1],'base64'));
+    console.log(result.checks+' mounted rider browser checks passed');console.log('Preview: '+output);
+    // Also exercise the user's double-click/index.html workflow. HTTP alone
+    // does not expose canvas security errors caused by local image readback.
+    await call('Page.addScriptToEvaluateOnNewDocument',{source:`
+      window.__mountedSpriteDraws=0;window.__riderCompositionDraws=0;
+      const originalDrawImage=CanvasRenderingContext2D.prototype.drawImage;
+      CanvasRenderingContext2D.prototype.drawImage=function(image,...args){
+        if(image instanceof HTMLCanvasElement&&image.width===2048&&image.height===9216)window.__mountedSpriteDraws++;
+        if(image instanceof HTMLImageElement&&/piloto-moto-(unificado|angular)\.png/.test(image.src))window.__riderCompositionDraws++;
+        return originalDrawImage.call(this,image,...args);
+      };
+    `});
+    await call('Page.navigate',{url:require('node:url').pathToFileURL(path.join(root,'index.html')).href});
+    await evaluate(`new Promise((resolve,reject)=>{let attempts=0;const poll=()=>{
+      if(window.__riderCompositionDraws>0&&document.querySelector('#start-game'))resolve(true);
+      else if(++attempts>300)reject(Error('Local-file rider composition did not load'));else setTimeout(poll,50);
+    };poll();})`);
+    await evaluate(`document.querySelector('#start-game').click();window.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));`);
+    await evaluate(`new Promise((resolve,reject)=>{let attempts=0;const poll=()=>{
+      if(window.__mountedSpriteDraws>0)resolve(true);else if(++attempts>150)reject(Error('Local-file mounted sprites were not rendered'));else setTimeout(poll,50);
+    };poll();})`);
+    if(errors.length)throw Error(errors.join('\n'));
+    console.log('Local index.html: separate rider composed and mounted sprites rendered without canvas security errors.');
+    return;
+  }
   const result=await evaluate(`__gameEval(${JSON.stringify(`
     (()=>{
       let checks=0;const check=(ok,message)=>{checks++;if(!ok)throw Error(message);};
@@ -94,17 +198,17 @@ async function main(){
       check(bikeService.phase==='done'&&bikeFuelLeakRate()===0,'Keyboard seals all four points and stops the leak');
       startGame();
       bikeEngineRunning=true;bike.steering=.5;
-      check(bikeSpriteSheets[1].width*bikeSpriteSheets[1].height===16*128*128,'Mounted atlas stores only the 16 visible poses');
-      for(let direction=0;direction<128;direction+=8){
+      check(bikeSpriteSheets[1].width*bikeSpriteSheets[1].height===128*9*128*128,'Mounted atlas stores 128 headings and nine banking poses');
+      for(let direction=0;direction<128;direction++){
         const ground=bikeGroundLayout(0,0,50,direction,true),base=bikeGroundLayout(0,0,50,direction,false);
         const scale=ground.width/ground.sw,anchor=spriteAtlas.mounted.riderAnchors[direction];
-        check(Math.abs(anchor.height*scale-25*.75)<1e-8,'Seated rider keeps the same reduced height in every direction');
-        check(Math.abs(anchor.rearOffset*scale-6*.75)<1e-8,'Seat offset scales together with the motorcycle');
-        check(ground.contacts.every((point,i)=>Math.hypot(point[0]-base.contacts[i][0],point[1]-base.contacts[i][1])<1e-8),'Mounting never changes motorcycle scale or wheel contacts');
+        check(Math.abs(anchor.height*scale-24*.75)<1e-8,'Seated rider keeps the reduced full-body scale');
+        check(Math.abs(anchor.rearOffset*scale-3.375*.75)<1e-8,'Seat offset scales together with the motorcycle');
+        check(Math.abs(ground.contacts.reduce((sum,p)=>sum+p[1],0)/ground.contacts.length-5)<1e-8,'Mounted tires keep their contact center on the ground');
       }
       check(bikeSpritePose(-.01,0,0).direction===bikeSpritePose(Math.PI*2+.01,0,0).direction,'Rotation wraps without a discontinuity');
-      const stable=smoothBikeFacing(Math.PI/16-.01,0,'boundary-test').direction;
-      for(let i=1;i<=20;i++)check(smoothBikeFacing(Math.PI/16+(i%2?.01:-.01),i/60,'boundary-test').direction===stable,'Small steering changes must not flicker between poses');
+      const stable=smoothBikeFacing(Math.PI/16-.001,0,'boundary-test').direction;
+      for(let i=1;i<=20;i++)check(smoothBikeFacing(Math.PI/16+(i%2?.001:-.001),i/60,'boundary-test').direction===stable,'Small steering changes must not flicker between poses');
       check(Math.abs(bikeMotion(40,1,true,3).compression-bikeMotion(41,1,true,3).compression)<.001,'Acceleration must not jump the suspension phase');
       let time=0;
       for(const riding of [false,true])for(let direction=0;direction<128;direction++){

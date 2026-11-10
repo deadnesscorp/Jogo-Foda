@@ -20,13 +20,14 @@
   });
   const survivorSpriteSheet=new Image();survivorSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.file;
   const survivorWalkSpriteSheet=new Image();survivorWalkSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.walk.file;
+  const seatedRiderSpriteSheet=new Image();seatedRiderSpriteSheet.src='assets/sprites-128/'+MOUNTED_BIKE_ART.file;
   function bikeSpriteSource(direction,riding=false){return bikeSpriteSheets[riding?1:0];}
   function bikeSpriteMetadata(riding=false){return spriteAtlas[riding?'mounted':'bike'];}
   let mountedSpritesBuilt=false;
   function bikeSpritesReady(){return mountedSpritesBuilt;}
   const BIKE_DIRECTION_COUNT=128,BIKE_SPRITE_COLUMNS=16;
   const BIKE_DIRECTION_STEP=Math.PI*2/BIKE_DIRECTION_COUNT;
-  const VISUAL_DIRECTION_STRIDE=8,VISUAL_DIRECTION_STEP=BIKE_DIRECTION_STEP*VISUAL_DIRECTION_STRIDE;
+  const VISUAL_DIRECTION_STRIDE=1,VISUAL_DIRECTION_STEP=BIKE_DIRECTION_STEP*VISUAL_DIRECTION_STRIDE;
   const bikeSpriteBounds=spriteAtlas.bike.frames;
   const bikeVisualFacings = new Map();
   const bikeBlendLayer=document.createElement('canvas');
@@ -80,78 +81,12 @@
       contacts: contacts.map(([px, py]) => [left + px * scale, top + py * scale])};
   }
   function buildMountedSprites() {
-    if(mountedSpritesBuilt||!bikeSpriteSheets.every(image=>image.complete&&image.naturalWidth>0)||!survivorSpriteSheet.complete||!survivorSpriteSheet.naturalWidth)return;
-    // Assemble the same motorcycle and survivor used on foot. A fixed-size
-    // seated torso replaces the independently drawn riders in the old atlas.
-    const cell=128,unit=2,originX=cell/2,originY=90;
-    const sheet=document.createElement('canvas');sheet.width=cell*16;sheet.height=cell*9;
-    const painter=sheet.getContext('2d');painter.imageSmoothingEnabled=false;
-    const metadata={file:'composed-at-runtime',width:sheet.width,height:sheet.height,pixelsPerUnit:unit,frames:[],wheelContacts:[],headlightAnchors:[],riderAnchors:[]};
-    const person=spriteAtlas.survivor;
-    const colors=person.palette;
-    for(let bankPose=0;bankPose<9;bankPose++) {
-    for(let direction=0;direction<128;direction+=VISUAL_DIRECTION_STRIDE) {
-      const angle=direction*BIKE_DIRECTION_STEP,fx=Math.sin(angle),fy=-Math.cos(angle)*.5,rx=Math.cos(angle),ry=Math.sin(angle)*.5;
-      // Compose at canonical size; the finished bike and rider shrink together.
-      const ground=bikeGroundLayout(0,0,50,direction,false,1);
-      const [lampX,lampY]=spriteAtlas.bike.headlightAnchors[direction],baseScale=ground.width/ground.sw;
-      const lamp={x:ground.left+lampX*baseScale,y:ground.top+lampY*baseScale};
-      const col=direction/VISUAL_DIRECTION_STRIDE*cell,row=bankPose*cell;
-      const bodyShift=(bankPose-4);
-      const hip={x:-fx*6,y:5-fy*6-14};
-      painter.save();painter.beginPath();painter.rect(col,row,cell,cell);painter.clip();
-      painter.translate(col+originX,row+originY);painter.scale(unit,unit);
-      painter.lineCap='round';painter.lineJoin='round';
-      // Bent legs sit behind the tank, with boots resting beside the engine.
-      const drawLeg=side=>{
-        const knee={x:hip.x+fx*3+rx*side*5,y:hip.y+6+ry*side*5};
-        const foot={x:rx*side*6,y:1+ry*side*6};
-        painter.strokeStyle='#111a1b';painter.lineWidth=4;
-        painter.beginPath();painter.moveTo(hip.x+rx*side*2,hip.y+ry*side*2);painter.lineTo(knee.x,knee.y);painter.lineTo(foot.x,foot.y);painter.stroke();
-        painter.strokeStyle=colors.trousers;painter.lineWidth=2.4;painter.stroke();
-        if(side===-1){painter.fillStyle=colors.patch;painter.fillRect(knee.x-1.1,knee.y-1,2.2,2);}
-        painter.strokeStyle=colors.boot;painter.lineWidth=3;
-        painter.beginPath();painter.moveTo(foot.x,foot.y);painter.lineTo(foot.x+fx*2,foot.y+fy*2);painter.stroke();
-      };
-      const nearSide=ry>=0?1:-1;drawLeg(-nearSide);
-      painter.drawImage(bikeSpriteSheets[0],ground.sx,ground.sy,ground.sw,ground.sh,ground.left,ground.top,ground.width,ground.height);
-      drawLeg(nearSide);
-      const [sx,sy,sw,sh]=person.frames[direction],torso=Math.floor(sh*.66);
-      const height=25,scale=height/torso,width=sw*scale*.86,left=hip.x-width/2,top=hip.y-height;
-      painter.save();painter.translate(left,top);
-      painter.transform(1,0,-fx*.10-bodyShift*rx/height,1,fx*height*.10+bodyShift*rx,bodyShift*ry);
-      // Keep the helmet/backpack and jacket, excluding the standing arms/legs.
-      painter.beginPath();painter.moveTo(0,0);painter.lineTo(width,0);painter.lineTo(width,height*.48);
-      painter.lineTo(width*.77,height*.66);painter.lineTo(width*.74,height);painter.lineTo(width*.26,height);
-      painter.lineTo(width*.23,height*.66);painter.lineTo(0,height*.48);painter.closePath();painter.clip();
-      painter.drawImage(survivorSpriteSheet,sx,sy,sw,torso,0,0,width,height);painter.restore();
-      // Gloves follow the grips while the shoulders remain behind the tank.
-      for(const side of [-1,1]) {
-        const shoulder={x:hip.x+fx*1.5+rx*side*3+bodyShift*rx*.65,y:hip.y-13+ry*side*3+bodyShift*ry*.65};
-        const hand={x:lamp.x-fx*2+rx*side*6,y:lamp.y-4+ry*side*6};
-        painter.strokeStyle='#111a1b';painter.lineWidth=4.8;
-        painter.beginPath();painter.moveTo(shoulder.x,shoulder.y);painter.lineTo(shoulder.x+(hand.x-shoulder.x)*.45-rx*side*1.5,shoulder.y+(hand.y-shoulder.y)*.45+2);painter.lineTo(hand.x,hand.y);painter.stroke();
-        painter.strokeStyle=colors.sleeve;painter.lineWidth=3.2;painter.stroke();
-        if(side===-1){
-          painter.strokeStyle=colors.tape;painter.lineWidth=3.4;
-          const ex=shoulder.x+(hand.x-shoulder.x)*.45-rx*side*1.5,ey=shoulder.y+(hand.y-shoulder.y)*.45+2;
-          painter.beginPath();painter.moveTo(ex+(hand.x-ex)*.55,ey+(hand.y-ey)*.55);painter.lineTo(ex+(hand.x-ex)*.68,ey+(hand.y-ey)*.68);painter.stroke();
-        }
-        painter.fillStyle=colors.glove;painter.fillRect(hand.x-1.3,hand.y-1.1,2.6,2.2);
-      }
-      painter.restore();
-      metadata.frames[direction]=[col,cell*4,cell,cell];
-      const point=([x,y])=>[originX+x*unit,originY+y*unit];
-      metadata.wheelContacts[direction]=ground.contacts.map(point);
-      metadata.headlightAnchors[direction]=point([lamp.x,lamp.y]);
-      metadata.riderAnchors[direction]={hip:point([hip.x,hip.y]),height:height*unit,rearOffset:6*unit};
-    }
-    }
-    for(let direction=0;direction<128;direction++){
-      const pose=Math.round(direction/VISUAL_DIRECTION_STRIDE)*VISUAL_DIRECTION_STRIDE%128;
-      for(const field of ['frames','wheelContacts','headlightAnchors','riderAnchors'])metadata[field][direction]=metadata[field][pose];
-    }
-    bikeSpriteSheets[1]=sheet;spriteAtlas.mounted=metadata;mountedSpritesBuilt=true;
+    if(mountedSpritesBuilt||!bikeSpriteSheets[0].complete||!bikeSpriteSheets[0].naturalWidth||!seatedRiderSpriteSheet.complete||!seatedRiderSpriteSheet.naturalWidth)return;
+    const composed=createMountedRiderAtlas({
+      rider:seatedRiderSpriteSheet,bike:bikeSpriteSheets[0],atlas:spriteAtlas,
+      layout:direction=>bikeGroundLayout(0,0,50,direction,false,1)
+    });
+    bikeSpriteSheets[1]=composed.sheet;spriteAtlas.mounted=composed.metadata;mountedSpritesBuilt=true;
     bikeBlendStamp='';bikeShadowMasks.clear();
   }
   const DAY_LENGTH_SECONDS = 180;
@@ -213,6 +148,7 @@
     // Shadow masks are created lazily for the poses actually drawn.
   }));
   survivorSpriteSheet.addEventListener('load',buildMountedSprites);
+  seatedRiderSpriteSheet.addEventListener('load',buildMountedSprites);
   function bikeLightPose(view = 'world') {
     if (!bikeSpritesReady()) return null;
     const chase = view === 'chase';
@@ -774,6 +710,7 @@
   function startGame() {
     startHour = Math.floor(Math.random() * 1440) / 60;
     bikeVisualFacings.clear();
+    survivorIdleDirections.clear();
     ignition.reset();
     state = 'drive'; gameTime = 0; lastTime = 0; activeTower = 0; network = 0;
     bike.x = 180; bike.y = 3300; bike.angle = .87; bike.speed = 0; bike.wheel = 0; bike.steering=0;bike.bank=0;
@@ -795,6 +732,7 @@
   document.querySelector('#start-game').addEventListener('click', startGame);
 
   function dismount() {
+    survivorIdleDirections.delete('drive');
     bike.steering=0;bike.bank=0;
     mounted = false;
     approachedByBike = false;
@@ -1360,7 +1298,7 @@
     painter.setTransform(1,0,0,1,0,0);painter.clearRect(0,0,bikeBlendLayer.width,bikeBlendLayer.height);
     painter.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,80*RENDER_SCALE,80*RENDER_SCALE);
     painter.imageSmoothingEnabled=false;
-    painter.drawImage(bikeSpriteSource(direction,riding),ground.sx,ground.sy+(riding?(bankPose-4)*128:0),ground.sw,ground.sh,
+    painter.drawImage(bikeSpriteSource(direction,riding),ground.sx,ground.sy+(riding?(bankPose-4)*8*128:0),ground.sw,ground.sh,
       ground.left-x,ground.top-y,ground.width,ground.height);
     bikeOcclusionContext.clearRect(0,0,bikeOcclusionLayer.width,bikeOcclusionLayer.height);
     for(let i=0;i<8;i++)bikeOcclusionContext.drawImage(bikeBlendLayer,0,0);
@@ -2581,10 +2519,16 @@
     if(!((state==='drive'&&!mounted)||state==='explore'))return 1;
     return footSpeedMultiplier()>1?1.3:.8;
   }
+  const survivorIdleDirections=new Map();
   function drawSurvivorSprite(x,y,angle,time,moving) {
     if(!survivorSpriteSheet.complete||survivorSpriteSheet.naturalWidth===0)return false;
     const facing=smoothBikeFacing(angle,time,'survivor');
-    const direction=facing.direction??bikeSpritePose(facing.angle,0,time).direction;
+    // Foot input can turn instantly. Motorcycle steering smoothing otherwise
+    // leaves the idle pose facing an intermediate diagonal after a quick turn.
+    const context=typeof state==='string'?state:'world';
+    if(moving||!survivorIdleDirections.has(context))survivorIdleDirections.set(context,bikeSpritePose(angle,0,time).direction);
+    const direction=survivorIdleDirections.get(context);
+    facing.direction=direction;facing.angle=direction*Math.PI*2/128;
     const metadata=spriteAtlas.survivor,walk=metadata.walk;
     let sheet=survivorSpriteSheet,frame=metadata.frames[direction],anchor=metadata.wheelContacts[direction][0],height=frame[3];
     const dt=Math.max(0,Math.min(.05,time-(facing.walkTime??time)));facing.walkTime=time;
@@ -2593,6 +2537,33 @@
       const heading=Math.round(direction/16)%walk.directions,step=Math.floor(facing.walkPhase)%walk.frameCount;
       sheet=survivorWalkSpriteSheet;frame=walk.frames[heading][step];anchor=walk.anchors[heading][step];height=walk.bodyHeights[heading];
     } else if(!moving)facing.walkPhase=0;
+    // Interpolate neighboring source views at each of the 128 headings.
+    // Align both views at their ground anchor and normalize their body height.
+    const walking=sheet===survivorWalkSpriteSheet;
+    const sourceCount=walking?walk.directions:(metadata.idleDirections||metadata.columns*metadata.rows);
+    const position=direction*sourceCount/128,lower=Math.floor(position),weight=position-lower;
+    if(weight>0){
+      const step=Math.floor(facing.walkPhase||0)%walk.frameCount;
+      const key=direction+':'+walking+':'+step;
+      if(!facing.spriteCanvas){facing.spriteCanvas=document.createElement('canvas');facing.spriteCanvas.width=160;facing.spriteCanvas.height=160;}
+      if(facing.spriteKey!==key){
+        const painter=facing.spriteCanvas.getContext('2d');
+        painter.clearRect(0,0,160,160);painter.imageSmoothingEnabled=false;
+        painter.globalCompositeOperation='lighter';
+        for(let side=0;side<2;side++){
+          const pose=(lower+side)%sourceCount,index=pose*128/sourceCount;
+          const crop=walking?walk.frames[pose][step]:metadata.frames[index];
+          const contact=walking?walk.anchors[pose][step]:metadata.wheelContacts[index][0];
+          const bodyHeight=walking?walk.bodyHeights[pose]:crop[3];
+          const scale=34*ACTOR_VISUAL_SCALE/bodyHeight*4,sx=scale*.90;
+          painter.globalAlpha=side?weight:1-weight;
+          painter.drawImage(sheet,...crop,80-contact[0]*sx,140-contact[1]*scale,crop[2]*sx,crop[3]*scale);
+        }
+        painter.globalAlpha=1;painter.globalCompositeOperation='source-over';facing.spriteKey=key;
+      }
+      ctx.drawImage(facing.spriteCanvas,x-20,y+5-35,40,40);
+      return true;
+    }
     const [sx,sy,sw,sh]=frame,scale=34*ACTOR_VISUAL_SCALE/height,scaleX=scale*.90;
     ctx.save();ctx.imageSmoothingEnabled=false;
     ctx.drawImage(sheet,sx,sy,sw,sh,x-anchor[0]*scaleX,y+5-anchor[1]*scale,sw*scaleX,sh*scale);

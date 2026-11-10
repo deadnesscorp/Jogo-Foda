@@ -68,9 +68,10 @@ public static class SpriteAtlasBounds {
 # These sheets do not advance by a uniform angle and contain repeated rear views.
 $directionKeys = @{
   bike=@(0,12,30,45,57,72,88,101,110)
+  survivor=@(0,2,3,6,8,9,11,14,16)
 }
 $atlas = [ordered]@{directions=128;columns=16;rows=8;stepDegrees=2.8125}
-$variants = [ordered]@{bike='moto-128.png';survivor='sobrevivente-solitario-idle-16.png'}
+$variants = [ordered]@{bike='moto-128.png';survivor='sobrevivente-parado-direcional-16.png'}
 foreach ($kind in $variants.Keys) {
   $file = $variants[$kind]
   $path = Join-Path $ProjectRoot "assets/sprites-128/$file"
@@ -109,16 +110,16 @@ foreach ($kind in $variants.Keys) {
   }
   } finally { $bitmap.Dispose() }
   $sources=@(for($direction=0;$direction -lt 128;$direction++) {
-    if($kind -eq 'survivor') { ([int][Math]::Floor($direction/8.0+.5))%16;continue }
     $segment=[int][Math]::Floor($direction/16);$weight=($direction%16)/16
     $keys=$directionKeys[$kind]
-    [int][Math]::Round($keys[$segment]+($keys[$segment+1]-$keys[$segment])*$weight)
+    $source=[int][Math]::Round($keys[$segment]+($keys[$segment+1]-$keys[$segment])*$weight)
+    if($kind -eq 'survivor'){$source%16}else{$source}
   })
   $atlas[$kind]=[ordered]@{file=$file;width=$width;height=$height;columns=$columns;rows=$rows;sourceDirections=$sources;
     frames=@($sources | ForEach-Object { ,$frames[$_] });
     wheelContacts=@($sources | ForEach-Object { ,$contacts[$_] });
     headlightAnchors=@($sources | ForEach-Object { ,$lamps[$_] })}
-  if($kind -eq 'survivor') { $atlas[$kind]['palette']=[ordered]@{sleeve='#3d4037';trousers='#30322e';boot='#20221f';glove='#302a22';tape='#a7977b';patch='#77705e'} }
+  if($kind -eq 'survivor') { $atlas[$kind]['idleDirections']=8; $atlas[$kind]['palette']=[ordered]@{sleeve='#3d4037';trousers='#30322e';boot='#20221f';glove='#302a22';tape='#a7977b';patch='#77705e'} }
 }
 $walkFile='sobrevivente-solitario-andar-64.png'
 $walkPath=Join-Path $ProjectRoot "assets/sprites-128/$walkFile"
