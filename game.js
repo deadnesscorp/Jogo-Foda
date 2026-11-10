@@ -36,11 +36,11 @@
   bikeOcclusionLayer.width=bikeBlendLayer.width;bikeOcclusionLayer.height=bikeBlendLayer.height;
   const bikeOcclusionContext=bikeOcclusionLayer.getContext('2d');
   let bikeBlendStamp='';
-  function bikeMotion(speed,time,riding,phase=0) {
+  function bikeMotion(speed,time,riding,phase=0,angle=0) {
     const travel=Math.min(1,Math.abs(speed)/110);
     const idle=riding&&bikeEngineRunning ? .08 : 0;
     return {compression:1-(Math.sin(phase)*.008*travel+Math.sin(time*32)*idle*.012),
-      lean:Math.max(-.055,Math.min(.055,bike.steering*.035))*travel};
+      lean:Math.max(-.055,Math.min(.055,-(bike.bank||0)*Math.cos(angle)*.055))*travel};
   }
   function smoothBikeFacing(angle, time, view) {
     let facing = bikeVisualFacings.get(view);
@@ -84,18 +84,20 @@
     // Assemble the same motorcycle and survivor used on foot. A fixed-size
     // seated torso replaces the independently drawn riders in the old atlas.
     const cell=128,unit=2,originX=cell/2,originY=90;
-    const sheet=document.createElement('canvas');sheet.width=cell*16;sheet.height=cell;
+    const sheet=document.createElement('canvas');sheet.width=cell*16;sheet.height=cell*9;
     const painter=sheet.getContext('2d');painter.imageSmoothingEnabled=false;
     const metadata={file:'composed-at-runtime',width:sheet.width,height:sheet.height,pixelsPerUnit:unit,frames:[],wheelContacts:[],headlightAnchors:[],riderAnchors:[]};
     const person=spriteAtlas.survivor;
     const colors=person.palette;
+    for(let bankPose=0;bankPose<9;bankPose++) {
     for(let direction=0;direction<128;direction+=VISUAL_DIRECTION_STRIDE) {
       const angle=direction*BIKE_DIRECTION_STEP,fx=Math.sin(angle),fy=-Math.cos(angle)*.5,rx=Math.cos(angle),ry=Math.sin(angle)*.5;
       // Compose at canonical size; the finished bike and rider shrink together.
       const ground=bikeGroundLayout(0,0,50,direction,false,1);
       const [lampX,lampY]=spriteAtlas.bike.headlightAnchors[direction],baseScale=ground.width/ground.sw;
       const lamp={x:ground.left+lampX*baseScale,y:ground.top+lampY*baseScale};
-      const col=direction/VISUAL_DIRECTION_STRIDE*cell,row=0;
+      const col=direction/VISUAL_DIRECTION_STRIDE*cell,row=bankPose*cell;
+      const bodyShift=(bankPose-4);
       const hip={x:-fx*6,y:5-fy*6-14};
       painter.save();painter.beginPath();painter.rect(col,row,cell,cell);painter.clip();
       painter.translate(col+originX,row+originY);painter.scale(unit,unit);
@@ -117,7 +119,7 @@
       const [sx,sy,sw,sh]=person.frames[direction],torso=Math.floor(sh*.66);
       const height=25,scale=height/torso,width=sw*scale*.86,left=hip.x-width/2,top=hip.y-height;
       painter.save();painter.translate(left,top);
-      painter.transform(1,0,-fx*.10,1,fx*height*.10,0);
+      painter.transform(1,0,-fx*.10-bodyShift*rx/height,1,fx*height*.10+bodyShift*rx,bodyShift*ry);
       // Keep the helmet/backpack and jacket, excluding the standing arms/legs.
       painter.beginPath();painter.moveTo(0,0);painter.lineTo(width,0);painter.lineTo(width,height*.48);
       painter.lineTo(width*.77,height*.66);painter.lineTo(width*.74,height);painter.lineTo(width*.26,height);
@@ -125,24 +127,25 @@
       painter.drawImage(survivorSpriteSheet,sx,sy,sw,torso,0,0,width,height);painter.restore();
       // Gloves follow the grips while the shoulders remain behind the tank.
       for(const side of [-1,1]) {
-        const shoulder={x:hip.x+fx*1.5+rx*side*3,y:hip.y-13+ry*side*3};
+        const shoulder={x:hip.x+fx*1.5+rx*side*3+bodyShift*rx*.65,y:hip.y-13+ry*side*3+bodyShift*ry*.65};
         const hand={x:lamp.x-fx*2+rx*side*6,y:lamp.y-4+ry*side*6};
         painter.strokeStyle='#111a1b';painter.lineWidth=4.8;
-        painter.beginPath();painter.moveTo(shoulder.x,shoulder.y);painter.lineTo(shoulder.x+fx*3,shoulder.y+6);painter.lineTo(hand.x,hand.y);painter.stroke();
+        painter.beginPath();painter.moveTo(shoulder.x,shoulder.y);painter.lineTo(shoulder.x+(hand.x-shoulder.x)*.45-rx*side*1.5,shoulder.y+(hand.y-shoulder.y)*.45+2);painter.lineTo(hand.x,hand.y);painter.stroke();
         painter.strokeStyle=colors.sleeve;painter.lineWidth=3.2;painter.stroke();
         if(side===-1){
           painter.strokeStyle=colors.tape;painter.lineWidth=3.4;
-          const ex=shoulder.x+fx*3,ey=shoulder.y+6;
+          const ex=shoulder.x+(hand.x-shoulder.x)*.45-rx*side*1.5,ey=shoulder.y+(hand.y-shoulder.y)*.45+2;
           painter.beginPath();painter.moveTo(ex+(hand.x-ex)*.55,ey+(hand.y-ey)*.55);painter.lineTo(ex+(hand.x-ex)*.68,ey+(hand.y-ey)*.68);painter.stroke();
         }
         painter.fillStyle=colors.glove;painter.fillRect(hand.x-1.3,hand.y-1.1,2.6,2.2);
       }
       painter.restore();
-      metadata.frames[direction]=[col,row,cell,cell];
+      metadata.frames[direction]=[col,cell*4,cell,cell];
       const point=([x,y])=>[originX+x*unit,originY+y*unit];
       metadata.wheelContacts[direction]=ground.contacts.map(point);
       metadata.headlightAnchors[direction]=point([lamp.x,lamp.y]);
       metadata.riderAnchors[direction]={hip:point([hip.x,hip.y]),height:height*unit,rearOffset:6*unit};
+    }
     }
     for(let direction=0;direction<128;direction++){
       const pose=Math.round(direction/VISUAL_DIRECTION_STRIDE)*VISUAL_DIRECTION_STRIDE%128;
@@ -513,7 +516,7 @@
   const interiorWalls = [{x:142,y:111,w:10,h:77},{x:152,y:111,w:58,h:10},{x:222,y:142,w:10,h:58},{x:232,y:142,w:55,h:10},{x:176,y:196,w:65,h:10},{x:250,y:180,w:10,h:37}];
   let walkCycle = 0;
   const camera = { x: 180, y: 3300 };
-  const bike = { x: 180, y: 3300, angle: .87, speed: 0, wheel: 0, steering:0 };
+  const bike = { x: 180, y: 3300, angle: .87, speed: 0, wheel: 0, steering:0, bank:0 };
   let bikeEngineRunning=false;
   const BIKE_GEAR_LIMITS=[0,30,60,90,125],BIKE_SPEED_TO_KMH=.52;
   let bikeGear=1,bikeShiftCooldown=0,bikeShiftFlash=0,bikeRpm=1000;
@@ -773,7 +776,7 @@
     bikeVisualFacings.clear();
     ignition.reset();
     state = 'drive'; gameTime = 0; lastTime = 0; activeTower = 0; network = 0;
-    bike.x = 180; bike.y = 3300; bike.angle = .87; bike.speed = 0; bike.wheel = 0; bike.steering=0;
+    bike.x = 180; bike.y = 3300; bike.angle = .87; bike.speed = 0; bike.wheel = 0; bike.steering=0;bike.bank=0;
     bikeGear=1;bikeShiftCooldown=0;bikeShiftFlash=0;bikeRpm=0;bikeEngineRunning=false;
     player.x = bike.x; player.y = bike.y; player.angle = bike.angle; player.hp = 3;
     mounted = false; approachedByBike = false; totalRide = 0; fuel = 68; hunger = 100; thirst = 100;
@@ -792,7 +795,7 @@
   document.querySelector('#start-game').addEventListener('click', startGame);
 
   function dismount() {
-    bike.steering=0;
+    bike.steering=0;bike.bank=0;
     mounted = false;
     approachedByBike = false;
     player.x = bike.x + Math.cos(bike.angle) * 19;
@@ -803,7 +806,7 @@
   }
   function mount() {
     if (distance(player, bike) > 43) { setToast('A MOTO ESTÁ FORA DE ALCANCE.'); return; }
-    bike.steering=0;
+    bike.steering=0;bike.bank=0;
     mounted = true; player.x = bike.x; player.y = bike.y; player.angle = bike.angle;
     keys.clear();
     if(!bikeEngineRunning) {
@@ -1351,12 +1354,13 @@
     else drawBikeGroundShadow(x,y,ground,direction,time);
     // Cache the complete pose; the lamp mask uses this exact same silhouette.
     const painter=bikeBlendContext;
-    const stamp=direction+':'+RENDER_SCALE+':'+riding;
+    const bankPose=riding?Math.max(0,Math.min(8,Math.round(4+(bike.bank||0)*Math.min(1,Math.abs(speed)/110)*4))):4;
+    const stamp=direction+':'+RENDER_SCALE+':'+riding+':'+bankPose;
     if(stamp!==bikeBlendStamp){
     painter.setTransform(1,0,0,1,0,0);painter.clearRect(0,0,bikeBlendLayer.width,bikeBlendLayer.height);
     painter.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,80*RENDER_SCALE,80*RENDER_SCALE);
     painter.imageSmoothingEnabled=false;
-    painter.drawImage(bikeSpriteSource(direction,riding),ground.sx,ground.sy,ground.sw,ground.sh,
+    painter.drawImage(bikeSpriteSource(direction,riding),ground.sx,ground.sy+(riding?(bankPose-4)*128:0),ground.sw,ground.sh,
       ground.left-x,ground.top-y,ground.width,ground.height);
     bikeOcclusionContext.clearRect(0,0,bikeOcclusionLayer.width,bikeOcclusionLayer.height);
     for(let i=0;i<8;i++)bikeOcclusionContext.drawImage(bikeBlendLayer,0,0);
@@ -1365,7 +1369,7 @@
     const motionDt=Math.max(0,Math.min(.05,time-(facing.motionTime??time)));
     facing.travelPhase=(facing.travelPhase||0)+Math.abs(speed)*motionDt*.16;
     facing.motionTime=time;
-    const motion=bikeMotion(speed,time,riding,facing.travelPhase);facing.motion=motion;
+    const motion=bikeMotion(speed,time,riding,facing.travelPhase,facing.angle);facing.motion=motion;
     ctx.translate(x,y+5);ctx.transform(1,0,motion.lean,motion.compression,0,0);ctx.translate(-x,-y-5);
     ctx.imageSmoothingEnabled=false;ctx.drawImage(bikeBlendLayer,x-80,y-80,160,160);
     ctx.restore();
@@ -3501,6 +3505,8 @@
       const reverse = keys.has('s') || keys.has('arrowdown');
       const turn = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
       bike.steering+=(turn-bike.steering)*(1-Math.exp(-9*dt));
+      // Ease the rider into the turn independently of the handlebars.
+      bike.bank+=(bike.steering-bike.bank)*(1-Math.exp(-6*dt));
       const motorFactor = (.38 + .62 * bikeParts.motor / 100)*(.65+.35*Math.min(hunger,thirst)/100)*(.62+.38*Math.min(bikeParts.frontTire,bikeParts.rearTire)/100);
       if (throttle && bikeEngineRunning && fuel > 0 && bikeLife > 0 && bikeShiftCooldown<=0) bike.speed += bikeGearAcceleration() * motorFactor * dt;
       else if (reverse && bikeLife > 0 && (bike.speed>0||bikeEngineRunning&&fuel>0)) bike.speed += (bike.speed > 0 ? -300 : -105 * motorFactor) * dt;

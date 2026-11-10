@@ -46,7 +46,7 @@ function runRenderCacheTests(source) {
   const bikeDrawing=source.slice(source.indexOf('  function drawBike(x,'),source.indexOf('  function drawBikeFallback('));
   const blended=new Function(`
     let RENDER_SCALE=2,bikeBlendStamp='',blends=0,clears=0,mounted=false;
-    const bike={steering:.5},bikeEngineRunning=true,ACTOR_VISUAL_SCALE=.75;
+    const bike={steering:.5,bank:.8},bikeEngineRunning=true,ACTOR_VISUAL_SCALE=.75;
     ${source.slice(source.indexOf('  function bikeMotion('),source.indexOf('  function smoothBikeFacing('))}
     const positions=[],ctx={save(){},restore(){},translate(){},transform(){},drawImage(image,x,y){positions.push([x,y]);}};
     const bikeBlendLayer={width:320,height:320},bikeBlendContext={setTransform(){},clearRect(){clears++;},drawImage(){blends++;}};
@@ -66,6 +66,11 @@ function runRenderCacheTests(source) {
   check(blended.blends>beforeResize,'resizing invalidates cached sprite');
   const beforeMount=blended.blends;blended.mount();const rider=blended.draw(200,200,1,0,4);
   check(blended.blends>beforeMount&&rider.integrated,'mounting refreshes sprite and embeds rider in motorcycle');
+  const frontLean=blended.motion(110,1,true,0,0).lean;
+  const backLean=blended.motion(110,1,true,0,Math.PI).lean;
+  check(frontLean<0&&backLean>0,'corner lean follows the heading instead of a fixed screen side');
+  check(Math.abs(blended.motion(110,1,true,0,Math.PI/2).lean)<1e-8,'side view does not shear the rider sideways along the motorcycle');
+  check(Math.abs(blended.motion(30,1,true).lean)<Math.abs(frontLean),'corner lean decreases at low speed');
   const parked=blended.motion(0,1,false);
   check(parked.compression===1&&parked.lean===0,'parked motorcycle stays still with engine off');
   check(blended.motion(0,1,true).compression!==1,'mounted motorcycle has a subtle engine vibration');
