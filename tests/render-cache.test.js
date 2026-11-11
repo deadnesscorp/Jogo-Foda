@@ -49,13 +49,22 @@ function runRenderCacheTests(source) {
     const bike={steering:.5,bank:.8},bikeEngineRunning=true,ACTOR_VISUAL_SCALE=.75;
     ${source.slice(source.indexOf('  function bikeMotion('),source.indexOf('  function smoothBikeFacing('))}
     const positions=[],ctx={save(){},restore(){},translate(){},transform(){},drawImage(image,x,y){positions.push([x,y]);}};
-    const bikeBlendLayer={width:320,height:320},bikeBlendContext={setTransform(){},clearRect(){clears++;},drawImage(){blends++;}};
+    const bikeBlendLayer={width:320,height:320},bikeBlendContext={setTransform(){},translate(){},clearRect(){clears++;},drawImage(){blends++;}};
+    const BIKE_DIRECTION_STEP=Math.PI/64,seatedRiderSpriteSheet={};
+    const spriteAtlas={mounted:{poses:Array.from({length:128},()=>({crop:[]}))}};
+    const mountedPose=spriteAtlas.mounted.poses[20],turnWeights=[];
+    let sampledOriginal=false;
+    const drawMountedRiderPose=(painter,art,pose)=>{
+      blends++;
+      turnWeights.push(painter.globalAlpha);
+      sampledOriginal=art===seatedRiderSpriteSheet&&pose===mountedPose&&painter.imageSmoothingEnabled&&painter.imageSmoothingQuality==='medium';
+    };
     const bikeSpritesReady=()=>true,smoothBikeFacing=angle=>({angle,direction:Math.floor(angle)});
     const bikeOcclusionLayer={width:320,height:320},bikeOcclusionContext={clearRect(){},drawImage(){}};
     const bikeGroundLayout=(x,y)=>({sx:0,sy:0,sw:20,sh:20,left:x-10,top:y-20,width:20,height:20,contacts:[[x,y],[x+2,y]],riderOffsetX:0,riderOffsetY:0});
     const bikeSpriteSource=()=>({}),drawBikeContactShadow=()=>{},drawBikeGroundShadow=()=>{},drawBikeExhaust=()=>{};
     ${bikeDrawing}
-    return {draw:drawBike,motion:bikeMotion,positions,get blends(){return blends;},get clears(){return clears;},resize(){bikeBlendStamp='';},mount(){mounted=true;}};
+    return {draw:drawBike,motion:bikeMotion,turn:bikeTurnDelta,positions,turnWeights,get blends(){return blends;},get clears(){return clears;},get sampledOriginal(){return sampledOriginal;},resize(){bikeBlendStamp='';},mount(){mounted=true;}};
   `)();
   blended.draw(100,100,0,0,0);const draws=blended.blends;
   blended.draw(200,200,0,100,1);
@@ -64,8 +73,15 @@ function runRenderCacheTests(source) {
   blended.draw(200,200,1,100,2);check(blended.blends>draws,'turning refreshes blended sprite');
   const beforeResize=blended.blends;blended.resize();blended.draw(200,200,1,0,3);
   check(blended.blends>beforeResize,'resizing invalidates cached sprite');
-  const beforeMount=blended.blends;blended.mount();const rider=blended.draw(200,200,1,0,4);
+  const beforeMount=blended.blends;blended.mount();const rider=blended.draw(200,200,20*Math.PI/64,0,4);
   check(blended.blends>beforeMount&&rider.integrated,'mounting refreshes sprite and embeds rider in motorcycle');
+  check(blended.sampledOriginal,'mounted rendering samples the original art with high-quality scaling');
+  blended.draw(200,200,127.5*Math.PI/64,80,5);
+  check(blended.turnWeights.slice(-2).every(weight=>weight===.5),'the final bike heading blends into the first across a full turn');
+  const turn=speed=>blended.turn(speed,1,100,100,1/60);
+  check(turn(0)===0&&turn(5)>0,'the bike steers as it begins moving and stays still at rest');
+  check(turn(-46)===-turn(46),'reverse flips the steering direction');
+  check(turn(220)<turn(46),'steering is less abrupt at high speeds');
   const frontLean=blended.motion(110,1,true,0,0).lean;
   const backLean=blended.motion(110,1,true,0,Math.PI).lean;
   check(frontLean<0&&backLean>0,'corner lean follows the heading instead of a fixed screen side');

@@ -3,7 +3,7 @@ Um jogo que deve rodar no navegador
 
 Pressione **P** ou clique no botão **Tela cheia** para alternar a exibição. **Esc** também sai da tela cheia. O jogo abre dentro da página e só expande quando solicitado.
 
-Segure **Shift** junto com WASD ou as setas para correr a pé, tanto no mapa quanto dentro dos prédios. Caminhada: **20 km/h**; corrida: **40 km/h**, usando a mesma conversão do painel da moto. Esses são os valores com fome e sede cheias; a condição do personagem pode reduzi-los. Soltar Shift volta à caminhada. A diagonal mantém a mesma velocidade, e as colisões continuam ativas.
+Segure **Shift** junto com WASD ou as setas para correr a pé, tanto no mapa quanto dentro dos prédios. A caminhada chega a **16 km/h** e a corrida a **40 km/h**, usando a mesma conversão do painel da moto. A condição do personagem pode reduzir essas velocidades. Soltar Shift volta à caminhada. A diagonal mantém a mesma velocidade, e as colisões continuam ativas.
 
 ## Manutenção da moto
 

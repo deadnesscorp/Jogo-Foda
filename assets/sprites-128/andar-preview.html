@@ -13,37 +13,51 @@
 <button id="play">Pausar</button>
 <label>Direção <select id="direction"><option>Costas</option><option>Costas / direita</option><option>Direita</option><option>Frente / direita</option><option>Frente</option><option>Frente / esquerda</option><option>Esquerda</option><option>Costas / esquerda</option></select></label>
 <label>Velocidade <input id="speed" type="range" min="4" max="14" value="10"></label>
-<label>Quadro <input id="step" type="range" min="0" max="7" value="0"></label>
+<label>Quadro <input id="step" type="range" min="0" max="23" value="0"></label>
 <strong id="status">Carregando…</strong>
 </div>
-<canvas id="preview" width="1100" height="470" aria-label="Caminhada animada e oito quadros do ciclo"></canvas>
-<p><small>Acima: ciclo completo. Abaixo: os oito quadros na ordem de reprodução.</small> <a href="preview.html">Ver moto e poses paradas</a></p>
+<canvas id="preview" width="1100" height="770" aria-label="Caminhada animada e quadros do ciclo"></canvas>
+<p><small>Acima, o ciclo completo. Abaixo, os quadros na ordem de reprodução.</small> <a href="preview.html">Ver moto e poses paradas</a></p>
 </main>
 <script src="atlas.js"></script>
 <script>
 const walk=SURVIVOR_ATLAS_128.survivor.walk,image=new Image(),canvas=document.querySelector('#preview'),ctx=canvas.getContext('2d');
 const direction=document.querySelector('#direction'),speed=document.querySelector('#speed'),step=document.querySelector('#step'),status=document.querySelector('#status'),play=document.querySelector('#play');
+const frames=walk.walkFrames??Array.from({length:walk.frameCount},(_,index)=>index);
+const period=walk.pingPong?2*(frames.length-1):frames.length;
+const cadence=walk.playbackFps??walk.fps*(walk.pingPong?.8:.7);
+canvas.height=320+Math.ceil(frames.length/8)*150;
+step.max=frames.length-1;speed.min=cadence*.5;speed.max=cadence*1.5;speed.step=.1;speed.value=cadence;
 let loaded=false,paused=false,phase=0,last=0;
-image.onload=()=>{loaded=true;};image.onerror=()=>{status.textContent='Não foi possível carregar a folha.';};image.src=walk.file;
+image.onload=()=>{loaded=true;};image.onerror=()=>{status.textContent='Não foi possível carregar a folha.';};image.src=walk.motionFile??walk.file;
 play.onclick=()=>{paused=!paused;play.textContent=paused?'Continuar':'Pausar';};
 step.oninput=()=>{phase=Number(step.value);paused=true;play.textContent='Continuar';};
 function sprite(heading,frame,x,y,height){
-  const [sx,sy,sw,sh]=walk.frames[heading][frame],[ax,ay]=walk.anchors[heading][frame],scale=height/walk.bodyHeights[heading];
-  ctx.drawImage(image,sx,sy,sw,sh,x-ax*scale*.9,y-ay*scale,sw*scale*.9,sh*scale);
+  const [sx,sy,sw,sh]=walk.frames[heading][frame],[ax]=walk.anchors[heading][frame],scale=height/walk.bodyHeights[heading];
+  if(walk.motionFile){
+    const width=walk.width/walk.columns,cellHeight=walk.height/walk.rows;
+    const left=frame*width,top=heading*cellHeight;
+    ctx.drawImage(image,left,top,width,cellHeight,x-(sx-left+ax)*scale*.9,y-height-(sy-top)*scale,width*scale*.9,cellHeight*scale);
+  }else{
+    ctx.drawImage(image,sx,sy,sw,sh,x-ax*scale*.9,y-height,sw*scale*.9,sh*scale);
+  }
 }
 function render(now){
   const dt=last?Math.min(.05,(now-last)/1000):0;last=now;
-  if(!paused)phase=(phase+dt*Number(speed.value))%walk.frameCount;
+  if(!paused)phase=(phase+dt*Number(speed.value))%period;
   ctx.imageSmoothingEnabled=false;ctx.fillStyle='#202d32';ctx.fillRect(0,0,canvas.width,canvas.height);
   if(loaded){
-    const heading=direction.selectedIndex,frame=Math.floor(phase);step.value=frame;
+    const heading=direction.selectedIndex,index=Math.floor(phase);
+    const frameOrder=walk.walkOrder?.[heading]??frames;
+    const frame=walk.pingPong?Math.min(index,period-index):index;step.value=frame;
     ctx.strokeStyle='#516353';ctx.beginPath();ctx.moveTo(400,270);ctx.lineTo(700,270);ctx.stroke();
-    sprite(heading,frame,550,270,220);
-    for(let i=0;i<8;i++){
-      const x=70+i*137;ctx.fillStyle=i===frame?'#3d4d3e':'#26373a';ctx.fillRect(x-59,320,118,125);
-      sprite(heading,i,x,425,85);ctx.fillStyle='#d0d8c3';ctx.font='13px system-ui';ctx.textAlign='center';ctx.fillText(i+1,x,460);
+    sprite(heading,frameOrder[frame],550,270,220);
+    for(let i=0;i<frames.length;i++){
+      const x=70+(i%8)*137,top=310+Math.floor(i/8)*150;
+      ctx.fillStyle=i===frame?'#3d4d3e':'#26373a';ctx.fillRect(x-59,top,118,125);
+      sprite(heading,frameOrder[i],x,top+105,85);ctx.fillStyle='#d0d8c3';ctx.font='13px system-ui';ctx.textAlign='center';ctx.fillText(i+1,x,top+143);
     }
-    status.textContent='Quadro '+(frame+1)+' / 8';
+    status.textContent='Quadro '+(frame+1)+' / '+frames.length;
   }
   requestAnimationFrame(render);
 }

@@ -20,6 +20,8 @@
   });
   const survivorSpriteSheet=new Image();survivorSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.file;
   const survivorWalkSpriteSheet=new Image();survivorWalkSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.walk.file;
+  const survivorWalkMotionSheet=new Image();
+  if(spriteAtlas.survivor.walk.motionFile)survivorWalkMotionSheet.src='assets/sprites-128/'+spriteAtlas.survivor.walk.motionFile;
   const seatedRiderSpriteSheet=new Image();seatedRiderSpriteSheet.src='assets/sprites-128/'+MOUNTED_BIKE_ART.file;
   function bikeSpriteSource(direction,riding=false){return bikeSpriteSheets[riding?1:0];}
   function bikeSpriteMetadata(riding=false){return spriteAtlas[riding?'mounted':'bike'];}
@@ -42,6 +44,11 @@
     const idle=riding&&bikeEngineRunning ? .08 : 0;
     return {compression:1-(Math.sin(phase)*.008*travel+Math.sin(time*32)*idle*.012),
       lean:Math.max(-.055,Math.min(.055,-(bike.bank||0)*Math.cos(angle)*.055))*travel};
+  }
+  function bikeTurnDelta(speed,steering,handlebar,grip,dt) {
+    const travel=Math.abs(speed);
+    const turnRate=2.4*Math.min(1,travel/46)/(1+travel/160);
+    return Math.sign(speed)*steering*turnRate*(.2+.8*handlebar/100)*(.5+.5*grip/100)*dt;
   }
   function smoothBikeFacing(angle, time, view) {
     let facing = bikeVisualFacings.get(view);
@@ -223,11 +230,12 @@
     target.restore();
   }
   function drawPersonCastShadow(x,y,height,light,target) {
-    const castX=light.shadowX*light.shadowLength/24,castY=light.shadowY*light.shadowLength/24;
-    target.save();target.translate(x,y+5);target.scale(ACTOR_VISUAL_SCALE,ACTOR_VISUAL_SCALE);target.transform(1,0,-castX,-castY,0,0);
-    target.fillStyle='#03060b';target.beginPath();target.arc(0,-height+3,3,0,Math.PI*2);target.fill();
-    target.fillRect(-4,-height+6,8,height-11);target.fillRect(-6,-height+8,12,3);
-    target.fillRect(-4,-5,3,5);target.fillRect(1,-5,3,5);target.restore();
+    const reach=height*ACTOR_VISUAL_SCALE*light.shadowLength/24;
+    const dx=light.shadowX*reach,dy=light.shadowY*reach;
+    target.fillStyle='#03060b';
+    target.beginPath();
+    target.ellipse(x+dx/2,y+5+dy/2,Math.hypot(dx,dy)/2+3,3*ACTOR_VISUAL_SCALE,Math.atan2(dy,dx),0,Math.PI*2);
+    target.fill();
   }
   function drawBikeGroundShadow(x,y,ground,direction,time) {
     const light=worldLighting(time);
@@ -389,6 +397,7 @@
   let climbTime = 0;
   let climbLives = 3;
   let climbCheckpoint = 0;
+  let checkpointReturn = null;
   let hackStep = 0;
   let hackTime = 0;
   let hackMode = 'question', connectSelected = -1, cableCutAnswer = 0, repairAnswer = 1, pulseTarget = 1, pulseClock = 0, sequenceIndex = 0;
@@ -415,7 +424,7 @@
     { at: 2220, x: 358, kind: 'wall', cleared: false }, { at: 2620, x: 238, kind: 'wreck', cleared: false }
   ];
   let hazardCooldown = 0;
-  let fuel = 68, hunger = 100, thirst = 100, exploreBuilding = -1, exploreStep = 0;
+  let fuel = 68, hunger = 100, thirst = 100, exploreBuilding = -1;
   let repairKits = 1, bikeLife = 100, bikeWearClock = 0, bikeCrashCooldown = 0, bikeParts = { motor: 100, handlebar: 100, frontTire: 100, rearTire: 100 };
   let bikeInspectOpen = false;
   let bikeInspectHover = null;
@@ -450,7 +459,6 @@
   const explorer = { x: 240, y: 145, hp: 3, invulnerable: 0 };
   const interiorHazards = [{ x: 190, y: 115, kind: 'weak' }, { x: 310, y: 180, kind: 'ceiling' }, { x: 115, y: 205, kind: 'gap' }];
   const interiorWalls = [{x:142,y:111,w:10,h:77},{x:152,y:111,w:58,h:10},{x:222,y:142,w:10,h:58},{x:232,y:142,w:55,h:10},{x:176,y:196,w:65,h:10},{x:250,y:180,w:10,h:37}];
-  let walkCycle = 0;
   const camera = { x: 180, y: 3300 };
   const bike = { x: 180, y: 3300, angle: .87, speed: 0, wheel: 0, steering:0, bank:0 };
   let bikeEngineRunning=false;
@@ -710,7 +718,8 @@
   function startGame() {
     startHour = Math.floor(Math.random() * 1440) / 60;
     bikeVisualFacings.clear();
-    survivorIdleDirections.clear();
+    player.gait=null;
+    checkpointReturn=null;
     ignition.reset();
     state = 'drive'; gameTime = 0; lastTime = 0; activeTower = 0; network = 0;
     bike.x = 180; bike.y = 3300; bike.angle = .87; bike.speed = 0; bike.wheel = 0; bike.steering=0;bike.bank=0;
@@ -732,7 +741,7 @@
   document.querySelector('#start-game').addEventListener('click', startGame);
 
   function dismount() {
-    survivorIdleDirections.delete('drive');
+    player.gait=null;
     bike.steering=0;bike.bank=0;
     mounted = false;
     approachedByBike = false;
@@ -746,6 +755,7 @@
     if (distance(player, bike) > 43) { setToast('A MOTO ESTÁ FORA DE ALCANCE.'); return; }
     bike.steering=0;bike.bank=0;
     mounted = true; player.x = bike.x; player.y = bike.y; player.angle = bike.angle;
+    player.gait=null;
     keys.clear();
     if(!bikeEngineRunning) {
       ignition.open();setObjective('Encaixe a chave e gire para ligar a moto.',activeTower);
@@ -784,7 +794,7 @@
     const aim = grappleMeter(gameTime);
     if (aim.stable) {
       state = 'climb'; mounted = false; climbTime = 0; climbLives = 3; climbCheckpoint = 0; hazardCooldown = 1;
-      climber.x = 31; climber.feet = 245; climber.vy = 0; climber.grounded = true; climber.invulnerable = 0;
+      climber.x = 31; climber.feet = 245; climber.vy = 0; climber.grounded = true; climber.invulnerable = 0; climber.gait=null;
       grappleAvailable = false; flash = .65; setToast('RAPEL PRESO — ESCALADA INICIADA'); updateObjective();
     } else {
       state = 'chase'; chaseLives = Math.max(1, chaseLives - 1); chaseLag = Math.min(360, chaseLag + 82); grappleAvailable = false;
@@ -818,12 +828,13 @@
     if(grappleButton.textContent!==label)grappleButton.textContent=label;
   }
   function interact() {
+    if(checkpointReturn)return;
     if (state === 'chase') { startGrappleAim(); return; }
     if (state === 'grapple') { attemptGrapple(); return; }
     if (state === 'drive') {
       if (mounted) { dismount(); return; }
       const building = nearbyEntrance(player.x, player.y);
-      if (building >= 0) { state = 'explore'; exploreBuilding = building; exploreStep = 0; worldReturn.x = player.x; worldReturn.y = player.y; explorer.x = 83; explorer.y = 198; explorer.hp = 3; keys.clear(); setToast(building === 10 ? 'POSTO ABANDONADO — VASCULHE A MESA' : 'ENTRE NA RUÍNA — PROCURE SUPRIMENTOS NA MESA'); updateObjective(); return; }
+      if (building >= 0) { state = 'explore'; exploreBuilding = building; worldReturn.x = player.x; worldReturn.y = player.y; player.gait=null; explorer.x = 83; explorer.y = 198; explorer.hp = 3; explorer.gait=null; keys.clear(); setToast(building === 10 ? 'POSTO ABANDONADO — VASCULHE A MESA' : 'ENTRE NA RUÍNA — PROCURE SUPRIMENTOS NA MESA'); updateObjective(); return; }
       if (nearbyBuilding(player.x, player.y) >= 0) { setToast('PROCURE A PORTA DA CONSTRUÇÃO PARA ENTRAR.'); return; }
       if (distance(player, bike) < 43) {
         if (bikeLife <= 0 && repairKits <= 0) { setToast('MOTO AVARIADA — PROCURE UM KIT DE REPARO'); return; }
@@ -837,7 +848,7 @@
       else setToast('F  MONTAR NA MOTO ESTACIONADA.');
     } else if (state === 'explore') {
       if (Math.hypot(explorer.x - 78, explorer.y - 200) > 42) { setToast('A SAÍDA FICA NA PORTA — SIGA O MARCADOR.'); return; }
-      state = 'drive'; player.x = worldReturn.x; player.y = worldReturn.y; mounted = false; keys.clear(); setToast('VOCÊ VOLTA À ESTRADA.'); updateObjective();
+      returnToRoad('VOCÊ VOLTA À ESTRADA.',0);
     } else if (state === 'climb') {
       if (climber.feet < 108 && climber.x > 390) {
         state = 'hack'; hackStep = 0; hackTime = 70; hackMode = 'question'; connectSelected = -1; cableConnected.fill(false); setToast('TERMINAL ENCONTRADO — DIAGNÓSTICO DE REDE');
@@ -928,6 +939,10 @@
       return;
     }
     if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) e.preventDefault();
+    if(checkpointReturn){
+      if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift'].includes(key))keys.add(key);
+      return;
+    }
     if (state === 'title') { if (key === 'enter') startGame(); return; }
     if (state === 'ending') { if (key === 'enter') { state = 'title'; titleScreen.classList.remove('dismissed'); } return; }
     if(key==='f'&&state==='drive'&&!e.repeat){bikeInspectOpen=false;bikeService=null;if(mounted)dismount();else mount();return;}
@@ -1292,17 +1307,37 @@
     else drawBikeGroundShadow(x,y,ground,direction,time);
     // Cache the complete pose; the lamp mask uses this exact same silhouette.
     const painter=bikeBlendContext;
-    const bankPose=riding?Math.max(0,Math.min(8,Math.round(4+(bike.bank||0)*Math.min(1,Math.abs(speed)/110)*4))):4;
-    const stamp=direction+':'+RENDER_SCALE+':'+riding+':'+bankPose;
+    const poses=riding?spriteAtlas.mounted.poses:null;
+    const heading=((facing.angle/BIKE_DIRECTION_STEP%128)+128)%128;
+    let first=Math.floor(heading),next=(first+1)%128;
+    const fraction=Math.max(0,Math.min(1,(heading-first-.18)/.64));
+    let mix=Math.round(fraction*fraction*(3-2*fraction)*8)/8;
+    if(mix===1){first=next;mix=0;}
+    if(poses&&poses[first].crop===poses[next].crop)mix=0;
+    const stamp=RENDER_SCALE+':'+(riding?'mounted:'+first+':'+mix:'parked:'+direction);
     if(stamp!==bikeBlendStamp){
-    painter.setTransform(1,0,0,1,0,0);painter.clearRect(0,0,bikeBlendLayer.width,bikeBlendLayer.height);
-    painter.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,80*RENDER_SCALE,80*RENDER_SCALE);
-    painter.imageSmoothingEnabled=false;
-    painter.drawImage(bikeSpriteSource(direction,riding),ground.sx,ground.sy+(riding?(bankPose-4)*8*128:0),ground.sw,ground.sh,
-      ground.left-x,ground.top-y,ground.width,ground.height);
-    bikeOcclusionContext.clearRect(0,0,bikeOcclusionLayer.width,bikeOcclusionLayer.height);
-    for(let i=0;i<8;i++)bikeOcclusionContext.drawImage(bikeBlendLayer,0,0);
-    bikeBlendStamp=stamp;
+      painter.setTransform(1,0,0,1,0,0);painter.clearRect(0,0,bikeBlendLayer.width,bikeBlendLayer.height);
+      painter.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,80*RENDER_SCALE,80*RENDER_SCALE);
+      painter.imageSmoothingEnabled=riding;
+      if(riding){
+        painter.imageSmoothingQuality='medium';
+        painter.translate(0,5);
+        painter.globalCompositeOperation='lighter';
+        painter.globalAlpha=1-mix;
+        drawMountedRiderPose(painter,seatedRiderSpriteSheet,poses[first],ACTOR_VISUAL_SCALE,0);
+        if(mix>0){
+          painter.globalAlpha=mix;
+          drawMountedRiderPose(painter,seatedRiderSpriteSheet,poses[next],ACTOR_VISUAL_SCALE,0);
+        }
+        painter.globalAlpha=1;
+        painter.globalCompositeOperation='source-over';
+      }else{
+        painter.drawImage(bikeSpriteSource(direction),ground.sx,ground.sy,ground.sw,ground.sh,
+          ground.left-x,ground.top-y,ground.width,ground.height);
+      }
+      bikeOcclusionContext.clearRect(0,0,bikeOcclusionLayer.width,bikeOcclusionLayer.height);
+      for(let i=0;i<8;i++)bikeOcclusionContext.drawImage(bikeBlendLayer,0,0);
+      bikeBlendStamp=stamp;
     }
     const motionDt=Math.max(0,Math.min(.05,time-(facing.motionTime??time)));
     facing.travelPhase=(facing.travelPhase||0)+Math.abs(speed)*motionDt*.16;
@@ -2507,70 +2542,217 @@
     label('Selecione uma peça para abrir o diagnóstico.',211,249,5.5,'#c1a7d1');
     ctx.restore();
   }
-  const FOOT_WALK_KMH=20,FOOT_RUN_KMH=40;
+  const FOOT_WALK_KMH=16,FOOT_RUN_KMH=40;
   function footSpeedMultiplier() {
     return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?FOOT_RUN_KMH/FOOT_WALK_KMH:1;
   }
-  function footMovementSpeed() {
+  function footWalkSpeed() {
     const condition=.55+.45*Math.min(hunger,thirst)/100;
-    return FOOT_WALK_KMH/BIKE_SPEED_TO_KMH*footSpeedMultiplier()*condition;
+    return FOOT_WALK_KMH/BIKE_SPEED_TO_KMH*condition;
   }
-  function footAnimationMultiplier() {
-    if(!((state==='drive'&&!mounted)||state==='explore'))return 1;
-    return footSpeedMultiplier()>1?1.3:.8;
+  function createFootGait() {
+    return {vx:0,vy:0,phase:0,heading:undefined,stage:'idle',running:false,pingPong:false,startPhase:0,stopAt:0,settle:0,contactHold:0,turnTime:0};
   }
-  const survivorIdleDirections=new Map();
-  function drawSurvivorSprite(x,y,angle,time,moving) {
-    if(!survivorSpriteSheet.complete||survivorSpriteSheet.naturalWidth===0)return false;
-    const facing=smoothBikeFacing(angle,time,'survivor');
-    // Foot input can turn instantly. Motorcycle steering smoothing otherwise
-    // leaves the idle pose facing an intermediate diagonal after a quick turn.
-    const context=typeof state==='string'?state:'world';
-    if(moving||!survivorIdleDirections.has(context))survivorIdleDirections.set(context,bikeSpritePose(angle,0,time).direction);
-    const direction=survivorIdleDirections.get(context);
-    facing.direction=direction;facing.angle=direction*Math.PI*2/128;
-    const metadata=spriteAtlas.survivor,walk=metadata.walk;
-    let sheet=survivorSpriteSheet,frame=metadata.frames[direction],anchor=metadata.wheelContacts[direction][0],height=frame[3];
-    const dt=Math.max(0,Math.min(.05,time-(facing.walkTime??time)));facing.walkTime=time;
-    if(moving&&survivorWalkSpriteSheet.complete&&survivorWalkSpriteSheet.naturalWidth>0){
-      facing.walkPhase=(facing.walkPhase||0)+dt*walk.fps*footAnimationMultiplier();
-      const heading=Math.round(direction/16)%walk.directions,step=Math.floor(facing.walkPhase)%walk.frameCount;
-      sheet=survivorWalkSpriteSheet;frame=walk.frames[heading][step];anchor=walk.anchors[heading][step];height=walk.bodyHeights[heading];
-    } else if(!moving)facing.walkPhase=0;
-    // Interpolate neighboring source views at each of the 128 headings.
-    // Align both views at their ground anchor and normalize their body height.
-    const walking=sheet===survivorWalkSpriteSheet;
-    const sourceCount=walking?walk.directions:(metadata.idleDirections||metadata.columns*metadata.rows);
-    const position=direction*sourceCount/128,lower=Math.floor(position),weight=position-lower;
-    if(weight>0){
-      const step=Math.floor(facing.walkPhase||0)%walk.frameCount;
-      const key=direction+':'+walking+':'+step;
-      if(!facing.spriteCanvas){facing.spriteCanvas=document.createElement('canvas');facing.spriteCanvas.width=160;facing.spriteCanvas.height=160;}
-      if(facing.spriteKey!==key){
-        const painter=facing.spriteCanvas.getContext('2d');
-        painter.clearRect(0,0,160,160);painter.imageSmoothingEnabled=false;
-        painter.globalCompositeOperation='lighter';
-        for(let side=0;side<2;side++){
-          const pose=(lower+side)%sourceCount,index=pose*128/sourceCount;
-          const crop=walking?walk.frames[pose][step]:metadata.frames[index];
-          const contact=walking?walk.anchors[pose][step]:metadata.wheelContacts[index][0];
-          const bodyHeight=walking?walk.bodyHeights[pose]:crop[3];
-          const scale=34*ACTOR_VISUAL_SCALE/bodyHeight*4,sx=scale*.90;
-          painter.globalAlpha=side?weight:1-weight;
-          painter.drawImage(sheet,...crop,80-contact[0]*sx,140-contact[1]*scale,crop[2]*sx,crop[3]*scale);
-        }
-        painter.globalAlpha=1;painter.globalCompositeOperation='source-over';facing.spriteKey=key;
+  function footHeading(angle,count) {
+    return ((Math.round(angle*count/(2*Math.PI))%count)+count)%count;
+  }
+  function footFrameIndex(phase,frameCount,pingPong) {
+    const frame=Math.floor(phase);
+    return pingPong?Math.min(frame,2*(frameCount-1)-frame):frame;
+  }
+  function footPlaybackFrames(walk,running,heading) {
+    if(running===true)return walk.runFrames;
+    if(running===false)return walk.walkOrder?.[heading]??walk.walkFrames;
+    return null;
+  }
+  function footAtlasFrame(phase,walk,running,pingPong,heading) {
+    const frames=footPlaybackFrames(walk,running,heading);
+    const index=footFrameIndex(phase,frames?.length??walk.frameCount,pingPong);
+    return frames?frames[index]:index;
+  }
+  function advanceFootPhase(phase,travel,frameCount,run,pingPong=false,uniform=false) {
+    if(pingPong||uniform)return (phase+travel)%(pingPong?2*(frameCount-1):frameCount);
+    const halfCycle=frameCount/2;
+    while(travel>0){
+      const frame=Math.floor(phase);
+      // Running holds the contact frame longer, then moves briskly through the recovery.
+      let cost=frame%halfCycle===0?1+.3*run:1-.1*run;
+      // Keep the seam slightly quicker without making the walking frame flash by.
+      const seamReduction=frameCount===8?.1+.2*run:.06;
+      if(frame===frameCount-1)cost-=seamReduction;
+      else if(frame%halfCycle!==0)cost+=seamReduction/(frameCount-3);
+      // In the walk, give the planted and passing poses more time without slowing the cycle.
+      if(frameCount===8&&frame!==7){
+        const step=frame%4;
+        cost+=(1-run)*(step===0?.12:step===2?.03:-.1);
       }
-      ctx.drawImage(facing.spriteCanvas,x-20,y+5-35,40,40);
-      return true;
+      const remaining=(frame+1-phase)*cost;
+      if(travel<remaining)return (phase+travel/cost)%frameCount;
+      travel-=remaining;
+      phase=(frame+1)%frameCount;
     }
-    const [sx,sy,sw,sh]=frame,scale=34*ACTOR_VISUAL_SCALE/height,scaleX=scale*.90;
-    ctx.save();ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(sheet,sx,sy,sw,sh,x-anchor[0]*scaleX,y+5-anchor[1]*scale,sw*scaleX,sh*scale);
+    return phase;
+  }
+  function updateFootGait(gait,distance,angle,walkSpeed,dt,walk,running=gait.running,finishingWalk=false) {
+    if(dt<=0)return;
+    const {directions}=walk;
+    const speed=distance/dt;
+    const stopping=distance===0||finishingWalk;
+    const activeRunning=stopping?gait.running:running;
+    const playbackFrames=footPlaybackFrames(walk,activeRunning,gait.heading);
+    const frameCount=playbackFrames?.length??walk.frameCount;
+    const fps=walk.fps*frameCount/walk.frameCount;
+    const walkCadence=walk.playbackFps??fps*.8;
+    const referenceWalk=!!walk.walkFrames&&!activeRunning;
+    if(stopping){
+      if(gait.stage==='idle')return;
+      const period=gait.pingPong?2*(frameCount-1):frameCount;
+      const contactInterval=frameCount/2;
+      if(gait.stage!=='stop'){
+        const firstStep=gait.stage==='start';
+        gait.stage='stop';
+        const frame=Math.floor(gait.phase);
+        const contacts=gait.pingPong?[0,contactInterval,frameCount-1,period-contactInterval,period]:[0,contactInterval,period];
+        // Let a short tap finish its first step before settling.
+        if(!firstStep&&contacts.includes(frame))gait.phase=frame;
+        const target=contacts.find(contact=>contact>=gait.phase);
+        gait.stopAt=target%period;
+        gait.settle=target-gait.phase;
+        gait.contactHold=0;
+      }
+      const walkStopCadence=referenceWalk?walkCadence:gait.pingPong?walkCadence+1:16;
+      const rate=gait.running?Math.min(22,fps*1.8):Math.min(16,walkStopCadence,fps*1.35);
+      const step=Math.min(gait.settle,dt*rate);
+      gait.phase=(gait.phase+step)%period;
+      gait.settle-=step;
+      if(gait.settle===0){
+        gait.phase=gait.stopAt;
+        gait.contactHold+=Math.max(0,dt-step/rate);
+        const hold=gait.running?.035:(gait.pingPong||referenceWalk)?.045:.075;
+        if(gait.contactHold>=hold&&distance===0)gait.stage='idle';
+      }
+      gait.turnTime=0;
+      return;
+    }
+
+    const wasIdle=gait.stage==='idle';
+    const pingPong=!!walk.pingPong&&!running;
+    const changedCycle=gait.pingPong!==pingPong;
+    if((walk.runFrames||walk.walkFrames)&&running!==gait.running){
+      const pose=footAtlasFrame(gait.phase,walk,gait.running,gait.pingPong,gait.heading);
+      const nearest=playbackFrames?(running?playbackFrames.findIndex(frame=>frame>=pose):playbackFrames.indexOf(pose)):pose;
+      const index=nearest<0?0:nearest;
+      gait.phase=index+gait.phase%1;
+    }else if(gait.pingPong&&!pingPong){
+      gait.phase=footFrameIndex(gait.phase,frameCount,true)+gait.phase%1;
+    }
+    gait.pingPong=pingPong;
+    const period=pingPong?2*(frameCount-1):frameCount;
+    if(wasIdle){gait.stage='start';gait.startPhase=gait.phase;}
+    else if(gait.stage==='stop'||changedCycle)gait.stage='loop';
+    gait.running=running;
+    const previousFrame=Math.floor(gait.phase);
+    const run=Math.max(0,Math.min(1,speed/walkSpeed-1));
+    const startingWalk=gait.stage==='start'&&!running&&!pingPong&&!referenceWalk;
+    const cadence=pingPong||referenceWalk?walkCadence:fps*.7;
+    const distancePerFrame=walkSpeed/cadence*(1+.22*run)*(startingWalk?1.15:1);
+    gait.phase=advanceFootPhase(gait.phase,distance/distancePerFrame,frameCount,run,pingPong,referenceWalk);
+    if(gait.stage==='start'&&(gait.phase-gait.startPhase+period)%period>=frameCount/4)gait.stage='loop';
+
+    const heading=footHeading(angle,directions);
+    const difference=angle-gait.heading*2*Math.PI/directions;
+    const turn=Math.abs(Math.atan2(Math.sin(difference),Math.cos(difference)));
+    const sector=2*Math.PI/directions;
+    if(wasIdle||turn>=sector*1.5){
+      gait.heading=heading;
+      gait.turnTime=0;
+    }else if(turn>sector*.58){
+      gait.turnTime+=dt;
+      if(Math.floor(gait.phase)!==previousFrame||gait.turnTime>=.055){
+        gait.heading=heading;
+        gait.turnTime=0;
+      }
+    }else{
+      gait.turnTime=0;
+    }
+  }
+  function moveExplorer(actor,dx,dy,radius) {
+    const x=Math.max(58,Math.min(408,actor.x+dx)),y=Math.max(95,Math.min(280,actor.y+dy));
+    const hitsWall=(x,y)=>interiorWalls.some(w=>x+radius>w.x&&x-radius<w.x+w.w&&y+radius>w.y&&y-radius<w.y+w.h);
+    if(!hitsWall(x,actor.y))actor.x=x;
+    if(!hitsWall(actor.x,y))actor.y=y;
+  }
+  function updateFootMovement(actor,dt,move,screenAngle) {
+    if(dt<=0)return;
+    const gait=actor.gait??=createFootGait();
+    const dx=Number(keys.has('d')||keys.has('arrowright'))-Number(keys.has('a')||keys.has('arrowleft'));
+    const dy=Number(keys.has('s')||keys.has('arrowdown'))-Number(keys.has('w')||keys.has('arrowup'));
+    const input=Math.hypot(dx,dy),walkSpeed=footWalkSpeed();
+    const multiplier=footSpeedMultiplier(),running=input?multiplier>1:gait.running;
+    const targetSpeed=walkSpeed*multiplier/(input||1);
+    const targetX=dx*targetSpeed,targetY=dy*targetSpeed;
+    // Integrate the velocity ramp over the whole interval, including partial frames.
+    const response=input?(running?38:20):(running?52:27);
+    const blend=-Math.expm1(-response*dt),carry=blend/response;
+    const stepX=targetX*dt+(gait.vx-targetX)*carry,stepY=targetY*dt+(gait.vy-targetY)*carry;
+    gait.vx+=(targetX-gait.vx)*blend;
+    gait.vy+=(targetY-gait.vy)*blend;
+    const x=actor.x,y=actor.y;
+    if(stepX||stepY)move(actor,stepX,stepY,7*ACTOR_VISUAL_SCALE);
+    const movedX=actor.x-x,movedY=actor.y-y;
+    if(Math.abs(movedX-stepX)>1e-6||(targetX===0&&Math.abs(gait.vx)<.5))gait.vx=0;
+    if(Math.abs(movedY-stepY)>1e-6||(targetY===0&&Math.abs(gait.vy)<.5))gait.vy=0;
+    const distance=Math.hypot(movedX,movedY);
+    if(distance>0)actor.angle=Math.atan2(movedX,-movedY);
+    // Sprint cadence uses half its target speed as the start of its stride range.
+    const strideReference=running?walkSpeed*FOOT_RUN_KMH/(2*FOOT_WALK_KMH):walkSpeed;
+    updateFootGait(gait,distance,screenAngle?screenAngle(actor.angle):actor.angle,strideReference,dt,spriteAtlas.survivor.walk,running,!input&&!running);
+  }
+  function drawFootFrame(painter,sheet,crop,anchor,height) {
+    const scale=34*ACTOR_VISUAL_SCALE/height,scaleX=scale*.90;
+    let left=-anchor[0]*scaleX,top=-anchor[1]*scale;
+    let width=crop[2]*scaleX,drawHeight=crop[3]*scale;
+    const {a,b,c,d,e,f}=painter.getTransform();
+    // Keep a pose's sampling grid stable as the camera and actor move.
+    if(b===0&&c===0&&a>0&&d>0){
+      left=(Math.round(e)+Math.round(left*a)-e)/a;
+      top=(Math.round(f)+Math.round(top*d)-f)/d;
+      width=Math.max(1,Math.round(width*a))/a;
+      drawHeight=Math.max(1,Math.round(drawHeight*d))/d;
+    }
+    painter.drawImage(sheet,...crop,left,top,width,drawHeight);
+  }
+  function drawSurvivorSprite(x,y,angle,gait) {
+    if(!survivorSpriteSheet.complete||survivorSpriteSheet.naturalWidth===0)return false;
+    const metadata=spriteAtlas.survivor,walk=metadata.walk;
+    const idleCount=metadata.idleDirections||metadata.columns*metadata.rows;
+    const walking=gait&&gait.stage!=='idle'&&survivorWalkSpriteSheet.complete&&survivorWalkSpriteSheet.naturalWidth>0;
+    ctx.save();
+    ctx.translate(x,y+5);
+    ctx.imageSmoothingEnabled=false;
+    if(walking){
+      const heading=gait.heading,step=footAtlasFrame(gait.phase,walk,gait.running,gait.pingPong,heading);
+      const frame=walk.frames[heading][step],anchor=walk.anchors[heading][step];
+      const height=walk.bodyHeights[heading];
+      if(gait.running===false&&survivorWalkMotionSheet.complete&&survivorWalkMotionSheet.naturalWidth>0){
+        const width=walk.width/walk.columns,cellHeight=walk.height/walk.rows;
+        const x=step*width,y=heading*cellHeight;
+        const contact=[frame[0]-x+anchor[0],frame[1]-y+height];
+        drawFootFrame(ctx,survivorWalkMotionSheet,[x,y,width,cellHeight],contact,height);
+      }else{
+        // Crops vary with the boots, so keep the helmet at the same screen height.
+        drawFootFrame(ctx,survivorWalkSpriteSheet,frame,[anchor[0],height],height);
+      }
+    }else{
+      const facing=gait?.heading===undefined?angle:gait.heading*2*Math.PI/walk.directions;
+      const index=footHeading(facing,idleCount)*BIKE_DIRECTION_COUNT/idleCount;
+      const idle=metadata.frames[index];
+      drawFootFrame(ctx,survivorSpriteSheet,idle,metadata.wheelContacts[index][0],idle[3]);
+    }
     ctx.restore();return true;
   }
-  function drawPerson(x, y, angle, time, moving, bikePose = false) {
-    if(!bikePose&&drawSurvivorSprite(x,y,angle,time,moving))return;
+  function drawPerson(x, y, angle, time, moving, bikePose = false, gait = null) {
+    if(!bikePose&&drawSurvivorSprite(x,y,angle,gait))return;
     ctx.save(); ctx.translate(x, y); ctx.scale(.72*ACTOR_VISUAL_SCALE, .72*ACTOR_VISUAL_SCALE);
     const sideFacing = Math.abs(Math.sin(angle)) > Math.abs(Math.cos(angle));
     if (sideFacing && Math.sin(angle) < 0) ctx.scale(-1, 1);
@@ -2597,9 +2779,11 @@
     ctx.restore();
   }
   function drawFootWorld(x, y, angle, time) {
+    ctx.save();
+    const gait=applyReturnPose(player,angle,player.gait);
     ctx.fillStyle = '#080f1088'; ctx.beginPath(); ctx.ellipse(x + 2*ACTOR_VISUAL_SCALE, y + 5, 6*ACTOR_VISUAL_SCALE, 3.5*ACTOR_VISUAL_SCALE, 0, 0, Math.PI * 2); ctx.fill();
-    const moving=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(key=>keys.has(key));
-    drawPerson(x, y, angle, time, moving, mounted);
+    drawPerson(x, y, angle, time, !!gait&&gait.stage!=='idle', mounted, gait);
+    ctx.restore();
   }
   function drawMinimap() {
     const x = W - 89, y = 12, w = 77, h = 53;
@@ -2771,7 +2955,7 @@
     if (supply && supply.available && !supply.found) {
       const sx = 322 + Math.sin(time * .6) * 3, sy = 211;
       drawExploreSupply(supply.type, sx, sy, time);
-      if (Math.hypot(explorer.x - sx, explorer.y - sy) < 20) {
+      if (!checkpointReturn&&Math.hypot(explorer.x - sx, explorer.y - sy) < 20) {
         supply.found = true;
         if (supply.type === 'fuel') { fuel = Math.min(100, fuel + 34); setToast('ACHOU COMBUSTÍVEL — +34%'); }
         else if (supply.type === 'ration') { hunger = Math.min(100, hunger + 42); setToast('RAÇÃO MILITAR — FOME REDUZIDA'); }
@@ -2780,12 +2964,12 @@
         else { hunger = Math.min(100, hunger + 21); setToast('ENLATADO ENCONTRADO — FOME REDUZIDA'); }
       }
     }
+    ctx.save();
     const p = { x: explorer.x, y: explorer.y };
+    const angle=explorer.angle??Math.PI,gait=applyReturnPose(explorer,angle,explorer.gait);
     ctx.fillStyle = '#080d0e88'; ctx.beginPath(); ctx.ellipse(p.x,p.y + 5,8*ACTOR_VISUAL_SCALE,4*ACTOR_VISUAL_SCALE,0,0,Math.PI*2); ctx.fill();
-    const walkX=(keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0);
-    const walkY=(keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0);
-    if(walkX||walkY)explorer.spriteAngle=Math.atan2(walkX,-walkY);
-    drawPerson(p.x,p.y,explorer.spriteAngle??Math.PI,time,!!(walkX||walkY),false);
+    drawPerson(p.x,p.y,angle,time,!!gait&&gait.stage!=='idle',false,gait);
+    ctx.restore();
     drawAtmosphere(time, 'world');
     panel(10, 9, 180, 33, '#101a1deF', '#667a6e'); ctx.fillStyle = '#d5c18b'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.fillText(exploreBuilding === 10 ? 'EXPLORAÇÃO · POSTO DE GASOLINA' : `INTERIOR · SETOR ${String(exploreBuilding + 1).padStart(2,'0')}`, 18, 22); ctx.fillStyle = '#9da99a'; ctx.fillText(Math.hypot(explorer.x - 78, explorer.y - 200) < 42 ? 'E  SAIR PELA PORTA' : 'PROCURE A PORTA PARA SAIR', 18, 34);
     if (Math.hypot(explorer.x - 78, explorer.y - 200) < 42) hint('E  SAIR PELA PORTA', W / 2, 43, time);
@@ -3244,13 +3428,12 @@
     ctx.save(); ctx.translate(32, -10); ctx.transform(1, .10, -.12, .90, 0, 0);
     drawClimbBackground(time);
     // Small side-on character with animated legs and a cable pack.
-    const blink = climber.invulnerable > 0 && Math.floor(time * 14) % 2;
+    const blink = !checkpointReturn&&climber.invulnerable > 0 && Math.floor(time * 14) % 2;
     if (!blink) {
-      if(keys.has('a')||keys.has('arrowleft'))climber.spriteAngle=-Math.PI/2;
-      else if(keys.has('d')||keys.has('arrowright'))climber.spriteAngle=Math.PI/2;
-      const walking=climber.grounded&&(keys.has('a')||keys.has('d')||keys.has('arrowleft')||keys.has('arrowright'));
-      if(!drawSurvivorSprite(Math.round(climber.x),Math.round(climber.feet)-5,climber.spriteAngle??Math.PI/2,time,walking)){
-      const x = Math.round(climber.x), y = Math.round(climber.feet - 20);
+      const feet=climber.feet,angle=climber.spriteAngle??Math.PI/2;
+      const gait=applyReturnPose(climber,angle,climber.grounded?climber.gait:null);
+      if(!drawSurvivorSprite(Math.round(climber.x),Math.round(feet)-5,angle,gait)){
+      const x = Math.round(climber.x), y = Math.round(feet - 20);
       const step = climber.grounded ? Math.sin(time * 10) * 2 : -2;
       ctx.fillStyle = '#0d1719'; ctx.fillRect(x - 7, y - 1, 15, 21);
       ctx.fillStyle = '#705641'; ctx.fillRect(x + 5, y + 4, 5, 10); ctx.fillStyle = '#c2a071'; ctx.fillRect(x + 7, y + 6, 2, 3);
@@ -3362,13 +3545,17 @@
   function updateClimb(dt) {
     climbTime += dt; hazardCooldown = Math.max(0, hazardCooldown - dt); climber.invulnerable = Math.max(0, climber.invulnerable - dt);
     if (state === 'hack') {
+      if(climber.gait)updateFootGait(climber.gait,0,climber.spriteAngle,82,dt,spriteAtlas.survivor.walk);
       hackTime -= dt; pulseClock += dt;
       if (hackTime <= 0) { state = 'climb'; hackStep = 0; hackTime = 36; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
       return;
     }
     const left = keys.has('a') || keys.has('arrowleft'); const right = keys.has('d') || keys.has('arrowright');
+    const previousX=climber.x;
     climber.x += ((right ? 1 : 0) - (left ? 1 : 0)) * 82 * dt;
     climber.x = Math.max(8, Math.min(470, climber.x));
+    const movedX=climber.x-previousX;
+    if(movedX)climber.spriteAngle=movedX<0?-Math.PI/2:Math.PI/2;
     const previousFeet = climber.feet;
     climber.vy += 480 * dt; climber.feet += climber.vy * dt; climber.grounded = false;
     platforms.forEach((p,i) => { if(p.baseX===undefined)p.baseX=p.x; p.x=activeTower===4?p.baseX+Math.sin(climbTime*1.35+i*.8)*17:p.baseX; });
@@ -3384,6 +3571,7 @@
     if (climber.feet > 248) {
       climber.feet = 245; climber.vy = 0; climber.grounded = true;
     }
+    updateFootGait(climber.gait??=createFootGait(),climber.grounded?Math.abs(movedX):0,climber.spriteAngle,82,dt,spriteAtlas.survivor.walk);
     // A moving security drone and timed electric sweeps punish careless jumps.
     const droneX = 110 + Math.sin(climbTime * .8) * 115, droneY = 137 + Math.sin(climbTime * 1.6) * 13;
     const beamX = 66 + ((climbTime * (activeTower >= 3 ? 105 : 78)) % 354), secondBeam = 430 - ((climbTime * (activeTower === 4 ? 82 : 54)) % 300);
@@ -3392,9 +3580,83 @@
     const beamHit2 = Math.abs(climber.feet - 118) < 8 && climber.x > secondBeam - 4 && climber.x < secondBeam + 32;
     if ((droneHit || beamHit || beamHit2) && hazardCooldown <= 0 && climber.invulnerable <= 0) {
       climbLives--; climber.invulnerable = 1.05; hazardCooldown = .75;
-      if (climbLives <= 0) { climbLives = 2; climbCheckpoint = Math.max(0, climbCheckpoint - 1); climber.x = Math.max(25, platforms[climbCheckpoint].x + 12); climber.feet = platforms[climbCheckpoint].y; setToast('SOBRECARGA — RECUO AO APOIO ANTERIOR'); }
+      if (climbLives <= 0) {
+        climbLives = 2;
+        climbCheckpoint = Math.max(0, climbCheckpoint - 1);
+        setToast('SOBRECARGA — RECUO AO APOIO ANTERIOR');
+        beginCheckpointReturn(climber,()=>{
+          const platform=platforms[climbCheckpoint];
+          climber.x=Math.max(25,platform.x+12);
+          climber.feet=platform.y;
+          climber.vy=0;
+          climber.grounded=true;
+          climber.gait=null;
+          return climber;
+        });
+      }
       else setToast('DESCARGA ELÉTRICA — CUIDADO COM OS ARCOS');
     }
+  }
+
+  const RETURN_DEPARTURE=.26,RETURN_ARRIVAL=.9;
+  function beginCheckpointReturn(actor,arrive,recoil=4) {
+    checkpointReturn={actor,arrive,recoil,elapsed:0};
+  }
+  function advanceCheckpointReturn(dt) {
+    const returning=checkpointReturn;
+    returning.elapsed+=dt;
+    if(returning.arrive&&returning.elapsed>=RETURN_DEPARTURE){
+      returning.actor=returning.arrive();
+      returning.arrive=null;
+    }
+    if(returning.elapsed>=RETURN_DEPARTURE+RETURN_ARRIVAL)checkpointReturn=null;
+  }
+  function applyReturnPose(actor,angle,gait) {
+    const returning=checkpointReturn;
+    if(returning?.actor!==actor)return gait;
+    const progress=returning.arrive?returning.elapsed/RETURN_DEPARTURE:
+      (returning.elapsed-RETURN_DEPARTURE)/RETURN_ARRIVAL;
+    const eased=progress*progress*(3-2*progress);
+    const walk=spriteAtlas.survivor.walk,{directions}=walk;
+    const frameCount=walk.runFrames?.length??walk.frameCount;
+    const heading=gait?.heading??footHeading(angle,directions);
+    if(returning.arrive){
+      ctx.globalAlpha*=1-eased;
+      ctx.translate(0,returning.recoil*eased);
+      const step=Math.floor(progress*3);
+      if(step===0)return gait;
+      const frames=footPlaybackFrames(walk,gait?.running,heading);
+      const count=frames?.length??walk.frameCount;
+      const period=gait?.pingPong?2*(count-1):count;
+      const phase=(Math.floor(gait?.phase??0)+step)%period;
+      return {heading,phase:footAtlasFrame(phase,walk,gait?.running,gait?.pingPong,heading),stage:'stop'};
+    }
+    // Finish the fade before either of the passing poses where the arms swing.
+    const fade=Math.min(1,progress*(frameCount+2)/2);
+    ctx.globalAlpha*=fade*fade*(3-2*fade);
+    // Play both steps, then hold the first contact pose before settling.
+    const phase=progress*(frameCount+2),step=Math.floor(phase);
+    const approach=Math.max(0,1-phase/frameCount);
+    if(approach>0){
+      const headingAngle=heading*2*Math.PI/directions;
+      const distance=8*approach*(.5+.5*approach);
+      ctx.translate(-Math.sin(headingAngle)*distance,Math.cos(headingAngle)*distance);
+    }
+    if(step>frameCount)return {heading,stage:'idle'};
+    const index=step%frameCount;
+    return {heading,phase:walk.runFrames?.[index]??index,stage:'stop'};
+  }
+  function returnToRoad(message,recoil) {
+    beginCheckpointReturn(explorer,()=>{
+      state='drive';
+      player.x=worldReturn.x;player.y=worldReturn.y;player.gait=null;
+      camera.x=player.x;camera.y=player.y;
+      mounted=false;
+      keys.clear();
+      setToast(message);
+      updateObjective();
+      return player;
+    },recoil);
   }
 
   function finishFrame(time, dt) {
@@ -3445,30 +3707,32 @@
     if(state!=='title'&&state!=='ending')updateBikeFuelTrail(dt);
     updateMachines(gameTime);
     hunger = Math.max(0, hunger - dt * .035); thirst = Math.max(0, thirst - dt * .06);
+    if(checkpointReturn){
+      advanceCheckpointReturn(dt);
+      finishFrame(gameTime,dt);
+      requestAnimationFrame(frame);
+      return;
+    }
     if (state === 'explore') {
-      const dx = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
-      const dy = (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0);
-      const step=footMovementSpeed()*dt/(Math.hypot(dx,dy)||1);
-      const nextX = Math.max(58, Math.min(408, explorer.x + dx*step)), nextY = Math.max(95, Math.min(280, explorer.y + dy*step));
-      const radius=7*ACTOR_VISUAL_SCALE;
-      const hitsWall = (x,y) => interiorWalls.some(w => x+radius>w.x && x-radius<w.x+w.w && y+radius>w.y && y-radius<w.y+w.h);
-      if (!hitsWall(nextX, explorer.y)) explorer.x = nextX;
-      if (!hitsWall(explorer.x, nextY)) explorer.y = nextY;
-      exploreStep += dt; explorer.invulnerable = Math.max(0, explorer.invulnerable - dt);
+      updateFootMovement(explorer,dt,moveExplorer);
+      explorer.invulnerable = Math.max(0, explorer.invulnerable - dt);
       const hazard = interiorHazards.find(h => Math.hypot(explorer.x - h.x, explorer.y - h.y) < (h.kind === 'gap' ? 18 : 16));
       if (hazard && explorer.invulnerable <= 0) {
-        explorer.hp--; explorer.invulnerable = 1.3; explorer.x = 240; explorer.y = 145;
+        explorer.hp--; explorer.invulnerable = 1.3;
         setToast(hazard.kind === 'weak' ? 'O PISO CEDEU — DESVIE DAS PLACAS FENDIDAS' : hazard.kind === 'gap' ? 'SEM CHÃO! VOCÊ VOLTOU AO ÚLTIMO APOIO' : 'TETO DESABOU — PROCURE UM ABRIGO');
-        if (explorer.hp <= 0) { state = 'drive'; player.x = worldReturn.x; player.y = worldReturn.y; mounted = false; explorer.hp = 3; setToast('VOCÊ ESCAPOU DA CONSTRUÇÃO POR POUCO.'); }
+        if(explorer.hp<=0){
+          explorer.hp=3;
+          returnToRoad('VOCÊ ESCAPOU DA CONSTRUÇÃO POR POUCO.');
+        }else{
+          beginCheckpointReturn(explorer,()=>{
+            explorer.x=240;explorer.y=145;explorer.gait=null;
+            return explorer;
+          });
+        }
       }
     }
     if (state === 'drive' && !mounted) {
-      const dx = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
-      const dy = (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0);
-      if (dx || dy) {
-        const p=footMovementSpeed()*dt/Math.hypot(dx,dy);
-        moveWorldEntity(player, dx * p, dy * p, 7*ACTOR_VISUAL_SCALE); player.angle = Math.atan2(dx, -dy); walkCycle += dt * 12;
-      }
+      updateFootMovement(player,dt,moveWorldEntity,projectFacing);
       if (active() && Math.hypot(player.x - active().x, player.y - active().y) > 205 && !mounted) { /* the machine remains safely out of reach on foot */ }
       updateObjective();
     } else if (state === 'drive' && mounted) {
@@ -3478,18 +3742,24 @@
       bike.steering+=(turn-bike.steering)*(1-Math.exp(-9*dt));
       // Ease the rider into the turn independently of the handlebars.
       bike.bank+=(bike.steering-bike.bank)*(1-Math.exp(-6*dt));
+      const previousSpeed=bike.speed;
       const motorFactor = (.38 + .62 * bikeParts.motor / 100)*(.65+.35*Math.min(hunger,thirst)/100)*(.62+.38*Math.min(bikeParts.frontTire,bikeParts.rearTire)/100);
-      if (throttle && bikeEngineRunning && fuel > 0 && bikeLife > 0 && bikeShiftCooldown<=0) bike.speed += bikeGearAcceleration() * motorFactor * dt;
-      else if (reverse && bikeLife > 0 && (bike.speed>0||bikeEngineRunning&&fuel>0)) bike.speed += (bike.speed > 0 ? -300 : -105 * motorFactor) * dt;
+      if (reverse&&bike.speed>0) bike.speed=Math.max(0,bike.speed-300*dt);
+      else if (throttle&&!reverse&&bike.speed<0) bike.speed=Math.min(0,bike.speed+300*dt);
+      else if (throttle&&!reverse&&bikeEngineRunning&&fuel>0&&bikeLife>0&&bikeShiftCooldown<=0) bike.speed+=bikeGearAcceleration()*motorFactor*dt;
+      else if (reverse&&!throttle&&bikeLife>0&&bikeEngineRunning&&fuel>0) bike.speed-=105*motorFactor*dt;
       else bike.speed = Math.sign(bike.speed) * Math.max(0, Math.abs(bike.speed) - 75 * dt);
       const maxForward=bikeGearSpeedLimit();
       // Engine braking brings a downshift into its new range without teleporting speed.
       if(bike.speed>maxForward)bike.speed=Math.max(maxForward,bike.speed-dt*260);
       bike.speed=Math.max(-48,bike.speed);
       if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt*(reverse?.045:.11)*(1+(100-bikeParts.motor)/38));
-      bike.angle += bike.steering * dt * (.7 + Math.abs(bike.speed) / 115) * (.2 + .8*bikeParts.handlebar/100) * (.5 + .5*Math.min(bikeParts.frontTire,bikeParts.rearTire)/100) * (bike.speed<0?-1:1);
-      const previousX=bike.x,previousY=bike.y,impactSpeed=bike.speed;
-      const rideX=Math.sin(bike.angle)*bike.speed*dt,rideY=-Math.cos(bike.angle)*bike.speed*dt;
+      const travelSpeed=(previousSpeed+bike.speed)/2;
+      const turnDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt);
+      const travelAngle=bike.angle+turnDelta/2;
+      bike.angle+=turnDelta;
+      const previousX=bike.x,previousY=bike.y,impactSpeed=travelSpeed;
+      const rideX=Math.sin(travelAngle)*travelSpeed*dt,rideY=-Math.cos(travelAngle)*travelSpeed*dt;
       moveWorldEntity(bike,rideX,rideY,12*ACTOR_VISUAL_SCALE);
       const blockedFraction=Math.min(1,Math.hypot(rideX-(bike.x-previousX),rideY-(bike.y-previousY))/Math.max(.001,Math.hypot(rideX,rideY)));
       const tower = active();

@@ -121,9 +121,10 @@ foreach ($kind in $variants.Keys) {
     headlightAnchors=@($sources | ForEach-Object { ,$lamps[$_] })}
   if($kind -eq 'survivor') { $atlas[$kind]['idleDirections']=8; $atlas[$kind]['palette']=[ordered]@{sleeve='#3d4037';trousers='#30322e';boot='#20221f';glove='#302a22';tape='#a7977b';patch='#77705e'} }
 }
-$walkFile='sobrevivente-solitario-andar-64.png'
+$walkFile='sobrevivente-solitario-andar-192-direita.png'
 $walkPath=Join-Path $ProjectRoot "assets/sprites-128/$walkFile"
-$walkFrames=[SpriteAtlasBounds]::Read($walkPath,8,8)
+$walkColumns=24
+$walkFrames=[SpriteAtlasBounds]::Read($walkPath,$walkColumns,8)
 $bitmap=[Drawing.Bitmap]::new($walkPath)
 try {
   if($bitmap.GetPixel(0,0).A -ge 32) { throw 'Walking atlas must have real transparency.' }
@@ -133,23 +134,47 @@ try {
   for($direction=0;$direction -lt 8;$direction++) {
     $rowTop=$direction*$bitmap.Height/8.0
     $ground=0;$head=$bitmap.Height
-    for($step=0;$step -lt 8;$step++) {
-      $f=$walkFrames[$direction*8+$step]
+    for($step=0;$step -lt $walkColumns;$step++) {
+      $f=$walkFrames[$direction*$walkColumns+$step]
       $ground=[Math]::Max($ground,$f[1]-$rowTop+$f[3]-2)
       $head=[Math]::Min($head,$f[1]-$rowTop)
     }
     $cycle=[Collections.Generic.List[object]]::new()
     $anchors=[Collections.Generic.List[object]]::new()
-    for($step=0;$step -lt 8;$step++) {
-      $f=$walkFrames[$direction*8+$step];$cycle.Add($f)
+    for($step=0;$step -lt $walkColumns;$step++) {
+      $f=$walkFrames[$direction*$walkColumns+$step];$cycle.Add($f)
       $anchors.Add(@([SpriteAtlasBounds]::HeadCenter($bitmap,$f),[Math]::Round($ground-($f[1]-$rowTop),2)))
     }
     $cycles.Add($cycle.ToArray());$walkAnchors.Add($anchors.ToArray());$bodyHeights.Add($ground-$head)
   }
-  $atlas.survivor['walk']=[ordered]@{file=$walkFile;width=$bitmap.Width;height=$bitmap.Height;columns=8;rows=8;directions=8;frameCount=8;fps=10;frames=$cycles.ToArray();anchors=$walkAnchors.ToArray();bodyHeights=$bodyHeights.ToArray()}
+  $runFrames=@(0..($walkColumns-1) | Where-Object { $_ % 3 -ne 1 })
+  $walkFramesInOrder=@(0..($walkColumns-1))
+  # Each listed key frame is followed by two in-betweens whose reverse order
+  # gives a smaller silhouette change across the two neighboring key poses.
+  $swapAfterKey=@(
+    @(3,15,21), @(12,15,18,21), @(3,6,9,18), @(6,15,18,21),
+    @(6,12,18), @(6,9,18,21), @(3,6,9,18,21), @(6,12,15,18,21)
+  )
+  $walkOrder=[Collections.Generic.List[object]]::new()
+  foreach($keys in $swapAfterKey){
+    $sequence=$walkFramesInOrder.Clone()
+    foreach($key in $keys){
+      $sequence[$key+1]=$key+2
+      $sequence[$key+2]=$key+1
+    }
+    $walkOrder.Add($sequence)
+  }
+  $motionFile='sobrevivente-solitario-andar-192-passadas.png'
+  $motion=[Drawing.Bitmap]::new((Join-Path $ProjectRoot "assets/sprites-128/$motionFile"))
+  try {
+    if($motion.Width -ne $bitmap.Width -or $motion.Height -ne $bitmap.Height) {
+      throw 'The walking motion sheet must match the source atlas dimensions.'
+    }
+  } finally { $motion.Dispose() }
+  $atlas.survivor['walk']=[ordered]@{file=$walkFile;motionFile=$motionFile;width=$bitmap.Width;height=$bitmap.Height;columns=$walkColumns;rows=8;directions=8;frameCount=$walkColumns;fps=30;playbackFps=(1000.0/110);pingPong=$false;walkFrames=$walkFramesInOrder;walkOrder=$walkOrder.ToArray();runFrames=$runFrames;frames=$cycles.ToArray();anchors=$walkAnchors.ToArray();bodyHeights=$bodyHeights.ToArray()}
 } finally { $bitmap.Dispose() }
 $json=ConvertTo-Json -InputObject $atlas -Depth 12 -Compress
 $encoding=[Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText((Join-Path $ProjectRoot 'assets/sprites-128/atlas.json'),$json,$encoding)
 [IO.File]::WriteAllText((Join-Path $ProjectRoot 'assets/sprites-128/atlas.js'),"globalThis.SURVIVOR_ATLAS_128=$json;`n",$encoding)
-Write-Output 'Validated 208 nonempty sprite cells, including 64 full-body walking frames.'
+Write-Output 'Validated 336 nonempty sprite cells, including 192 full-body walking frames.'

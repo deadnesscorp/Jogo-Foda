@@ -110,14 +110,15 @@ function runIgnitionTests(factory,source) {
     const createWorld=new Function('igniting','repairing',`
       let lastTime=1000,gameTime=0,fuel=100,bikeLife=100,bikeEngineRunning=false,hunger=100,thirst=100;
       let W=480,H=270,gameScene=null;const gameSceneViewport=()=>({x:0,y:0,width:480,height:270});
-      let state='drive',mounted=false,bikeInspectOpen=repairing,bikeService=null,walkCycle=0;
+      let state='drive',mounted=false,bikeInspectOpen=repairing,bikeService=null,checkpointReturn=null;
       let machineTicks=0,wearTicks=0,ignitionTicks=0,repairTicks=0,rendered=0;
       const bike={x:0,y:0,speed:0},player={x:0,y:0},keys=new Set();
       const ignition={active:igniting,update(){ignitionTicks++;}};
       const gameDisplay={sampleFrame(){}},updateBikeGearbox=()=>{},bikeControlsMounted=()=>false,distance=()=>0;
       const updateBikeService=()=>repairTicks++,updateBikeCondition=()=>wearTicks++,updateMachines=()=>machineTicks++;
       const updateBikeFuelTrail=()=>{};
-      const updateObjective=()=>{},active=()=>null,finishFrame=()=>rendered++,requestAnimationFrame=()=>{},footMovementSpeed=()=>5/.52;
+      const updateObjective=()=>{},active=()=>null,finishFrame=()=>rendered++,requestAnimationFrame=()=>{};
+      const updateFootMovement=()=>{},moveWorldEntity=()=>{},projectFacing=angle=>angle;
       ${frameSource}
       frame(1016);
       return {machineTicks,wearTicks,ignitionTicks,repairTicks,rendered,hunger,thirst};

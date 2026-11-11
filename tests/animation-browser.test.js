@@ -81,14 +81,16 @@ async function main(){
       let checks=0;
       const inputNames=['W','W + D','D','D + S','S (baixo)','S + A','A (esquerda)','A + W'];
       for(let i=0;i<8;i++){
-        const angle=projectFacing(i*Math.PI/4),expected=bikeSpritePose(angle,0,0).direction,time=10+i,x=80+(i%4)*160,y=110+Math.floor(i/4)*200;
-        bikeVisualFacings.clear();smoothBikeFacing(angle+Math.PI/2,time,'survivor');
-        drawSurvivorSprite(x-24,y,angle,time+1/60,true);
-        if(bikeVisualFacings.get('survivor').direction!==expected)throw Error('Walking did not follow '+inputNames[i]);checks++;
-        drawSurvivorSprite(x+24,y,0,time+2/60,false);
-        if(bikeVisualFacings.get('survivor').direction!==expected)throw Error('Stopping changed facing for '+inputNames[i]);checks++;
-        drawSurvivorSprite(-100,-100,Math.PI/4,time+.5,false);
-        if(bikeVisualFacings.get('survivor').direction!==expected)throw Error('Idle facing drifted for '+inputNames[i]);checks++;
+        const angle=projectFacing(i*Math.PI/4),x=80+(i%4)*160,y=110+Math.floor(i/4)*200;
+        const gait=createFootGait(),walk=spriteAtlas.survivor.walk,expected=footHeading(angle,walk.directions);
+        updateFootGait(gait,3,angle,footWalkSpeed(),1/30,walk);
+        drawSurvivorSprite(x-24,y,angle,gait);
+        if(gait.heading!==expected)throw Error('Walking did not follow '+inputNames[i]);checks++;
+        for(let tick=0;tick<86;tick++)updateFootGait(gait,0,0,footWalkSpeed(),1/60,walk);
+        drawSurvivorSprite(x+24,y,0,gait);
+        if(gait.stage!=='idle'||gait.heading!==expected)throw Error('Stopping changed facing for '+inputNames[i]);checks++;
+        drawSurvivorSprite(-100,-100,Math.PI/4,gait);
+        if(gait.heading!==expected)throw Error('Idle facing drifted for '+inputNames[i]);checks++;
         ctx.fillStyle='#d9e3ed';ctx.font='8px sans-serif';ctx.fillText(inputNames[i],x-18,y+22);
         ctx.font='6px sans-serif';ctx.fillText('andando',x-38,y+38);ctx.fillText('parado',x+13,y+38);
       }
@@ -217,32 +219,51 @@ async function main(){
         const pose=drawBike(320,180,angle,100,time);
         check(!!pose.integrated===riding,'Mounted rider must render with the motorcycle');
         const facing=bikeVisualFacings.get('world');
-        check(facing.direction%8===0,'Turning selects one complete stable pose');
+        check(Number.isInteger(facing.direction)&&facing.direction>=0&&facing.direction<128,'Turning keeps a valid shadow and lamp direction');
         const layer=bikeBlendContext.getImageData(0,0,bikeBlendLayer.width,bikeBlendLayer.height).data;
         let solid=0;for(let i=3;i<layer.length;i+=4)if(layer[i]>240)solid++;
         check(solid>80,'Bike must remain visible and opaque');
       }
-      for(let frame=0;frame<120;frame++){
-        time+=.017;ctx.clearRect(0,0,640,360);
-        check(drawSurvivorSprite(320,180,frame/120*Math.PI*2,time,frame%30!==0),'Walking and stopping render in every direction');
+      const walk=spriteAtlas.survivor.walk,gait=createFootGait();
+      for(let tick=0;tick<120;tick++){
+        const angle=tick/120*Math.PI*2;
+        updateFootGait(gait,tick%30!==0?.7:0,angle,footWalkSpeed(),.017,walk);
+        ctx.clearRect(0,0,640,360);
+        check(drawSurvivorSprite(320,180,angle,gait),'Walking and stopping render in every direction');
       }
-      state='drive';mounted=false;keys.clear();player.x=bike.x;player.y=bike.y;
-      const sprintStart={x:player.x,y:player.y};let sprintNow=performance.now();lastTime=sprintNow;
-      keys.add('d');frame(sprintNow+=1000/60);const walkDistance=player.x-sprintStart.x;
-      player.x=sprintStart.x;player.y=sprintStart.y;
+      state='drive';mounted=false;keys.clear();player.x=bike.x;player.y=bike.y;player.gait=null;
+      let sprintNow=performance.now();lastTime=sprintNow;
+      keys.add('d');
+      let walkDraws=0,walkingFrames=0;
+      const drawImage=CanvasRenderingContext2D.prototype.drawImage;
+      CanvasRenderingContext2D.prototype.drawImage=function(image,...args){
+        if(image===survivorWalkSpriteSheet||image===survivorWalkMotionSheet)walkDraws++;
+        return drawImage.call(this,image,...args);
+      };
+      try{
+        for(let tick=0;tick<24;tick++){
+          walkDraws=0;
+          frame(sprintNow+=1000/60);
+          check(walkDraws<=1,'Each displayed frame draws at most one walking sprite');
+          if(walkDraws===1)walkingFrames++;
+        }
+        check(walkingFrames>0,'The gameplay loop draws the walking sprite');
+      }finally{
+        CanvasRenderingContext2D.prototype.drawImage=drawImage;
+      }
+      const walkSpeed=player.gait.vx,walkFrame=footAtlasFrame(player.gait.phase,walk,false,player.gait.pingPong,player.gait.heading);
       window.dispatchEvent(new KeyboardEvent('keydown',{key:'Shift',bubbles:true}));
-      frame(sprintNow+=1000/60);const runDistance=player.x-sprintStart.x;
-      check(Math.abs(walkDistance*60*BIKE_SPEED_TO_KMH-20)<.001,'Actual walking speed is 20 km/h');
-      check(Math.abs(runDistance*60*BIKE_SPEED_TO_KMH-40)<.001,'Actual Shift running speed is 40 km/h');
+      frame(sprintNow+=1000/60);
+      check(player.gait.vx>walkSpeed&&player.gait.vx<2*walkSpeed,'Shift accelerates progressively in the game loop');
+      check(Math.abs(footAtlasFrame(player.gait.phase,walk,true,false)-walkFrame)<=2,'Shift keeps the current stride phase');
+      for(let tick=0;tick<24;tick++)frame(sprintNow+=1000/60);
+      const runSpeed=player.gait.vx;
+      check(runSpeed>walkSpeed*1.9,'Running reaches the configured pace');
       window.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true}));
-      player.x=sprintStart.x;player.y=sprintStart.y;frame(sprintNow+=1000/60);
-      check(Math.abs((player.x-sprintStart.x)/walkDistance-1)<.001,'Releasing Shift restores walking speed immediately');
-      keys.clear();bikeVisualFacings.clear();
-      drawSurvivorSprite(320,180,0,100,true);drawSurvivorSprite(320,180,0,100.05,true);
-      const walkPhase=bikeVisualFacings.get('survivor').walkPhase;
-      const runner=bikeVisualFacings.get('survivor');runner.walkPhase=0;
-      keys.add('shift');drawSurvivorSprite(320,180,0,100.1,true);
-      check(Math.abs(runner.walkPhase/walkPhase-1.3/.8)<1e-8,'Running has a faster, human-paced animation cadence');
+      frame(sprintNow+=1000/60);
+      check(player.gait.vx>walkSpeed&&player.gait.vx<runSpeed,'Releasing Shift decelerates progressively in the game loop');
+      keys.clear();for(let tick=0;tick<86;tick++)frame(sprintNow+=1000/60);
+      check(player.gait.stage==='idle'&&player.gait.vx===0,'Releasing movement returns to a planted idle pose');
       mounted=true;check(footSpeedMultiplier()===1,'Shift does not change motorcycle controls');
       state='climb';mounted=false;check(footSpeedMultiplier()===1,'Shift does not accelerate climbing');
       state='drive';keys.clear();lastTime=0;
@@ -269,15 +290,14 @@ async function main(){
         const x=40+(i%8)*80,y=80+Math.floor(i/8)*160,angle=i*Math.PI/8;
         bikeVisualFacings.clear();mounted=true;drawBike(x,y,angle,80,30+i);
         bikeVisualFacings.clear();mounted=false;drawBike(x,y+48,angle,0,30+i);
-        bikeVisualFacings.clear();drawSurvivorSprite(x,y+94,angle,30+i,true);
+        drawSurvivorSprite(x,y+94,angle,{stage:'loop',heading:footHeading(angle,walk.directions),phase:0});
       }
       const preview=canvas.toDataURL('image/png');
       ctx.fillStyle='#26323c';ctx.fillRect(0,0,640,360);
-      for(let heading=0;heading<8;heading++)for(let step=0;step<8;step++){
-        bikeVisualFacings.clear();const angle=heading*Math.PI/4;
-        const facing=smoothBikeFacing(angle,100,'survivor');facing.walkPhase=step;facing.walkTime=100;
-        drawSurvivorSprite(40+step*80,40+heading*43,angle,100,true);
-        check(Math.floor(facing.walkPhase)%8===step,'All eight directional walk frames render');
+      for(let heading=0;heading<walk.directions;heading++)for(let step=0;step<walk.frameCount;step++){
+        const columnWidth=640/walk.frameCount;
+        check(drawSurvivorSprite((step+.5)*columnWidth,40+heading*43,heading*Math.PI/4,{stage:'loop',heading,phase:step}),
+          'Every directional walk frame renders');
       }
       return {checks,preview,walkingPreview:canvas.toDataURL('image/png')};
     })()

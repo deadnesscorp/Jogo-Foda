@@ -35,14 +35,22 @@ function runSpriteAtlasTests(atlas,source) {
     }
   }
   const walk=atlas.survivor.walk;
-  check(walk.directions===8&&walk.frameCount===8&&walk.columns*walk.rows===64,'walking atlas has 8 full-body frames for each of 8 directions');
+  check(walk.directions===8&&walk.frameCount===24&&walk.columns*walk.rows===192,'walking atlas has 24 full-body frames for each of 8 directions');
+  check(walk.pingPong===false&&walk.walkFrames.length===24&&walk.walkFrames.every((frame,index)=>frame===index),'The walking atlas plays all 24 poses in order');
+  check(walk.walkOrder.length===walk.directions&&walk.walkOrder.every(order=>order.length===24&&new Set(order).size===24&&order.every((frame,index)=>Math.floor(frame/3)===Math.floor(index/3)&&(index%3!==0||frame===index))),'Each direction uses all 24 poses and retains its key frames');
+  check(Math.abs(1000/walk.playbackFps-110)<1e-8,'Walking uses the reference GIF duration per pose');
+  check(walk.runFrames.length===16&&walk.runFrames.every(frame=>frame%3!==1),'Running keeps the original sixteen poses per direction');
   for(let direction=0;direction<8;direction++){
     check(walk.bodyHeights[direction]>0&&walk.bodyHeights[direction]<=walk.height/8,'walking uses a fixed body scale for the entire directional cycle');
-    for(let step=0;step<8;step++){
-      const [x,y,w,h]=walk.frames[direction][step],left=Math.round(step*walk.width/8),right=Math.round((step+1)*walk.width/8),top=Math.round(direction*walk.height/8),bottom=Math.round((direction+1)*walk.height/8);
+    for(let step=0;step<walk.frameCount;step++){
+      const [x,y,w,h]=walk.frames[direction][step],left=Math.round(step*walk.width/walk.columns),right=Math.round((step+1)*walk.width/walk.columns),top=Math.round(direction*walk.height/8),bottom=Math.round((direction+1)*walk.height/8);
       check(w>0&&h>0&&x>=left&&x+w<=right&&y>=top&&y+h<=bottom,'walking crop never includes another frame');
       const anchor=walk.anchors[direction][step];
       check(anchor.every(Number.isFinite)&&anchor[0]>=0&&anchor[0]<=w&&anchor[1]>=0,'walking has a valid helmet/ground anchor');
+      if(step%3===1){
+        const previous=walk.frames[direction][step-1][3],next=walk.frames[direction][(step+1)%walk.frameCount][3];
+        check(Math.abs(h-(previous+next)/2)<=2.5,'The intermediate pose matches the height of its neighbors');
+      }
     }
   }
   const layout=source.slice(source.indexOf('  function bikeGroundLayout('),source.indexOf('  const DAY_LENGTH_SECONDS'));
@@ -61,72 +69,63 @@ function runSpriteAtlasTests(atlas,source) {
   }
   check(api.mask(0,false)!==api.mask(0,true),'mounted rider has its own shadow silhouette');
   check(api.mask(0,true)===api.mask(0,true),'mounted shadow remains cached');
-  const footDrawing=source.slice(source.indexOf('  function drawSurvivorSprite('),source.indexOf('  function drawPerson('));
-  const smoothingSource=source.slice(source.indexOf('  function smoothBikeFacing('),source.indexOf('  function bikeSpritePose('));
+  const footDrawing=source.slice(source.indexOf('  function drawFootFrame('),source.indexOf('  function drawPerson('));
+  const footHeadingSource=source.slice(source.indexOf('  function footHeading('),source.indexOf('  function updateFootGait('));
   const foot=new Function('spriteAtlas',`
-    const ACTOR_VISUAL_SCALE=${visualScale},survivorSpriteSheet={complete:true,naturalWidth:1774,kind:'idle'},survivorWalkSpriteSheet={complete:true,naturalWidth:1280,kind:'walk'};let calls=0;const draws=[],footAnimationMultiplier=()=>.8;
+    const ACTOR_VISUAL_SCALE=${visualScale};
+    const survivorSpriteSheet={complete:true,naturalWidth:1774,kind:'idle'};
+    const survivorWalkSpriteSheet={complete:true,naturalWidth:1280,kind:'walk'};
+    const survivorWalkMotionSheet={complete:false,naturalWidth:0,kind:'walk-motion'};
     ${directionConstants}
-    const bikeVisualFacings=new Map();
-    const survivorIdleDirections=new Map();
-    ${smoothingSource}
-    ${poseSource}
-    const blends=[],painter={clearRect(){},drawImage(...args){blends.push({alpha:this.globalAlpha,args});}};
-    const document={createElement:()=>({getContext:()=>painter})};
-    const ctx={save(){},restore(){},translate(){},transform(){},drawImage(...args){calls++;draws.push(args);}};
+    ${footHeadingSource}
+    const draws=[];
+    let transform={a:1,b:.1,c:0,d:1,e:0,f:0};
+    const ctx={save(){},restore(){},translate(){},getTransform(){return transform;},drawImage(...args){draws.push({args,smoothing:this.imageSmoothingEnabled});}};
     ${footDrawing}
-    return {draw:drawSurvivorSprite,draws,blends,seed:(angle,time)=>smoothBikeFacing(angle,time,'survivor'),get direction(){return bikeVisualFacings.get('survivor').direction;},get calls(){return calls;},get phase(){return bikeVisualFacings.get('survivor').walkPhase;},ready(value){survivorWalkSpriteSheet.complete=value;}};
+    return {draw:drawSurvivorSprite,draws,ready(value){survivorWalkSpriteSheet.complete=value;},motionReady(){survivorWalkMotionSheet.complete=true;survivorWalkMotionSheet.naturalWidth=spriteAtlas.survivor.walk.width;},transform(value){transform=value;}};
   `)(atlas);
-  check(foot.draw(100,120,0,0,false)&&foot.calls===1,'standing survivor draws one cached sprite');
-  check(foot.draw(100,120,Math.PI,1,true)&&foot.calls===2&&foot.draws.at(-1)[0].kind==='walk','walking draws one complete animated sprite without cutting limbs');
-  for(let pose=0;pose<16;pose++){
-    foot.draw(100,120,pose*Math.PI/8,2,true);
-    foot.draw(100,120,pose*Math.PI/8,2,false);
-    const draw=foot.draws.at(-1),height=draw.length===5?foot.blends.at(-1).args[8]/4:draw[8];
-    check(Math.abs(height-34*visualScale)<1e-8,'standing survivor keeps the same reduced height in all 16 directions');
-  }
-  const visited=new Set();
-  for(let sample=0;sample<32;sample++){
-    foot.draw(100,120,0,3+sample*.05,true);visited.add(foot.draws.at(-1).slice(1,5).join(','));
-  }
-  check(visited.size===8,'walking advances through all eight distinct animation frames');
-  foot.draw(100,120,0,5,false);check(foot.phase===0&&foot.draws.at(-1)[0].kind==='idle','stopping returns to the planted idle pose');
-  foot.ready(false);foot.draw(100,120,0,5.05,true);check(foot.draws.at(-1)[0].kind==='idle','walking safely uses the idle pose while its atlas loads');
-  foot.ready(true);
-  for(const moving of [false,true])for(let direction=0;direction<128;direction++){
-    if(!moving)foot.draw(100,120,direction*Math.PI*2/128,6,true);
-    const before=foot.blends.length;
-    foot.draw(100,120,direction*Math.PI*2/128,6,moving);
-    const stride=16;
-    if(direction%stride){
-      check(foot.blends.length===before+2,'intermediate headings blend two anchored source views');
-      const pair=foot.blends.slice(-2);
-      check(Math.abs(pair[0].alpha+pair[1].alpha-1)<1e-8,'direction interpolation preserves opacity');
-      check(pair.every(draw=>draw.args.slice(1).every(Number.isFinite)),'interpolated frames have finite geometry including the wrap to north');
+  for(let heading=0;heading<walk.directions;heading++){
+    const angle=heading*Math.PI*2/walk.directions;
+    for(let step=0;step<walk.frameCount;step++){
+      const before=foot.draws.length;
+      check(foot.draw(100,120,angle,{heading,phase:step+.25,stage:'loop'}),'walking frame renders');
+      const {args,smoothing}=foot.draws.at(-1);
+      check(foot.draws.length===before+1&&args[0].kind==='walk'&&!smoothing,'each pose uses one source sprite with smoothing disabled');
+      check(args.slice(1,5).join(',')===walk.frames[heading][step].join(','),'each source crop is drawn in sequence');
+      check(args.slice(5).every(Number.isFinite),'drawing keeps finite geometry');
+      check(Math.abs(args[6]+34*visualScale)<1e-8,'Every frame keeps the same helmet height');
     }
+    foot.draw(100,120,angle,{heading,phase:4,stage:'idle'});
+    const idle=foot.draws.at(-1).args;
+    foot.draw(100,120,angle+Math.PI/2,{heading,phase:4,stage:'idle'});
+    check(idle[0].kind==='idle'&&idle.slice(1,5).join(',')===foot.draws.at(-1).args.slice(1,5).join(','),'idle preserves the last walking heading');
+    check(Math.abs(idle[8]-34*visualScale)<1e-8,'idle preserves the existing actor scale');
   }
-  for(let heading=0;heading<128;heading++){
-    const angle=heading*Math.PI*2/128,time=20+heading;
-    foot.seed(angle+Math.PI/2,time);
-    foot.draw(100,120,angle,time+1/60,true);
-    check(foot.direction===heading,'quick turns immediately use the movement heading on foot');
-    foot.draw(100,120,angle+Math.PI/4,time+2/60,false);
-    check(foot.direction===heading,'releasing movement preserves the last heading without an intermediate diagonal');
-    foot.draw(100,120,angle+Math.PI/2,time+.5,false);
-    check(foot.direction===heading,'idle heading stays fixed after the turn');
-  }
-  for(const scenario of [
-    {key:'S',angle:Math.atan2(-1,-.5),poses:[9,11]},
-    {key:'A',angle:Math.atan2(-1,.5),poses:[11,14]}
-  ]){
-    foot.draw(100,120,scenario.angle,200,true);
-    const before=foot.blends.length;
-    foot.draw(100,120,0,200+1/60,false);
-    check(foot.blends.length===before+2,scenario.key+' release uses calibrated neighboring idle views');
-    foot.blends.slice(-2).forEach((draw,index)=>{
-      const sourceIndex=atlas.survivor.sourceDirections.indexOf(scenario.poses[index]);
-      check(draw.args.slice(1,5).join(',')===atlas.survivor.frames[sourceIndex].join(','),scenario.key+' stop selects the correct physical source pose');
-    });
-  }
+  const walking={heading:4,phase:5,stage:'loop'};
+  const matrix={a:1.75,b:0,c:0,d:1.75,e:100.27,f:80.48};
+  foot.transform(matrix);
+  foot.draw(100,120,Math.PI,walking);
+  const [x,y,width,height]=foot.draws.at(-1).args.slice(5);
+  check([x*matrix.a+matrix.e,y*matrix.d+matrix.f,width*matrix.a,height*matrix.d].every(value=>Math.abs(value-Math.round(value))<1e-8),'Sprite drawing aligns to the physical pixel grid');
+  foot.transform({...matrix,e:100.81,f:80.76});
+  foot.draw(100,120,Math.PI,walking);
+  check(foot.draws.at(-1).args.slice(7).join(',')===[width,height].join(','),'Subpixel movement cannot change the pose size');
+  foot.draw(100,120,Math.PI,{heading:4,phase:38.5,stage:'loop',pingPong:true});
+  check(foot.draws.at(-1).args.slice(1,5).join(',')===walk.frames[4][8].join(','),'The renderer selects the correct source frame on the return half');
+  foot.draw(100,120,Math.PI,{heading:4,phase:1.5,stage:'loop',running:true});
+  check(foot.draws.at(-1).args.slice(1,5).join(',')===walk.frames[4][2].join(','),'Running selects the preserved source poses');
+  foot.draw(100,120,Math.PI,{heading:4,phase:1.5,stage:'loop',running:false});
+  check(foot.draws.at(-1).args.slice(1,5).join(',')===walk.frames[4][1].join(','),'Walking includes the intermediate poses');
+  foot.draw(100,120,Math.PI,{heading:4,phase:7.5,stage:'loop',running:false});
+  check(foot.draws.at(-1).args.slice(1,5).join(',')===walk.frames[4][8].join(','),'Walking uses the calibrated intermediate order for its heading');
+  foot.motionReady();
+  foot.draw(100,120,Math.PI,{heading:4,phase:7.5,stage:'loop',running:false});
+  check(foot.draws.at(-1).args[0].kind==='walk-motion'&&foot.draws.at(-1).args[3]===walk.width/walk.columns,'Walking draws the precomposed limb timing pose once');
+  foot.draw(100,120,Math.PI,{heading:4,phase:1.5,stage:'loop',running:true});
+  check(foot.draws.at(-1).args[0].kind==='walk','Running keeps its original art');
+  foot.ready(false);
+  foot.draw(100,120,0,{heading:0,phase:1,stage:'loop'});
+  check(foot.draws.at(-1).args[0].kind==='idle','walking safely uses idle while its atlas loads');
   return assertions+' sprite atlas checks passed';
 }
 if(typeof module!=='undefined'&&typeof require==='function') {
