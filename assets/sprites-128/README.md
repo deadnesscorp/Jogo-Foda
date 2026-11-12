@@ -1,7 +1,6 @@
 # Sprites do protagonista e da moto
 
-A moto mantém 128 orientações lógicas. A animação a pé usa as oito direções
-calibradas na folha de caminhada.
+A moto mantém 128 orientações lógicas. O personagem a pé usa 128 orientações, com uma folha de 128 poses paradas.
 
 ## Arte montada atual
 
@@ -16,9 +15,11 @@ recortes das silhuetas conectadas, os contatos dos pneus e a origem do farol.
 Os recortes seguem o sprite inteiro, mesmo quando atravessa a grade nominal.
 
 `mounted-rider.js` prepara 128 poses e nove inclinações, com altura visual estável.
+As poses montadas são escolhidas pelo ângulo na tela em `sourceHeadings`, calibrado
+pelo eixo dos pneus. A sequência da folha não representa giros de ângulo uniforme;
+as vistas traseiras repetidas compartilham a mesma direção.
 Não lê pixels no navegador, permitindo abrir `index.html` diretamente. As sombras
 usam os contatos dos pneus medidos na arte montada e acompanham sua escala reduzida.
-O arquivo anterior `piloto-moto-unificado.png` foi preservado como referência.
 
 Os sprites separados `sobrevivente-piloto-sentado-128.png`,
 `sobrevivente-piloto-sentado-128.json`, `piloto-recortes.js` e
@@ -28,23 +29,24 @@ sobrepostos à moto durante o jogo.
 ## Outros assets
 
 - `moto-128.png`: moto estacionada, com 128 quadros físicos calibrados.
-- `sobrevivente-parado-direcional-16.png`: poses paradas atuais, com 16 vistas alinhadas à caminhada.
-- `sobrevivente-solitario-idle-16.png`: folha parada anterior, preservada como referência.
-- `sobrevivente-solitario-andar-192-direita.png`: folha atual com 24 quadros por direção. Quatro poses frontais da caminhada destacam o braço e a perna direitos.
-- `sobrevivente-solitario-andar-192-passadas.png`: reprodução da caminhada com braços antecipados e posições de perna estabilizadas nas intermediárias.
-- `sobrevivente-solitario-andar-192.png`: folha anterior de 24 quadros por direção.
-- `sobrevivente-solitario-andar-128.png`: folha de 16 quadros por direção usada como referência para a versão atual.
-- `sobrevivente-solitario-andar-64-bracos.png`: folha de 64 quadros usada como referência para a versão atual, com alternância dos braços na vista frontal.
-- `sobrevivente-solitario-andar-64.png`: folha de caminhada original.
+- `sobrevivente-parado-128.png`: folha atual com 128 poses paradas, em 16 colunas e oito fileiras.
 - `atlas.js` e `atlas.json`: recortes e âncoras dos sprites a pé e da moto original.
-- `andar-preview.html` e `preview.html`: prévias das folhas originais.
+  As poses a pé usam os limites das 128 silhuetas completas, mesmo quando
+  atravessam a grade nominal, para manter a escala igual nas diagonais.
+- `preview.html`: prévia da moto e das poses paradas.
 
-A altura a pé é normalizada em 34 unidades, com escala visual global de 0,75.
-A caminhada usa 24 poses de cada direção, com 110 ms por pose
-em velocidade normal, seguindo a cadência do GIF de referência. A corrida usa
-16 poses da mesma folha e dá passadas mais longas. A distância
-percorrida controla o avanço da passada. Ao parar, o ciclo termina
-numa pose de apoio e conserva a orientação para a pose parada.
+A altura a pé é normalizada em 34 unidades, com escala visual global de 0,60.
+O deslocamento usa uma caminhada simples calculada sobre a pose original: duas
+regiões das pernas giram a partir dos joelhos sem esticar ou deformar a arte,
+com sobreposição nas articulações, o torso inteiro e um balanço leve.
+Os antebraços são medidos por pose a partir das mãos, incluindo os dedos no
+recorte. Eles giram nos cotovelos em oposição aos passos, com sobreposição da
+manga na articulação. Cabeça, ombros, mochila e casaco ficam estáveis; as mãos
+originais são mascaradas também nas regiões das pernas para evitar duplicação.
+A fase acompanha a distância realmente percorrida; colisões não
+fazem o personagem marchar parado. A amplitude diminui ao soltar o movimento.
+As velocidades continuam em 16 km/h andando e 35 km/h correndo. A arte montada
+foi mantida. A prévia fica em `tests/simple-walk-browser.html`.
 
 ## Reconstrução e verificação
 

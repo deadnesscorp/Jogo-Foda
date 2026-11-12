@@ -6,6 +6,63 @@ if (-not ('SpriteAtlasBounds' -as [type])) {
 using System;
 using System.Drawing;
 public static class SpriteAtlasBounds {
+  public static int[][] Forearms(Bitmap image,int[] frame) {
+    int w=frame[2],h=frame[3];var mask=new bool[w*h];var seen=new bool[w*h];var queue=new int[w*h];
+    var hands=new System.Collections.Generic.List<int[]>();
+    for(int y=(int)(h*.65);y<h*.78;y++)for(int x=0;x<w;x++){
+      var p=image.GetPixel(frame[0]+x,frame[1]+y);
+      mask[y*w+x]=p.A>180&&p.R>205&&p.G>165&&p.B>140&&p.R>p.G*1.02;
+    }
+    for(int start=0;start<mask.Length;start++){
+      if(!mask[start]||seen[start])continue;
+      int first=0,last=0,minX=w,minY=h,maxX=0,maxY=0;queue[last++]=start;seen[start]=true;
+      while(first<last){
+        int p=queue[first++],x=p%w,y=p/w;minX=Math.Min(minX,x);maxX=Math.Max(maxX,x);minY=Math.Min(minY,y);maxY=Math.Max(maxY,y);
+        for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){
+          int nx=x+dx,ny=y+dy;if(nx<0||nx>=w||ny<0||ny>=h)continue;int n=ny*w+nx;
+          if(mask[n]&&!seen[n]){seen[n]=true;queue[last++]=n;}
+        }
+      }
+      if(last>=8&&maxY-minY>=3)hands.Add(new[]{minX,minY,maxX,maxY,last});
+    }
+    hands.Sort((a,b)=>b[4].CompareTo(a[4]));
+    var result=new System.Collections.Generic.List<int[]>();
+    foreach(var hand in hands){
+      bool duplicate=false;foreach(var other in result)if(hand[0]<=other[0]+other[2]+3&&hand[2]>=other[0]-3)duplicate=true;
+      if(duplicate||result.Count==2)continue;
+      int x=Math.Max(0,hand[0]-2),y=Math.Max(0,hand[1]-(int)(h*.10));
+      int right=Math.Min(w,hand[2]+3),bottom=Math.Min(h,hand[3]+3);
+      result.Add(new[]{x,y,right-x,bottom-y});
+    }
+    result.Sort((a,b)=>a[0].CompareTo(b[0]));return result.ToArray();
+  }
+  public static int[][] ReadConnected(string path,int columns,int rows) {
+    using(var image=new Bitmap(path)) {
+      int w=image.Width,h=image.Height;
+      var opaque=new bool[w*h];var seen=new bool[w*h];var queue=new int[w*h];
+      var frames=new System.Collections.Generic.List<int[]>();
+      for(int y=0;y<h;y++)for(int x=0;x<w;x++)opaque[y*w+x]=image.GetPixel(x,y).A>32;
+      for(int start=0;start<opaque.Length;start++){
+        if(!opaque[start]||seen[start])continue;
+        int first=0,last=0,minX=w,minY=h,maxX=0,maxY=0;queue[last++]=start;seen[start]=true;
+        while(first<last){
+          int p=queue[first++],x=p%w,y=p/w;
+          minX=Math.Min(minX,x);maxX=Math.Max(maxX,x);minY=Math.Min(minY,y);maxY=Math.Max(maxY,y);
+          for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){
+            int nx=x+dx,ny=y+dy;if(nx<0||nx>=w||ny<0||ny>=h)continue;
+            int n=ny*w+nx;if(opaque[n]&&!seen[n]){seen[n]=true;queue[last++]=n;}
+          }
+        }
+        if(last>300)frames.Add(new[]{minX,minY,maxX-minX+1,maxY-minY+1});
+      }
+      if(frames.Count!=columns*rows)throw new Exception("Expected one complete silhouette per standing pose");
+      frames.Sort((a,b)=>{
+        int ar=(int)((a[1]+a[3]/2.0)*rows/h),br=(int)((b[1]+b[3]/2.0)*rows/h);
+        return ar!=br?ar.CompareTo(br):(a[0]+a[2]/2.0).CompareTo(b[0]+b[2]/2.0);
+      });
+      return frames.ToArray();
+    }
+  }
   public static double HeadCenter(Bitmap image,int[] frame) {
     double sum=0,count=0;
     for(int y=(int)(frame[3]*.05);y<frame[3]*.23;y++) for(int x=0;x<frame[2];x++) {
@@ -68,10 +125,10 @@ public static class SpriteAtlasBounds {
 # These sheets do not advance by a uniform angle and contain repeated rear views.
 $directionKeys = @{
   bike=@(0,12,30,45,57,72,88,101,110)
-  survivor=@(0,2,3,6,8,9,11,14,16)
+  survivor=@(0,12,20,40,64,72,80,96,128)
 }
 $atlas = [ordered]@{directions=128;columns=16;rows=8;stepDegrees=2.8125}
-$variants = [ordered]@{bike='moto-128.png';survivor='sobrevivente-parado-direcional-16.png'}
+$variants = [ordered]@{bike='moto-128.png';survivor='sobrevivente-parado-128.png'}
 foreach ($kind in $variants.Keys) {
   $file = $variants[$kind]
   $path = Join-Path $ProjectRoot "assets/sprites-128/$file"
@@ -79,10 +136,15 @@ foreach ($kind in $variants.Keys) {
   try { $width=$bitmap.Width; $height=$bitmap.Height; $corner=$bitmap.GetPixel(0,0).A } finally { $bitmap.Dispose() }
   if ($corner -ge 32) { throw "Atlas must have real transparency: $file" }
   $columns=16;$rows=8
-  if($kind -eq 'survivor') { $columns=4;$rows=4 }
-  $frames = [SpriteAtlasBounds]::Read($path,$columns,$rows)
+
+  $frames = if($kind -eq 'survivor') {
+    [SpriteAtlasBounds]::ReadConnected($path,$columns,$rows)
+  } else {
+    [SpriteAtlasBounds]::Read($path,$columns,$rows)
+  }
   $contacts = [Collections.Generic.List[object]]::new()
   $lamps = [Collections.Generic.List[object]]::new()
+  $forearms = [Collections.Generic.List[object]]::new()
   $bitmap = [Drawing.Bitmap]::new($path)
   try {
   for ($direction=0; $direction -lt $frames.Length; $direction++) {
@@ -92,6 +154,7 @@ foreach ($kind in $variants.Keys) {
       $footPoints.Add(@([Math]::Round($sw/2,2),($sh-2)))
       $contacts.Add($footPoints.ToArray())
       $lamps.Add(@(0,0))
+      $forearms.Add([SpriteAtlasBounds]::Forearms($bitmap,$frame))
       continue
     }
     $keys=$directionKeys[$kind];$segment=0
@@ -113,68 +176,17 @@ foreach ($kind in $variants.Keys) {
     $segment=[int][Math]::Floor($direction/16);$weight=($direction%16)/16
     $keys=$directionKeys[$kind]
     $source=[int][Math]::Round($keys[$segment]+($keys[$segment+1]-$keys[$segment])*$weight)
-    if($kind -eq 'survivor'){$source%16}else{$source}
+    if($kind -eq 'survivor'){$source%128}else{$source}
   })
   $atlas[$kind]=[ordered]@{file=$file;width=$width;height=$height;columns=$columns;rows=$rows;sourceDirections=$sources;
     frames=@($sources | ForEach-Object { ,$frames[$_] });
     wheelContacts=@($sources | ForEach-Object { ,$contacts[$_] });
     headlightAnchors=@($sources | ForEach-Object { ,$lamps[$_] })}
-  if($kind -eq 'survivor') { $atlas[$kind]['idleDirections']=8; $atlas[$kind]['palette']=[ordered]@{sleeve='#3d4037';trousers='#30322e';boot='#20221f';glove='#302a22';tape='#a7977b';patch='#77705e'} }
+  if($kind -eq 'survivor') { $atlas[$kind]['forearms']=@($sources | ForEach-Object { ,$forearms[$_] }); $atlas[$kind]['idleDirections']=128; $atlas[$kind]['palette']=[ordered]@{sleeve='#3d4037';trousers='#30322e';boot='#20221f';glove='#302a22';tape='#a7977b';patch='#77705e'} }
 }
-$walkFile='sobrevivente-solitario-andar-192-direita.png'
-$walkPath=Join-Path $ProjectRoot "assets/sprites-128/$walkFile"
-$walkColumns=24
-$walkFrames=[SpriteAtlasBounds]::Read($walkPath,$walkColumns,8)
-$bitmap=[Drawing.Bitmap]::new($walkPath)
-try {
-  if($bitmap.GetPixel(0,0).A -ge 32) { throw 'Walking atlas must have real transparency.' }
-  $cycles=[Collections.Generic.List[object]]::new()
-  $walkAnchors=[Collections.Generic.List[object]]::new()
-  $bodyHeights=[Collections.Generic.List[object]]::new()
-  for($direction=0;$direction -lt 8;$direction++) {
-    $rowTop=$direction*$bitmap.Height/8.0
-    $ground=0;$head=$bitmap.Height
-    for($step=0;$step -lt $walkColumns;$step++) {
-      $f=$walkFrames[$direction*$walkColumns+$step]
-      $ground=[Math]::Max($ground,$f[1]-$rowTop+$f[3]-2)
-      $head=[Math]::Min($head,$f[1]-$rowTop)
-    }
-    $cycle=[Collections.Generic.List[object]]::new()
-    $anchors=[Collections.Generic.List[object]]::new()
-    for($step=0;$step -lt $walkColumns;$step++) {
-      $f=$walkFrames[$direction*$walkColumns+$step];$cycle.Add($f)
-      $anchors.Add(@([SpriteAtlasBounds]::HeadCenter($bitmap,$f),[Math]::Round($ground-($f[1]-$rowTop),2)))
-    }
-    $cycles.Add($cycle.ToArray());$walkAnchors.Add($anchors.ToArray());$bodyHeights.Add($ground-$head)
-  }
-  $runFrames=@(0..($walkColumns-1) | Where-Object { $_ % 3 -ne 1 })
-  $walkFramesInOrder=@(0..($walkColumns-1))
-  # Each listed key frame is followed by two in-betweens whose reverse order
-  # gives a smaller silhouette change across the two neighboring key poses.
-  $swapAfterKey=@(
-    @(3,15,21), @(12,15,18,21), @(3,6,9,18), @(6,15,18,21),
-    @(6,12,18), @(6,9,18,21), @(3,6,9,18,21), @(6,12,15,18,21)
-  )
-  $walkOrder=[Collections.Generic.List[object]]::new()
-  foreach($keys in $swapAfterKey){
-    $sequence=$walkFramesInOrder.Clone()
-    foreach($key in $keys){
-      $sequence[$key+1]=$key+2
-      $sequence[$key+2]=$key+1
-    }
-    $walkOrder.Add($sequence)
-  }
-  $motionFile='sobrevivente-solitario-andar-192-passadas.png'
-  $motion=[Drawing.Bitmap]::new((Join-Path $ProjectRoot "assets/sprites-128/$motionFile"))
-  try {
-    if($motion.Width -ne $bitmap.Width -or $motion.Height -ne $bitmap.Height) {
-      throw 'The walking motion sheet must match the source atlas dimensions.'
-    }
-  } finally { $motion.Dispose() }
-  $atlas.survivor['walk']=[ordered]@{file=$walkFile;motionFile=$motionFile;width=$bitmap.Width;height=$bitmap.Height;columns=$walkColumns;rows=8;directions=8;frameCount=$walkColumns;fps=30;playbackFps=(1000.0/110);pingPong=$false;walkFrames=$walkFramesInOrder;walkOrder=$walkOrder.ToArray();runFrames=$runFrames;frames=$cycles.ToArray();anchors=$walkAnchors.ToArray();bodyHeights=$bodyHeights.ToArray()}
-} finally { $bitmap.Dispose() }
+$atlas.survivor['walk']=ConvertFrom-Json -InputObject '{"directions":8,"frameCount":24,"fps":30,"playbackFps":9.0909090909090917,"pingPong":false,"walkFrames":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],"walkOrder":[[0,1,2,3,5,4,6,7,8,9,10,11,12,13,14,15,17,16,18,19,20,21,23,22],[0,1,2,3,4,5,6,7,8,9,10,11,12,14,13,15,17,16,18,20,19,21,23,22],[0,1,2,3,5,4,6,8,7,9,11,10,12,13,14,15,16,17,18,20,19,21,22,23],[0,1,2,3,4,5,6,8,7,9,10,11,12,13,14,15,17,16,18,20,19,21,23,22],[0,1,2,3,4,5,6,8,7,9,10,11,12,14,13,15,16,17,18,20,19,21,22,23],[0,1,2,3,4,5,6,8,7,9,11,10,12,13,14,15,16,17,18,20,19,21,23,22],[0,1,2,3,5,4,6,8,7,9,11,10,12,13,14,15,16,17,18,20,19,21,23,22],[0,1,2,3,4,5,6,8,7,9,10,11,12,14,13,15,17,16,18,20,19,21,23,22]],"runFrames":[0,2,3,5,6,8,9,11,12,14,15,17,18,20,21,23]}'
 $json=ConvertTo-Json -InputObject $atlas -Depth 12 -Compress
 $encoding=[Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText((Join-Path $ProjectRoot 'assets/sprites-128/atlas.json'),$json,$encoding)
 [IO.File]::WriteAllText((Join-Path $ProjectRoot 'assets/sprites-128/atlas.js'),"globalThis.SURVIVOR_ATLAS_128=$json;`n",$encoding)
-Write-Output 'Validated 336 nonempty sprite cells, including 192 full-body walking frames.'
+Write-Output 'Validated motorcycle and standing character sprites.'

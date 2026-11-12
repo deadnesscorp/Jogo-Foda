@@ -1,0 +1,34 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Caminhada simples</title>
+<style>body{background:#293238;color:#ece7db;font:16px system-ui;margin:24px}canvas{max-width:100%;image-rendering:pixelated}pre{white-space:pre-wrap}</style>
+<h1>Caminhada simples</h1><p>Passos curtos com o sprite original · 16 km/h andando · 35 km/h correndo</p>
+<canvas width="1280" height="440"></canvas><pre>Carregando…</pre>
+<img hidden id="sprite" src="../assets/sprites-128/sobrevivente-parado-128.png" alt="">
+<script src="../assets/sprites-128/atlas.js"></script><script src="sprites-128.test.js"></script>
+<script>
+(async()=>{
+  const status=document.querySelector('pre');
+  try{
+    const source=await(await fetch('../game.js')).text();new Function(source);
+    const results=[runSpriteAtlasTests(SURVIVOR_ATLAS_128,source)];
+    const sprint=await(await fetch('sprint.test.js')).text();
+    new Function('require','console','__dirname',sprint)(name=>name.includes('path')?{join:()=>''}:{readFileSync:()=>source},{log:line=>results.push(line)},'');
+    const image=document.querySelector('#sprite');
+    if(!image.complete||!image.naturalWidth)await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;});
+    const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+    const helpers=source.slice(source.indexOf('  function footHeading('),source.indexOf('  function updateFootGait('));
+    const drawing=source.slice(source.indexOf('  function drawFootFrame('),source.indexOf('  function drawPerson('));
+    const draw=new Function('ctx','spriteAtlas','survivorSpriteSheet','const ACTOR_VISUAL_SCALE=.60,BIKE_DIRECTION_COUNT=128;'+helpers+drawing+';return drawSurvivorSprite;')(ctx,SURVIVOR_ATLAS_128,image);
+    function render(time){
+      ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#293238';ctx.fillRect(0,0,1280,440);
+      for(let i=0;i<8;i++){
+        const x=160+i%4*320,y=140+Math.floor(i/4)*210;
+        ctx.save();ctx.translate(x,y);ctx.scale(4,4);
+        draw(0,0,i*Math.PI/4,{stepPhase:time/1000*7,stepAmount:1,running:false,stage:'loop'});ctx.restore();
+        ctx.fillStyle='#ece7db';ctx.font='15px system-ui';ctx.fillText(['Costas','Diagonal','Direita','Diagonal','Frente','Diagonal','Esquerda','Diagonal'][i],x-30,y+40);
+      }
+      requestAnimationFrame(render);
+    }
+    status.textContent='PASSOU\n'+results.join('\n');document.body.dataset.result='passed';render(0);
+  }catch(error){status.textContent='ERRO: '+error.stack;document.body.dataset.result='failed';}
+})();
+</script></html>

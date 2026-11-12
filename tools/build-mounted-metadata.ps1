@@ -52,6 +52,24 @@ $image=[Drawing.Bitmap]::new($path)
 try {
   if($image.GetPixel(0,0).A -ne 0){throw 'Mounted sheet needs transparency.'}
   $keys=@(0,10,23,40,56,72,80,95,112)
+  # Screen headings calibrated against the front/rear tire baseline in the art.
+  # The generated turntable is not uniform: source 40 is nearly lateral (100
+  # degrees), despite the previous eight-sector mapping assigning 135 degrees.
+  # Repeated rear views share a heading rather than creating false turn steps.
+  $headingKeys=@(
+    @(0,0),@(2,0),@(3,50),@(6,59),@(10,68),@(18,79),@(23,86),
+    @(32,88),@(36,93),@(40,100),@(44,116),@(48,118),@(52,140),
+    @(56,180),@(60,223),@(64,237),@(68,246),@(72,257),@(76,265),
+    @(80,269),@(84,273),@(88,284),@(92,295),@(96,300),@(100,303),
+    @(104,308),@(108,360),@(111,360)
+  )
+  $sourceHeadings=@(for($index=0;$index -lt 112;$index++) {
+    $keyIndex=0
+    while($keyIndex -lt $headingKeys.Count-2 -and $index -gt $headingKeys[$keyIndex+1][0]){$keyIndex++}
+    $first=$headingKeys[$keyIndex];$next=$headingKeys[$keyIndex+1]
+    $weight=($index-$first[0])/($next[0]-$first[0])
+    ($first[1]+($next[1]-$first[1])*$weight)*[Math]::PI/180
+  })
   $contacts=[Collections.Generic.List[object]]::new()
   $lamps=[Collections.Generic.List[object]]::new()
   for($index=0;$index -lt 112;$index++) {
@@ -62,7 +80,7 @@ try {
     $contacts.Add(@([SpriteAtlasBounds]::Contact($image,$frames[$index],(.5-$spread)),[SpriteAtlasBounds]::Contact($image,$frames[$index],(.5+$spread))))
     $lamps.Add([SpriteAtlasBounds]::Lamp($image,$frames[$index],$angle))
   }
-  $data=[ordered]@{file=$file;width=$image.Width;height=$image.Height;columns=16;rows=7;sourceCount=112;directions=128;directionKeys=$keys;frames=$frames;wheelContacts=$contacts.ToArray();headlightAnchors=$lamps.ToArray()}
+  $data=[ordered]@{file=$file;width=$image.Width;height=$image.Height;columns=16;rows=7;sourceCount=112;directions=128;directionKeys=$keys;sourceHeadings=$sourceHeadings;frames=$frames;wheelContacts=$contacts.ToArray();headlightAnchors=$lamps.ToArray()}
   $json=ConvertTo-Json -InputObject $data -Depth 8 -Compress
   $encoding=[Text.UTF8Encoding]::new($false)
   [IO.File]::WriteAllText((Join-Path $ProjectRoot 'assets/sprites-128/piloto-moto-unificado.json'),$json,$encoding)

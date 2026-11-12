@@ -13,16 +13,33 @@ function createMountedRiderAtlas({rider:art,bike,atlas,layout}) {
   const painter=sheet.getContext('2d');painter.imageSmoothingEnabled=false;
   const metadata={file:'unified-mounted-art',width:sheet.width,height:sheet.height,pixelsPerUnit:unit,
     frames:[],wheelContacts:[],headlightAnchors:[],riderAnchors:[],sourceDirections:[],poses:[]};
+  // Average neighboring silhouette heights to suppress single-frame size jumps.
+  const heights=data.frames.map((frame,index)=>{
+    let total=0,weight=0;
+    for(let offset=-2;offset<=2;offset++){
+      const w=3-Math.abs(offset),neighbor=(index+offset+data.sourceCount)%data.sourceCount;
+      total+=data.frames[neighbor][3]*w;weight+=w;
+    }
+    return total/weight;
+  });
   for(let direction=0;direction<128;direction++){
     const angle=direction*Math.PI*2/128,segment=Math.floor(direction/16),weight=(direction%16)/16;
-    const source=Math.round(data.directionKeys[segment]+(data.directionKeys[segment+1]-data.directionKeys[segment])*weight)%data.sourceCount;
+    let source=Math.round(data.directionKeys[segment]+(data.directionKeys[segment+1]-data.directionKeys[segment])*weight)%data.sourceCount;
+    if(data.sourceHeadings){
+      let closest=Infinity;
+      for(let candidate=0;candidate<data.sourceCount;candidate++){
+        const delta=data.sourceHeadings[candidate]-angle;
+        const distance=Math.abs(Math.atan2(Math.sin(delta),Math.cos(delta)));
+        if(distance<closest){closest=distance;source=candidate;}
+      }
+    }
     const [,,sw,sh]=data.frames[source];
     const sourceContacts=data.wheelContacts[source];
     const anchorX=sourceContacts.reduce((sum,p)=>sum+p[0],0)/sourceContacts.length;
     const anchorY=sourceContacts.reduce((sum,p)=>sum+p[1],0)/sourceContacts.length;
     // Keep the whole painted pose at a stable size while changing heading.
     // Matching crop widths made narrow profile sprites jump in scale.
-    const scale=36/sh,width=sw*scale,height=sh*scale;
+    const scale=36/heights[source],width=sw*scale,height=sh*scale;
     const left=-anchorX*scale,top=5-anchorY*scale;
     const pose={crop:data.frames[source],left,top:top-5,width,height};
     metadata.poses[direction]=pose;

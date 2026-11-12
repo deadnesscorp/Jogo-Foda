@@ -5,9 +5,9 @@
 <style>
 *{box-sizing:border-box}body{margin:0;padding:30px;background:#0e0d15;color:#eee5f7;font:14px system-ui}main{max-width:1100px;margin:auto}h1{font-size:24px}p{color:#b6a5c6}.controls{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin:24px 0;padding:16px;border:1px solid #5f4673;border-radius:10px;background:#201828}input[type=range]{width:240px;accent-color:#bf8fe0}button{padding:9px 18px;border:1px solid #8d65a6;background:#392248;color:#f1e1fd;border-radius:6px;cursor:pointer}.stage{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}figure{margin:0;border:1px solid #60416e;border-radius:12px;overflow:hidden;background:repeating-conic-gradient(#25202e 0% 25%,#1b1723 0% 50%) 0/20px 20px}canvas{display:block;width:100%;height:auto}figcaption{padding:13px;background:#191320;color:#e7c9fa;font-weight:600}small{display:block;font-weight:400;color:#aa95b9;margin-top:4px}@media(max-width:700px){.stage{grid-template-columns:1fr}body{padding:16px}}
 </style>
-<main><h1>Sobrevivente · 128 direções</h1><p>Moto e poses paradas do sobrevivente. <a href="andar-preview.html">Ver caminhada animada</a></p>
+<main><h1>Sobrevivente · 128 direções</h1><p>Moto e poses paradas do sobrevivente.</p>
 <div class="controls"><button id="pause">Pausar</button><label>Direção <input id="direction" type="range" min="0" max="127" value="0"></label><label>Velocidade <input id="speed" type="range" min="1" max="48" value="16"></label><strong id="heading">Carregando…</strong></div>
-<section class="stage"><figure><canvas id="bike" width="384" height="300"></canvas><figcaption>Moto<small>128 poses · estacionada</small></figcaption></figure><figure><canvas id="survivor" width="384" height="300"></canvas><figcaption>Sobrevivente<small>16 poses · capacete, máscara, mochila e corda</small></figcaption></figure></section></main>
+<section class="stage"><figure><canvas id="bike" width="384" height="300"></canvas><figcaption>Moto<small>128 poses · estacionada</small></figcaption></figure><figure><canvas id="survivor" width="384" height="300"></canvas><figcaption>Sobrevivente<small>128 poses · capacete, máscara, mochila e corda</small></figcaption></figure></section></main>
 <script src="atlas.js"></script>
 <script>
 const atlas=SURVIVOR_ATLAS_128,slider=document.querySelector('#direction'),heading=document.querySelector('#heading');

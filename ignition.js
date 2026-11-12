@@ -1,5 +1,14 @@
 (function (root) {
   'use strict';
+  const keychainPortraits={};
+  if(typeof root.Image==='function'){
+    const scriptUrl=typeof document!=='undefined'?document.currentScript?.src:null;
+    const base=scriptUrl?new URL('assets/keychain/',scriptUrl).href:'assets/keychain/';
+    for(const kind of ['yuuri','chito','nuko']){
+      const image=new root.Image();image.src=base+kind+(kind==='nuko'?'.webp':'.png');
+      keychainPortraits[kind]=image;
+    }
+  }
   function createBikeIgnition({canvas,ctx,width:W,height:H,onStart,onCancel,onFail=()=>{},random=Math.random,getCondition=()=>100}) {
     const LOCK={x:318,y:131},HOME={x:214,y:156},TURN=Math.PI/2;
     let session=null,failures=0;
@@ -11,6 +20,8 @@
     };
     function open() {
       session={phase:'place',x:HOME.x,y:HOME.y,angle:0,time:0,drag:null,success:0,
+        chainBase:{x:HOME.x,y:HOME.y+10,angle:0},
+        pendants:[-.95,0,.95].map((rest,i)=>({rest,angle:rest,velocity:0,tilt:0,spin:0,length:[40,35,42][i]})),
         message:'Pegue a chave pelo cabo e leve a ponta até a fechadura.'};
       canvas.style.touchAction='none';canvas.style.cursor='grab';
     }
@@ -97,16 +108,59 @@
     function update(dt) {
       if(!session)return;
       session.time+=dt;
+      updateKeychain(session,dt);
       if(session.phase==='failed') {
         session.success-=dt;session.angle=TURN*Math.max(0,session.success/.65);
         if(session.success<=0){session.phase='turn';session.angle=0;canvas.style.cursor='grab';}
       }
       if(session.phase==='success'){session.success-=dt;if(session.success<=0)close(true);}
     }
+    function updateKeychain(s,dt) {
+      if(dt<=0)return;
+      const base={x:s.x-Math.sin(s.angle)*9,y:s.y+Math.cos(s.angle)*10,angle:s.angle};
+      const dx=base.x-s.chainBase.x,dy=base.y-s.chainBase.y,turn=base.angle-s.chainBase.angle;
+      s.chainBase=base;
+      for(const p of s.pendants){
+        // Moving the support leaves each pendant behind, then gravity pulls it back.
+        p.angle-=Math.max(-.8,Math.min(.8,dx/p.length))*.65*Math.cos(p.angle);
+        p.velocity+=-dx/p.length*3.2+dy/p.length*Math.sin(p.angle)*1.8-turn*1.6;
+        p.velocity=Math.max(-7,Math.min(7,p.velocity));
+      }
+      let remaining=Math.min(dt,.25);
+      while(remaining>1e-8){
+        const step=Math.min(1/120,remaining);remaining-=step;
+        for(const [i,p] of s.pendants.entries()){
+          p.velocity-=(16+i*.8)*Math.sin(p.angle-p.rest)*step;
+          p.velocity*=Math.exp(-1.25*step);p.angle+=p.velocity*step;
+          if(Math.abs(p.angle)>1.48){p.angle=Math.sign(p.angle)*1.48;p.velocity*=-.25;}
+          p.spin+=((p.angle-p.rest)*.55-p.tilt)*22*step;
+          p.spin*=Math.exp(-2.2*step);p.tilt=Math.max(-.7,Math.min(.7,p.tilt+p.spin*step));
+        }
+      }
+    }
     function charm(kind,x,y,scale=1,angle=0) {
       ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.scale(scale,scale);
+      const accent=kind==='yuuri'?'#c9a260':kind==='chito'?'#7a99aa':'#a6b794';
+      const acrylic=ctx.createLinearGradient(-20,-22,22,38);
+      acrylic.addColorStop(0,'#fff8e9');acrylic.addColorStop(.45,kind==='yuuri'?'#e8dac0':kind==='chito'?'#d1dde1':'#e4e8da');acrylic.addColorStop(1,'#bfcac5');
+      ctx.shadowColor='#070b1080';ctx.shadowBlur=3;ctx.shadowOffsetY=2;
+      ctx.fillStyle=acrylic;ctx.strokeStyle='#f7f6e9';ctx.lineWidth=2.8;
+      ctx.beginPath();ctx.roundRect(-21,-22,42,60,9);ctx.fill();ctx.stroke();
+      ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+      ctx.strokeStyle=accent;ctx.lineWidth=.8;ctx.beginPath();ctx.roundRect(-19.5,-20.5,39,57,8);ctx.stroke();
+      ctx.fillStyle=accent;ctx.beginPath();ctx.roundRect(-15,30,30,5,2);ctx.fill();
+      ctx.fillStyle='#fdf8e9';ctx.font='bold 4px sans-serif';ctx.textAlign='center';
+      ctx.fillText(kind==='yuuri'?'YUURI':kind==='chito'?'CHITO':'NUKO',0,34);
       ctx.strokeStyle='#2d292f';ctx.lineWidth=1;
-      if(kind==='nuko') {
+      const portrait=keychainPortraits[kind];
+      if(portrait?.complete&&portrait.naturalWidth){
+        ctx.save();ctx.beginPath();ctx.roundRect(-17,-17,34,45,5);ctx.clip();
+        ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+        const fit=Math.max(34/portrait.naturalWidth,45/portrait.naturalHeight);
+        const width=portrait.naturalWidth*fit,height=portrait.naturalHeight*fit;
+        ctx.drawImage(portrait,-17+(34-width)/2,-17+(45-height)/2,width,height);
+        ctx.restore();
+      }else if(kind==='nuko') {
         ctx.fillStyle='#e9e8dc';ctx.beginPath();ctx.moveTo(-12,5);ctx.quadraticCurveTo(-17,-1,-19,-13);ctx.quadraticCurveTo(-9,-12,-5,-7);
         ctx.quadraticCurveTo(0,-9,5,-7);ctx.quadraticCurveTo(9,-12,19,-13);ctx.quadraticCurveTo(17,-1,12,5);
         ctx.lineTo(10,23);ctx.quadraticCurveTo(0,29,-10,23);ctx.closePath();ctx.fill();ctx.stroke();
@@ -126,9 +180,18 @@
         ctx.fillStyle='#28252a';for(const ex of [-5,5]){ctx.beginPath();ctx.ellipse(ex,6,1.4,yuuri?1:2,0,0,Math.PI*2);ctx.fill();}
         ctx.beginPath();ctx.moveTo(-2,11);ctx.lineTo(2,11);ctx.stroke();
         ctx.strokeStyle='#b4b59b';ctx.beginPath();ctx.moveTo(0,18);ctx.lineTo(0,28);ctx.moveTo(-8,20);ctx.lineTo(-3,20);ctx.stroke();
+        ctx.fillStyle='#353c34';ctx.beginPath();ctx.moveTo(-8,14);ctx.lineTo(-2,19);ctx.lineTo(0,15);ctx.lineTo(2,19);ctx.lineTo(8,14);ctx.closePath();ctx.fill();
+        ctx.fillStyle='#cfb681';for(const by of [21,25]){ctx.beginPath();ctx.arc(1,by,.7,0,Math.PI*2);ctx.fill();}
+        ctx.strokeStyle='#434b3e';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-8,19);ctx.lineTo(-9,25);ctx.moveTo(8,19);ctx.lineTo(9,25);ctx.stroke();
+        ctx.fillStyle='#b48a79';ctx.globalAlpha=.38;for(const ex of [-8,8]){ctx.beginPath();ctx.ellipse(ex,9,2,1,0,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
         ctx.fillStyle='#c4b391';ctx.fillRect(-11,26,22,3);
       }
-      ctx.strokeStyle='#b6b7b2';ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-18,2,0,Math.PI*2);ctx.stroke();
+      // Resin bevel and a reinforced metal eyelet, above the illustration.
+      ctx.strokeStyle='#ffffffb0';ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(-17,17);ctx.lineTo(-17,-12);ctx.quadraticCurveTo(-17,-17,-12,-17);ctx.stroke();
+      ctx.strokeStyle='#ffffff80';ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(12,34);ctx.quadraticCurveTo(17,34,17,28);ctx.lineTo(17,22);ctx.stroke();
+      ctx.fillStyle='#737e83';ctx.beginPath();ctx.arc(0,-22,4.2,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#eef0e5';ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-22,3.3,Math.PI*.9,Math.PI*1.95);ctx.stroke();
+      ctx.fillStyle='#27323a';ctx.beginPath();ctx.arc(0,-22,2,0,Math.PI*2);ctx.fill();
       ctx.restore();
     }
     function draw(time) {
@@ -184,16 +247,31 @@
       ctx.fillStyle='#b7b6b0';ctx.beginPath();ctx.ellipse(0,7,8,2,0,0,Math.PI*2);ctx.fill();
       ctx.restore();
       // Charms hang from the key ring and sway with the hand and the turn.
-      const swing=Math.sin(s.time*(s.drag?9:2.5))*(s.drag? .16:.05)+s.angle*.15;
       const ringX=s.x-Math.sin(s.angle)*9,ringY=s.y+Math.cos(s.angle)*10;
-      ctx.strokeStyle='#a8b0b4';ctx.lineWidth=1.4;ctx.beginPath();ctx.ellipse(ringX,ringY+8,9,11,0,0,Math.PI*2);ctx.stroke();
+      ctx.strokeStyle='#26313a';ctx.lineWidth=3.5;ctx.beginPath();ctx.ellipse(ringX,ringY+8,9,11,-.12,0,Math.PI*2);ctx.stroke();
+      const ringMetal=ctx.createLinearGradient(ringX-9,ringY,ringX+9,ringY+19);
+      ringMetal.addColorStop(0,'#f0ead2');ringMetal.addColorStop(.35,'#a3b0b3');ringMetal.addColorStop(.65,'#536572');ringMetal.addColorStop(1,'#d5d9ce');
+      ctx.strokeStyle=ringMetal;ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(ringX,ringY+8,9,11,-.12,0,Math.PI*2);ctx.stroke();
+      ctx.strokeStyle='#f3f1df';ctx.lineWidth=.6;ctx.beginPath();ctx.ellipse(ringX,ringY+8,8.6,10.5,-.12,Math.PI,Math.PI*1.65);ctx.stroke();
       for(const [i,kind] of ['yuuri','chito','nuko'].entries()){
-        const cx=ringX+(i-1)*28+Math.sin(swing)*15,cy=Math.min(H-60,ringY+37+(i===1?6:0));
-        ctx.strokeStyle='#a4a5ad';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(ringX,ringY+17);ctx.quadraticCurveTo(cx,ringY+19,cx,cy-12);ctx.stroke();
-        charm(kind,cx,cy,.62,swing*(i%2?1:-1));
+        const p=s.pendants[i],scale=.74,tilt=p.tilt;
+        const cx=Math.max(24,Math.min(W-24,ringX+Math.sin(p.angle)*p.length-Math.sin(tilt)*22*scale));
+        const cy=Math.min(H-62,ringY+17+Math.cos(p.angle)*p.length+Math.cos(tilt)*22*scale);
+        const hookX=cx+Math.sin(tilt)*22*scale,hookY=cy-Math.cos(tilt)*22*scale;
+        const startY=ringY+17,controlX=(ringX+hookX)/2-p.velocity*2.2;
+        const controlY=(startY+hookY)/2+5+Math.min(5,Math.abs(p.velocity));
+        for(let link=0;link<14;link++){
+          const t=link/13,u=1-t;
+          const px=u*u*ringX+2*u*t*controlX+t*t*hookX,py=u*u*startY+2*u*t*controlY+t*t*hookY;
+          const chainAngle=Math.atan2(2*u*(controlY-startY)+2*t*(hookY-controlY),2*u*(controlX-ringX)+2*t*(hookX-controlX))-Math.PI/2;
+          ctx.strokeStyle=link%2?'#bfc8c4':'#687e89';ctx.lineWidth=1;
+          ctx.beginPath();ctx.ellipse(px,py,link%2?1.1:1.6,2.1,chainAngle,0,Math.PI*2);ctx.stroke();
+          ctx.strokeStyle='#e7e8d6';ctx.lineWidth=.4;ctx.beginPath();ctx.ellipse(px-.3,py-.4,1,1.5,chainAngle,Math.PI,Math.PI*1.65);ctx.stroke();
+        }
+        charm(kind,cx,cy,scale,tilt);
       }
       ctx.textAlign='center';ctx.font='7px monospace';ctx.fillStyle='#c6b9cc';
-      ctx.fillText(success?'MOTOR LIGADO':s.phase==='failed'?'TENTE GIRAR NOVAMENTE':inserted?'ARRASTE EM SENTIDO HORÁRIO':'ARRASTE A CHAVE ATÉ A FECHADURA',296,207);
+      ctx.fillText(success?'MOTOR LIGADO':s.phase==='failed'?'TENTE GIRAR NOVAMENTE':inserted?'ARRASTE EM SENTIDO HORÁRIO':'ARRASTE A CHAVE ATÉ A FECHADURA',296,280);
       ctx.restore();
     }
     return {open,close,down,move,up,key,update,draw,
@@ -201,7 +279,8 @@
       cancelDrag(){if(session?.drag)up({pointerId:session.drag.id,type:'pointercancel'});},
       get active(){return session!==null;},
       get viewport(){return viewport();},
-      get snapshot(){return session?{phase:session.phase,x:session.x,y:session.y,angle:session.angle,dragging:!!session.drag}:null;}};
+      get snapshot(){return session?{phase:session.phase,x:session.x,y:session.y,angle:session.angle,dragging:!!session.drag,
+        keychain:session.pendants.map(p=>({angle:p.angle,velocity:p.velocity,tilt:p.tilt}))}:null;}};
   }
   root.createBikeIgnition=createBikeIgnition;
   if(typeof module!=='undefined'&&module.exports)module.exports=createBikeIgnition;

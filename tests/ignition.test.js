@@ -12,6 +12,23 @@ function runIgnitionTests(factory,source) {
     return {game,canvas,down:(x,y)=>game.down(event(x,y)),move:(x,y)=>game.move(event(x,y)),up:(x,y,type,button)=>game.up(event(x,y,type,button)),
       key:(key,repeat=false)=>game.key({key,repeat,preventDefault(){}}),get started(){return started;},get cancelled(){return cancelled;},get captured(){return captured;},get labels(){return labels;}};
   }
+  {
+    const h=create();h.game.open();
+    const rest=h.game.snapshot.keychain.map(p=>p.angle);
+    for(let i=0;i<60;i++)h.game.update(1/60);
+    check(h.game.snapshot.keychain.every((p,i)=>p.angle===rest[i]&&p.velocity===0),'stationary key never invents shaking');
+    h.down(214,156);h.move(259,162);h.game.update(1/60);
+    check(h.game.snapshot.keychain.some((p,i)=>Math.abs(p.angle-rest[i])>.1),'dragging the actual key drives pendant swing');
+    h.up(259,162);h.game.update(1/60);
+    const released=h.game.snapshot.keychain;
+    for(let i=0;i<20;i++)h.game.update(1/60);
+    check(h.game.snapshot.keychain.some((p,i)=>Math.abs(p.angle-released[i].angle)>.05),'pendants retain inertia after pointer release');
+    for(let i=0;i<720;i++)h.game.update(1/60);
+    check(h.game.snapshot.keychain.every((p,i)=>Math.abs(p.angle-rest[i])<.02&&Math.abs(p.velocity)<.03&&Math.abs(p.tilt)<.02),'loose pendants gradually settle without endless jitter');
+    h.down(214,156);h.move(-100,900);h.game.update(.25);
+    check(h.game.snapshot.keychain.every(p=>[p.angle,p.velocity,p.tilt].every(Number.isFinite)&&Math.abs(p.angle)<=1.48&&Math.abs(p.tilt)<=.7),'large mouse movements keep chain physics finite and bounded');
+    h.game.draw(2);
+  }
   for(const scale of [1,2,.75]) {
     const h=create(scale);h.game.open();h.game.draw(0);const home=h.game.snapshot,view=h.game.viewport;
     check(Math.abs(view.x+318*view.scale-240)<1e-9&&Math.abs(view.y+131*view.scale-135)<1e-9,'lock is centered exactly on the canvas');

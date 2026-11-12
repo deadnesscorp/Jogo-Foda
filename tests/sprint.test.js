@@ -25,15 +25,17 @@ function simulate(hz,segments,position=start){
 
 const walk=simulate(60,[[.5,['d']]]),run=simulate(60,[[.5,['d','shift']]]);
 check(Math.abs(walk.gait.vx*.52-16)<.001,'Walking approaches 16 km/h');
-check(Math.abs(run.gait.vx*.52-40)<.001,'Running approaches 40 km/h');
+check(Math.abs(run.gait.vx*.52-35)<.001,'Running approaches 35 km/h');
+check(walk.gait.stepAmount>.9&&run.gait.stepAmount>.9,'real walking and running activate the simple stride');
 const stopped=simulate(60,[[.5,['shift']]]);
 check(stopped.x===start.x&&stopped.gait.stage==='idle','Shift alone keeps the character idle');
 const wall={x:136.75,y:150},blocked=simulate(60,[[.5,['d','shift']]],wall);
 check(blocked.x===wall.x&&blocked.gait.vx===0&&blocked.gait.phase===0,'A wall cancels blocked velocity and prevents steps in place');
+check(blocked.gait.stepPhase===0&&blocked.gait.stepAmount===0,'blocked movement never animates a stride');
 const bounds=simulate(60,[[.5,['d','s','shift']]],{x:407.9,y:279.9});
 check(bounds.x===408&&bounds.y===280,'Sprinting respects room boundaries');
 const arrows=simulate(60,[[.5,['arrowup','shift']]]);
-check(Math.abs(arrows.gait.vy*.52+40)<.001,'Arrow keys support the calibrated run speed');
+check(Math.abs(arrows.gait.vy*.52+35)<.001,'Arrow keys support the calibrated run speed');
 const diagonal=simulate(60,[[.5,['d','s','shift']]]);
 check(Math.abs(Math.hypot(diagonal.gait.vx,diagonal.gait.vy)-run.gait.vx)<1e-8,'Diagonal input preserves speed');
 
@@ -51,7 +53,7 @@ check(actor.x>start.x&&actor.gait.vx<16/.52,'Movement starts immediately with a 
 for(let i=0;i<24;i++)world.tick(dt,['d']);
 const beforeRun=actor.gait.phase;
 world.tick(dt,['d','shift']);
-check(actor.gait.vx>16/.52&&actor.gait.vx<40/.52,'Shift ramps toward running speed');
+check(actor.gait.vx>16/.52&&actor.gait.vx<35/.52,'Shift ramps toward running speed');
 check((actor.gait.phase-beforeRun+8)%8<1,'Entering a sprint preserves the current phase');
 const beforeRelease=actor.gait.vx;
 world.tick(dt,['d']);
@@ -161,7 +163,7 @@ for(const running of [false,true]){
   check(gait.stage==='idle'&&gait.phase===4,'The end holds the planted pose and returns to idle');
 }
 const firstWalk=simulate(60,[[1/60,['d']]]),firstRun=simulate(60,[[1/60,['d','shift']]]);
-check(firstRun.gait.vx/(40/.52)>firstWalk.gait.vx/(16/.52),'Running commits to its target speed more firmly');
+check(firstRun.gait.vx/(35/.52)>firstWalk.gait.vx/(16/.52),'Running commits to its target speed more firmly');
 const walkingStop=createWorld(start);
 for(let i=0;i<24;i++)walkingStop.tick(dt,['d']);
 const beforeStop=walkingStop.actor.x;
