@@ -1,0 +1,77 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Teste da caminhada</title>
+<style>body{background:#293238;color:#eee;font:16px system-ui}canvas{image-rendering:pixelated;max-width:100%}</style>
+<pre id="result">Executando...</pre><canvas width="1024" height="512"></canvas>
+<script src="../assets/sprites-128/atlas.js"></script>
+<script src="../assets/sprites-128/caminhada-8-v2.js"></script>
+<script>
+(async()=>{try{
+  const source=await(await fetch('../game.js')).text();new Function(source);
+  const idle=new Image(),walk=new Image(),right=new Image();
+  const load=(image,url)=>new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error(url));image.src=url;});
+  await Promise.all([load(idle,'../assets/sprites-128/'+SURVIVOR_ATLAS_128.survivor.file),load(walk,'../assets/sprites-128/'+SURVIVOR_WALK_V2.file),load(right,'../assets/sprites-128/'+SURVIVOR_WALK_D.file)]);
+  const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+  const drawing=source.slice(source.indexOf('  function drawFootFrame('),source.indexOf('  function drawPerson('));
+  const heading=source.slice(source.indexOf('  function footHeading('),source.indexOf('  function footFrameIndex('));
+  const render=new Function('ctx','spriteAtlas','survivorSpriteSheet','survivorWalkSheet','SURVIVOR_WALK_V2','survivorWalkRightSheet','SURVIVOR_WALK_D',
+    'const ACTOR_VISUAL_SCALE=.60,BIKE_DIRECTION_COUNT=128,survivorWalkFrames=SURVIVOR_WALK_V2.frames;'+heading+drawing+';return drawSurvivorSprite;')
+    (ctx,SURVIVOR_ATLAS_128,idle,walk,SURVIVOR_WALK_V2,right,SURVIVOR_WALK_D);
+  const original=ctx.drawImage.bind(ctx),calls=[];
+  ctx.drawImage=(...args)=>{calls.push({args,transform:ctx.getTransform()});original(...args);};
+  const armAngles=[];
+  const rightFrames=new Set();
+  for(let direction=0;direction<8;direction++)for(let frame=0;frame<8;frame++){
+    ctx.save();ctx.translate(64+frame*128,55+direction*62);ctx.scale(2,2);
+    const count=calls.length;
+    render(0,0,direction*Math.PI/4,{stepAmount:1,stepPhase:(frame+.1)/8*Math.PI*2});ctx.restore();
+    if(direction===3){
+      if(calls.length!==count+1)throw Error('Pose de D incompleta');
+      const {args}=calls.at(-1);
+      const pose=SURVIVOR_WALK_D.frames[frame*2];
+      if(args[0]!==right||args[1]!==pose[0]||args[2]!==pose[1])throw Error('Quadro de D fora de ordem');
+      if(Math.abs(args[5]+pose[4]*34*.60/SURVIVOR_WALK_D.height*.9)>1e-8)throw Error('D desalinhado');
+      rightFrames.add(args[1]+","+args[2]);continue;
+    }
+    const diagonal=direction===1||direction===2||direction===3||direction===7;
+    if(calls.length!==count+(diagonal?3:1))throw Error('Pose não desenhada');
+    if(diagonal){
+      const arm=calls.at(-1),angle=Math.atan2(arm.transform.b,arm.transform.a);
+      if(direction===1)armAngles.push(angle);
+      if(arm.args[0]!==walk||arm.args[3]!==22||arm.args[4]!==46)throw Error('Recorte do braço inválido');
+      continue;
+    }
+    const {args,transform}=calls.at(-1),mirror=(direction===0||direction===4)&&frame>=4;
+    const pose=SURVIVOR_WALK_V2.frames[direction*8+(mirror?frame-4:frame)];
+    if(args[0]!==walk||args[1]!==pose[0]||args[2]!==pose[1])throw Error('Sequência incompleta');
+    if(Math.abs(args[5]+pose[4]*(34*.60/140)*.9)>1e-8)throw Error('Capacete desalinhado');
+    if(Math.abs(args[6]+136*(34*.60/140))>1e-8)throw Error('Altura instável');
+    if((transform.a<0)!==mirror)throw Error('Segunda passada sem alternância');
+  }
+  if(Math.max(...armAngles)-Math.min(...armAngles)<.5)throw Error('Braço da caminhada com W permanece parado');
+  if(rightFrames.size!==8)throw Error('Ciclo de D não visita as oito poses');
+  if(calls.length!==112)throw Error('Faltam quadros');
+  const movement=source.slice(source.indexOf('  const FOOT_WALK_KMH='),source.indexOf('  function drawFootFrame('));
+  const simulate=new Function('spriteAtlas',`
+    const ACTOR_VISUAL_SCALE=.60,BIKE_SPEED_TO_KMH=.52,hunger=100,thirst=100;
+    const keys=new Set(['d']),interiorWalls=[],state='explore',mounted=false,actor={x:83,y:220,angle:0};
+    ${movement}
+    const projectAngle=angle=>Math.atan2((Math.sin(angle)+Math.cos(angle))*Math.SQRT1_2,-(Math.sin(angle)-Math.cos(angle))*Math.SQRT1_2*.5);
+    return {actor,tick(dt){updateFootMovement(actor,dt,moveExplorer,projectAngle);}};
+  `);
+  for(const hz of [30,60,144]){
+    const world=simulate(SURVIVOR_ATLAS_128),seen=new Set();
+    for(let i=0;i<hz*2;i++){
+      world.tick(1/hz);render(0,0,3*Math.PI/4,world.actor.gait);
+      const args=calls.at(-1).args;
+      if(args[0]===right)seen.add(args[1]+','+args[2]);
+    }
+    if(seen.size!==16||world.actor.x<=83)throw Error('Faltam poses intermediárias durante movimento a '+hz+' Hz');
+    const expected=(world.actor.x-83)*Math.sqrt(.625)/18*Math.PI*2;
+    if(Math.abs(world.actor.gait.rightStepPhase-expected)>1e-7)throw Error('Passos não acompanham a distância no mapa');
+    const before=world.actor.gait.rightStepPhase;
+    world.actor.x=408;world.tick(1/hz);
+    if(world.actor.gait.rightStepPhase!==before)throw Error('Pés avançam sem deslocamento ao bater no limite');
+  }
+  document.querySelector('#result').textContent='PASS: 16 poses, incluindo passagens intermediárias, reproduzidas a 30, 60 e 144 Hz; ritmo e sincronização no mapa preservados.';
+  document.body.dataset.result='passed';
+}catch(error){document.querySelector('#result').textContent='FAIL: '+error.stack;document.body.dataset.result='failed';}})();
+</script></html>

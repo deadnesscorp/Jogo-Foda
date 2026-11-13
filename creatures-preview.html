@@ -1,0 +1,25 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Musgo preto — criaturas</title>
+<style>body{margin:0;background:#111c1f;color:#d6ddd2;font:16px system-ui}main{max-width:1050px;margin:auto;padding:32px 20px}h1{font-size:30px;margin-bottom:8px}p{color:#a8b5aa;line-height:1.6}canvas{display:block;width:100%;image-rendering:pixelated;background:#253235;border:1px solid #3e504b;border-radius:8px}a{color:#b1d1bc}button{padding:10px 16px;color:#d6ddd2;background:#263c36;border:1px solid #5e7769;border-radius:4px;cursor:pointer}button[aria-pressed=true]{background:#4a4663}nav{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}small{display:block;color:#a8b5aa;margin-top:16px}ul{padding-left:20px;line-height:1.8}</style>
+<main><h1>O musgo preto</h1><p>Três formas da mesma infestação: fibras negras, brilho frio e movimento rasteiro.</p>
+<nav><button id="direction">Direção: frente</button><button id="glitch" aria-pressed="false">Simular anomalia diurna</button><a href="index.html">Abrir o jogo</a></nav>
+<canvas width="1000" height="340" aria-label="Prévia animada das três criaturas"></canvas>
+<ul><li><b>Encoberto:</b> alto, curvado e com braços longos.</li><li><b>Rastejante:</b> baixo, de quatro patas, o mais rápido.</li><li><b>Coroa:</b> pesado, coberto por uma copa de musgo e fungos.</li></ul>
+<p>De dia há poucas criaturas: caminham devagar nas sombras e se abrigam nas construções. Cada criatura tem 5% de chance de ignorar o sol, correr e causar distorções próximas. À noite, a população aumenta e elas circulam livremente.</p>
+<small>Arte gerada com image_gen a partir da referência fornecida. <a href="assets/creatures/prompts.json">Prompts</a> · <a href="tests/moss-creatures-browser.html">Verificações</a></small></main>
+<script src="assets/creatures/atlas.js"></script><script src="moss-creatures.js"></script><script>
+const ctx=document.querySelector('canvas').getContext('2d'),renderer=MossCreatures.createRenderer(MOSS_CREATURE_ATLAS);
+let direction=2,anomaly=false;
+document.querySelector('#direction').onclick=event=>{direction=(direction+1)%4;event.target.textContent='Direção: '+['costas','direita','frente','esquerda'][direction];};
+document.querySelector('#glitch').onclick=event=>{anomaly=!anomaly;event.target.setAttribute('aria-pressed',String(anomaly));};
+function frame(now){
+  const time=now/1000;ctx.fillStyle='#253235';ctx.fillRect(0,0,1000,340);
+  for(let kind=0;kind<3;kind++){
+    const x=170+kind*330;ctx.save();ctx.translate(x,225);ctx.scale(4,4);
+    renderer.draw(ctx,{kind},0,0,direction*Math.PI/2,time*(anomaly?12:4),anomaly);ctx.restore();
+    ctx.fillStyle='#d6ddd2';ctx.font='20px system-ui';ctx.textAlign='center';ctx.fillText(MossCreatures.TYPES[kind].name,x,280);
+  }
+  if(anomaly)renderer.drawGlitch(ctx,1000,340,time,.8);
+  requestAnimationFrame(frame);
+}requestAnimationFrame(frame);
+</script></html>

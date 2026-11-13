@@ -1,0 +1,55 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Saúde do personagem — verificação</title>
+<style>body{margin:20px;background:#171e23;color:#e0e4db;font:15px system-ui}pre{white-space:pre-wrap}#game{max-width:1100px}</style>
+<h1>Saúde do personagem</h1><pre id="result">Executando…</pre><div id="game"></div>
+<script src="../character-health.js"></script><script src="character-health.test.js"></script>
+<script>
+(async()=>{try{
+  const reports=[runCharacterHealthTests(CharacterHealth)];
+  const source=await(await fetch('../game.js')).text();new Function(source);
+  const html=await(await fetch('../index.html')).text(),frame=document.createElement('iframe');
+  const localStyles=(await(await fetch('../style.css')).text()).replace(/^@import[^\n]*\n/,'');
+  frame.style.cssText='width:1100px;height:800px;border:1px solid #786188';
+  document.querySelector('#game').attachShadow({mode:'open'}).appendChild(frame);
+  const errors=[];window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data?.healthError)errors.push(event.data.healthError);});
+  const debug=`window.__healthTest={
+    start(){startGame();startHour=12;gameTime=0;mossEcology.entities.splice(0);updateCharacterCare(.016);},
+    snapshot(){return {health:characterHealth.status(),items:{...characterHealth.items},wounds:JSON.parse(JSON.stringify(characterHealth.parts)),action:characterHealth.action,open:healthPanel.open,time:gameTime,workshop:bikeInspectOpen,repairKits};},
+    injury(){characterHealth.injure('leftLeg','cut');characterHealth.injure('rightArm','scratch');characterHealth.injure('rightLeg','fracture');},
+    advance(seconds,moving=false){keys.clear();if(moving)keys.add('d');for(let i=0;i<seconds*60;i++){gameTime+=1/60;updateCharacterCare(1/60);}keys.clear();},
+    enter(){state='explore';exploreBuilding=0;explorer.x=83;explorer.y=198;explorer.gait=null;updateCharacterCare(.016);},
+    road(){state='drive';updateCharacterCare(.016);},
+    render(){finishFrame(gameTime,.016);updateCharacterCare(.11);}
+  };`;
+  const instrumented=source.replace(/\}\)\(\);\s*$/,debug+'})();');
+  frame.srcdoc=html.replace('<head>','<head><base href="../"><script>window.addEventListener("error",e=>parent.postMessage({healthError:e.message},"*"));<\/script>')
+    .replace(/<link rel="stylesheet" href="style\.css[^\"]*">/,()=>'<style>'+localStyles+'<\/style>')
+    .replace(/<script src="game\.js[^\"]*"><\/script>/,()=>'<script>'+instrumented.replace(/<\/script/gi,'<\\/script')+'<\/script>');
+  await new Promise(resolve=>frame.onload=resolve);
+  const game=frame.contentWindow.__healthTest;if(!game)throw Error(errors.join('; ')||'Game did not initialize');
+  game.start();game.injury();
+  const doc=frame.contentDocument,win=frame.contentWindow;
+  win.dispatchEvent(new win.KeyboardEvent('keydown',{key:'h'}));
+  if(!game.snapshot().open||doc.querySelector('#character-health-panel').hidden)throw Error('H does not open health');
+  doc.querySelector('[data-part="leftLeg"]').click();
+  if(doc.querySelector('[data-part-title]').textContent!=='Perna esquerda')throw Error('Body selection fails');
+  const items=game.snapshot().items;
+  doc.querySelector('[data-action="bandage"]').click();game.advance(2,true);
+  if(game.snapshot().action||game.snapshot().items.bandages!==items.bandages)throw Error('Moving does not cancel treatment for free');
+  game.advance(.2);doc.querySelector('[data-action="bandage"]').click();game.advance(4.1);
+  if(!game.snapshot().wounds.leftLeg.wound.bandage||game.snapshot().items.bandages!==items.bandages-1)throw Error('Bandage treatment fails in game');
+  const count=game.snapshot().health.wounds;game.enter();game.road();
+  if(game.snapshot().health.wounds!==count)throw Error('Scene transitions erase wounds');
+  if(game.snapshot().time<6)throw Error('Health menu pauses simulation');
+  win.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Escape'}));
+  if(game.snapshot().open)throw Error('Escape does not close health');
+  const kits=game.snapshot().repairKits;
+  win.dispatchEvent(new win.KeyboardEvent('keydown',{key:'e'}));
+  if(!game.snapshot().workshop||game.snapshot().repairKits!==kits)throw Error('Bike workshop regression');
+  win.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Escape'}));
+  win.dispatchEvent(new win.KeyboardEvent('keydown',{key:'h'}));
+  doc.querySelector('[data-part="rightLeg"]').click();game.render();
+  if(errors.length)throw Error(errors.join('; '));
+  reports.push('Real game: H/Escape, body selection, treatment, interruption, shared wounds and bike workshop checked');
+  document.querySelector('#result').textContent='PASS\n'+reports.join('\n');document.body.dataset.result='passed';
+}catch(error){document.querySelector('#result').textContent='FAIL: '+(error.stack||String(error));document.body.dataset.result='failed';}})();
+</script></html>

@@ -1,6 +1,24 @@
 # Jogo-Foda
 Um jogo que deve rodar no navegador
 
+## Criaturas de musgo preto
+
+Encoberto, Rastejante e Coroa têm sprites próprios com quatro direções e quatro poses por direção. De dia a população inicial é de seis criaturas: a maioria se abriga nos prédios, e as demais andam devagar dentro das sombras projetadas pelas construções. A sombra usada pela IA vem da mesma geometria usada pelo desenho do mapa.
+
+A chance de ignorar o sol é de 5% por criatura, sorteada uma vez ao nascer. Essa exceção corre durante o dia e produz glitches discretos quando está próxima. À noite a população chega a 42 criaturas, com movimento livre; ao amanhecer as criaturas comuns retornam aos abrigos. Moradores de construções também aparecem nos interiores exploráveis. Contatos próximos a pé podem causar ferimentos, com intervalo de proteção entre ataques.
+
+Prévia: `creatures-preview.html`. Testes de comportamento e integração: `tests/moss-creatures-browser.html` (Chrome com acesso a arquivos locais ou servidor HTTP). Testes de lógica em Node: `node tests/moss-creatures.test.js`. Prompts das três folhas: `assets/creatures/prompts.json`. Reconstrução dos recortes: `powershell -File tools/build-moss-metadata.ps1`.
+
+## Saúde do personagem
+
+Pressione **H** ou clique em **Saúde** para abrir o painel de primeiros socorros. Ele usa o estilo da oficina da moto e permite selecionar cabeça, tórax, abdômen, braços e pernas. Os ferimentos persistem entre o mapa e os interiores; o tempo continua passando com o painel aberto.
+
+Arranhões, cortes e feridas profundas podem sangrar. Desinfete e aplique uma bandagem para controlar o sangramento; retire e troque curativos sujos para evitar infecção local. Fraturas precisam de tala e contusões melhoram com repouso. Analgésicos aliviam a dor temporariamente. Dor e ferimentos nas pernas reduzem a locomoção. A recuperação é gradual e depende também de fome e sede.
+
+Cada tratamento leva alguns segundos. Mover, fechar o painel ou cancelar interrompe o cuidado sem consumir materiais; os itens são gastos somente ao concluir. O personagem começa com seis bandagens, três doses de antisséptico, uma tala e dois analgésicos. Maletas nas construções repõem os suprimentos. Criaturas, quedas e impactos fortes da moto podem causar ferimentos. Ao ficar em estado crítico, o personagem recua à moto estabilizado, ainda ferido, preservando a lógica de retorno do jogo.
+
+**Esc** cancela o cuidado atual ou fecha o painel; **1–7** selecionam regiões. A janela pode ser arrastada pelo cabeçalho. Testes: `node tests/character-health.test.js`, `tests/character-health-browser.html`, `node tests/bike-maintenance.test.js` e `node tests/sprint.test.js`.
+
 Pressione **P** ou clique no botão **Tela cheia** para alternar a exibição. **Esc** também sai da tela cheia. O jogo abre dentro da página e só expande quando solicitado.
 
 Segure **Shift** junto com WASD ou as setas para correr a pé, tanto no mapa quanto dentro dos prédios. A caminhada chega a **16 km/h** e a corrida a **35 km/h**, usando a mesma conversão do painel da moto. A condição do personagem pode reduzir essas velocidades. Soltar Shift volta à caminhada. A diagonal mantém a mesma velocidade, e as colisões continuam ativas.

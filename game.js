@@ -19,6 +19,11 @@
     const image=new Image();image.src='assets/sprites-128/'+spriteAtlas[kind].file;return image;
   });
   const survivorSpriteSheet=new Image();survivorSpriteSheet.src='assets/sprites-128/'+spriteAtlas.survivor.file;
+  const survivorWalkSheet=new Image();
+  const survivorWalkFrames=SURVIVOR_WALK_V2.frames;
+  survivorWalkSheet.src='assets/sprites-128/'+SURVIVOR_WALK_V2.file;
+  const survivorWalkRightSheet=new Image();
+  survivorWalkRightSheet.src='assets/sprites-128/'+SURVIVOR_WALK_D.file;
   const seatedRiderSpriteSheet=new Image();seatedRiderSpriteSheet.src='assets/sprites-128/'+MOUNTED_BIKE_ART.file;
   function bikeSpriteSource(direction,riding=false){return bikeSpriteSheets[riding?1:0];}
   function bikeSpriteMetadata(riding=false){return spriteAtlas[riding?'mounted':'bike'];}
@@ -364,6 +369,41 @@
   const networkCount = document.querySelector('#network-count');
   const networkProgress = document.querySelector('#network-progress');
   const keys = new Set();
+  const characterHealth=CharacterHealth.create({onNotice:message=>setToast(message)});
+  const healthPanel=createCharacterHealthPanel({container:canvas.parentElement,model:characterHealth,
+    onOpen:()=>{keys.clear();bikeInspectOpen=false;bikeService=null;},onClose:()=>keys.clear()});
+  let creatureHitCooldown=0;
+  function characterMoving(){
+    if(state==='drive'&&mounted)return Math.abs(bike.speed)>2;
+    if(state==='climb')return !climber.grounded||['a','d','arrowleft','arrowright'].some(key=>keys.has(key));
+    const actor=state==='explore'?explorer:player;
+    return Math.hypot(actor.gait?.vx||0,actor.gait?.vy||0)>.5||['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(key=>keys.has(key));
+  }
+  function woundCharacter(source,severity=1){
+    const pick=list=>list[Math.floor(Math.random()*list.length)];
+    const part=source==='fall'?pick(['leftLeg','rightLeg']):source==='ceiling'?pick(['head','chest']):pick(['leftArm','rightArm','chest','abdomen']);
+    const type=source==='fall'&&severity>1.3?'fracture':source==='ceiling'?'bruise':source==='creature'?'cut':severity>1.5?'deep':'scratch';
+    characterHealth.injure(part,type,severity);
+  }
+  function updateCharacterCare(dt){
+    const active=state!=='title'&&state!=='ending';
+    creatureHitCooldown=Math.max(0,creatureHitCooldown-dt);
+    if(active){
+      characterHealth.update(dt,{moving:characterMoving(),running:keys.has('shift'),hunger,thirst});
+      const condition=characterHealth.status();
+      player.hp=explorer.hp=condition.critical?0:Math.max(1,Math.ceil(condition.health/34));
+      if(condition.critical&&!checkpointReturn){
+        healthPanel.setOpen(false);characterHealth.stabilize();
+        const actor=state==='explore'?explorer:state==='climb'||state==='hack'?climber:player;
+        beginCheckpointReturn(actor,()=>{
+          state='drive';mounted=false;bike.speed=0;player.x=bike.x+20;player.y=bike.y+20;player.gait=null;
+          camera.x=player.x;camera.y=player.y;keys.clear();creatureHitCooldown=5;
+          setToast('VOCÊ RECUOU À MOTO — ESTABILIZADO, MAS AINDA PRECISA SE CUIDAR.');return player;
+        });
+      }
+    }
+    healthPanel.update(dt,{available:active&&['drive','explore','climb'].includes(state)&&!ignition.active,moving:active&&characterMoving()});
+  }
   const world = { w: 5600, h: 3600 };
   const towers = [
     { x: 650, y: 360, baseX: 650, baseY: 360, name: 'NÓ AURORA', disabled: false, design: 0, rangeX: 104, rangeY: 36, pace: .20, phase: .2 },
@@ -476,12 +516,30 @@
     ]
   };
   const bikePartNames = { motor: 'MOTOR', handlebar: 'GUIDÃO', frontTire: 'PNEU DIANTEIRO', rearTire: 'PNEU TRASEIRO' };
-  let supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .28 : Math.random() < .24 }));
+  let supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .28 : Math.random() < .24 }));
   const worldReturn = { x: 0, y: 0 };
   const explorer = { x: 240, y: 145, hp: 3, invulnerable: 0 };
   const interiorHazards = [{ x: 190, y: 115, kind: 'weak' }, { x: 310, y: 180, kind: 'ceiling' }, { x: 115, y: 205, kind: 'gap' }];
   const interiorWalls = [{x:142,y:111,w:10,h:77},{x:152,y:111,w:58,h:10},{x:222,y:142,w:10,h:58},{x:232,y:142,w:55,h:10},{x:176,y:196,w:65,h:10},{x:250,y:180,w:10,h:37}];
   const camera = { x: 180, y: 3300 };
+  const mossEcology=MossCreatures.createEcology({
+    getBuildings:()=>buildings,getSize:()=>world,isBlocked:worldBlocked,getShadows:mossShadowRegions
+  });
+  const mossRenderer=MossCreatures.createRenderer(MOSS_CREATURE_ATLAS);
+  function mossShadowRegions(light){
+    return buildings.map(([x,y,w,h],home)=>{
+      const shape=isoBuildingGeometry(x,y,w,h,home);
+      const cast=shape.roof.map((roof,i)=>{
+        const reach=Math.min(180,(shape.base[i].y-roof.y)*light.shadowLength/24);
+        return {x:roof.x+light.shadowX*reach,y:shape.base[i].y+light.shadowY*reach};
+      });
+      const points=shadowHull(shape.base.concat(cast)).map(point=>{
+        const px=(point.x-W/2)/ISO_X,py=(point.y-H/2)/ISO_Y;
+        return {x:camera.x+(px+py)/2,y:camera.y+(py-px)/2};
+      });
+      return {home,points};
+    });
+  }
   const bike = { x: 180, y: 3300, angle: .87, speed: 0, wheel: 0, steering:0, bank:0 };
   let bikeEngineRunning=false;
   let bikeHeadlightOn=true;
@@ -609,7 +667,7 @@
       if (!building) building = [220 + i * 91 % (world.w - 420), 180 + i * 137 % (world.h - 360), Math.round(w), Math.round(h)];
       buildings.push(building);
     }
-    supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : Math.random() < .18 ? 'toolkit' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .28 : Math.random() < .24 }));
+    supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : Math.random() < .18 ? 'toolkit' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .28 : Math.random() < .24 }));
     seed = Math.floor(Math.random() * 4294967296);
     rubble.length = 0;
     for (let i = 0; i < 1450; i++) {
@@ -756,6 +814,7 @@
     else setObjective('A máquina está em movimento. Volte à moto para alcançá-la.', activeTower);
   }
   function startGame() {
+    characterHealth.reset();healthPanel.setOpen(false);creatureHitCooldown=0;
     startHour = Math.floor(Math.random() * 1440) / 60;
     bikeVisualFacings.clear();
     player.gait=null;
@@ -772,7 +831,8 @@
     bikeInspectOpen = false;
     bikeService = null; Object.values(bikeFaults).forEach(faults => faults.fill(100));
     generateMapLayout(); camera.x = player.x; camera.y = player.y;
-    supplies.forEach(s => { s.found = false; s.available = s.type === 'fuel' ? Math.random() < .28 : Math.random() < .24; });
+    mossEcology.reset(worldLighting(0),player);
+    supplies.forEach(s => { s.found = false; s.available = Math.random() < (s.type === 'fuel' ? .28 : s.type==='medical' ? .55 : .24); });
     towers.forEach(t => t.disabled = false);
     randomizeTowerSpawns();
     titleScreen.classList.add('dismissed'); keys.clear(); updateObjective();
@@ -981,6 +1041,8 @@
     if(ignition.active&&['e','f'].includes(e.key.toLowerCase())){e.preventDefault();if(!e.repeat){ignition.close(false);if(e.key.toLowerCase()==='f')dismount();}return;}
     if(ignition.active){ignition.key(e);return;}
     const key = e.key.toLowerCase();
+    if(key==='h'&&['drive','explore','climb'].includes(state)&&!e.repeat){e.preventDefault();healthPanel.setOpen(!healthPanel.open);return;}
+    if(healthPanel.key(key)){e.preventDefault();return;}
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
     if (bikeInspectOpen && key !== 'f' && (key !== 'e' || bikeService)) {
       e.preventDefault();
@@ -1313,6 +1375,13 @@
         drawFootWorld(p.x, p.y, projectFacing(player.angle), time);
       } });
     }
+    if(includeActors&&state!=='title')for(const creature of mossEcology.entities){
+      if(creature.indoors)continue;
+      const p=projectPoint(creature.x,creature.y);
+      if(p.x < -60||p.x>W+60||p.y < -60||p.y>H+70)continue;
+      objects.push({depth:creature.x+creature.y,draw:()=>mossRenderer.draw(ctx,creature,p.x,p.y,
+        projectFacing(creature.angle),creature.phase,!mossEcology.night&&creature.sunRunner)});
+    }
     objects.sort((a, b) => a.depth - b.depth).forEach(o => o.draw());
   }
 
@@ -1480,6 +1549,11 @@
     const loss=before-bikeParts[part];
     setToast(label+' · '+bikePartNames[part]+' −'+loss.toFixed(1)+'% · inspecione com E');
     return true;
+  }
+  function applyMountedImpact(speed,label){
+    const impacted=applyBikeImpact(speed,label);
+    if(impacted&&mounted&&Math.abs(speed)>45)woundCharacter('impact',Math.min(1.8,.65+Math.abs(speed)/150));
+    return impacted;
   }
   function selectedBikePart() {
     return bikeInspectTab === 'Motor' ? 'motor' : bikeInspectTab === 'Guidão' ? 'handlebar' : bikeTireSelected;
@@ -2610,7 +2684,8 @@
   }
   function footWalkSpeed() {
     const condition=.55+.45*Math.min(hunger,thirst)/100;
-    return FOOT_WALK_KMH/BIKE_SPEED_TO_KMH*condition;
+    const injury=typeof characterHealth==='undefined'?1:characterHealth.status().movement;
+    return FOOT_WALK_KMH/BIKE_SPEED_TO_KMH*condition*injury;
   }
   function createFootGait() {
     return {vx:0,vy:0,phase:0,heading:undefined,stage:'idle',running:false,pingPong:false,startPhase:0,stopAt:0,settle:0,contactHold:0,turnTime:0};
@@ -2766,6 +2841,14 @@
     if(Math.abs(movedY-stepY)>1e-6||(targetY===0&&Math.abs(gait.vy)<.5))gait.vy=0;
     const distance=Math.hypot(movedX,movedY);
     gait.stepPhase=(gait.stepPhase||0)+distance/(running?40:28)*Math.PI*2;
+    const moveAngle=distance>0?Math.atan2(movedX,-movedY):actor.angle;
+    const viewAngle=screenAngle?screenAngle(moveAngle):moveAngle;
+    if(footHeading(viewAngle,8)===3){
+      // Match the painted two-step reach to actual ground travel in screen space.
+      const groundDistance=screenAngle
+        ?Math.hypot((movedX-movedY)*Math.SQRT1_2,(movedX+movedY)*Math.SQRT1_2*.5):distance;
+      gait.rightStepPhase=(gait.rightStepPhase||0)+groundDistance/(running?24:18)*Math.PI*2;
+    }
     const stepTarget=Math.min(1,distance/dt/Math.max(1,walkSpeed*.65));
     gait.stepAmount=(gait.stepAmount||0)+(stepTarget-(gait.stepAmount||0))*(-Math.expm1(-18*dt));
     if(stepTarget===0&&gait.stepAmount<.01)gait.stepAmount=0;
@@ -2797,59 +2880,59 @@
     ctx.save();
     ctx.translate(x,y+5);
     ctx.imageSmoothingEnabled=false;
-    if(gait?.stepAmount>.01){
-      drawWalkingFootFrame(ctx,survivorSpriteSheet,idle,metadata.wheelContacts[index][0],angle,gait,metadata.forearms?.[index]||[]);
+    if(gait?.stepAmount>.01&&survivorWalkSheet.complete&&survivorWalkSheet.naturalWidth>0){
+      const direction=footHeading(angle,8);
+      const phase=direction===3?(gait.rightStepPhase??gait.stepPhase??0):(gait.stepPhase||0);
+      const frame=((Math.floor(phase/(Math.PI*2)*8)%8)+8)%8;
+      if(direction===3&&survivorWalkRightSheet.complete&&survivorWalkRightSheet.naturalWidth>0){
+        const count=SURVIVOR_WALK_D.frames.length;
+        const rightFrame=((Math.floor(phase/(Math.PI*2)*count)%count)+count)%count;
+        const [sx,sy,sw,sh,headX,groundY]=SURVIVOR_WALK_D.frames[rightFrame];
+        const scale=34*ACTOR_VISUAL_SCALE/SURVIVOR_WALK_D.height;
+        ctx.imageSmoothingEnabled=true;
+        ctx.drawImage(survivorWalkRightSheet,sx,sy,sw,sh,-headX*scale*.9,-groundY*scale,sw*scale*.9,sh*scale);
+        ctx.restore();return true;
+      }
+      // Front/back use opposite limbs for the second step, rather than repeating one leg.
+      const mirror=(direction===0||direction===4)&&frame>=4;
+      const pose=survivorWalkFrames[direction*8+(mirror?frame-4:frame)];
+      const [sx,sy,sw,sh,headX,groundY]=pose;
+      const scale=34*ACTOR_VISUAL_SCALE/SURVIVOR_WALK_V2.height;
+      // Fixed scale and a helmet anchor prevent foot/hand extents from shifting the body.
+      ctx.imageSmoothingEnabled=true;
+      if(mirror)ctx.scale(-1,1);
+      if(direction===1||direction===2||direction===3||direction===7){
+        drawDiagonalWalkArm(ctx,survivorWalkSheet,pose,scale,direction,gait.stepPhase||0,gait.stepAmount);
+      }else ctx.drawImage(survivorWalkSheet,sx,sy,sw,sh,-headX*scale*.9,-groundY*scale,sw*scale*.9,sh*scale);
     }else{
       drawFootFrame(ctx,survivorSpriteSheet,idle,metadata.wheelContacts[index][0],idle[3]);
     }
     ctx.restore();return true;
   }
-  function drawWalkingFootFrame(painter,sheet,crop,anchor,angle,gait,forearms=[]) {
-    const [sx,sy,sw,sh]=crop,scale=34*ACTOR_VISUAL_SCALE/sh,scaleX=scale*.90;
-    const left=-anchor[0]*scaleX,top=-anchor[1]*scale;
-    const knee=Math.floor(sh*.73),legHeight=(sh-knee)*scale,half=sw/2;
-    const amount=Math.min(1,gait.stepAmount),wave=Math.sin(gait.stepPhase||0);
+  function drawDiagonalWalkArm(painter,sheet,pose,scale,direction,phase,amount) {
+    const [sx,sy,sw,sh,headX,groundY]=pose;
+    const facing=direction===7?-1:1;
+    const armWidth=22,armTop=62,armHeight=46;
+    const armLeft=headX+(direction===3?-23:direction===2?-14:direction===7?-12:-10);
+    const bodySide=direction===3?-1:facing;
     painter.save();
-    painter.translate(0,-Math.abs(wave)*.12*ACTOR_VISUAL_SCALE*amount);
-    // Pivot each calf as a rigid piece instead of stretching the sprite.
-    for(let leg=0;leg<2;leg++){
-      const step=wave*(leg===0?1:-1);
-      const rotation=-Math.sin(angle)*step*(gait.running?.25:.18)*amount;
-      const lift=Math.max(0,step)*(gait.running?.7:.45)*ACTOR_VISUAL_SCALE*amount;
-      const cosine=Math.cos(rotation),sine=Math.sin(rotation),width=half*scaleX;
-      painter.save();painter.translate(left+(leg+.5)*width,top+knee*scale-lift);
-      painter.transform(cosine,sine,-sine,cosine,0,0);
-      if(forearms.length){
-        painter.beginPath();painter.rect(-width/2-2,-2,width+4,legHeight+4);
-        for(const [ax,ay,aw,ah] of forearms)painter.rect((ax-leg*half)*scaleX-width/2,(ay-knee)*scale,aw*scaleX,ah*scale);
-        painter.clip('evenodd');
-      }
-      painter.drawImage(sheet,sx+leg*half,sy+knee,half,sh-knee,-width/2,0,width,legHeight);
-      painter.restore();
-    }
-    const torsoEnd=Math.min(sh,knee+Math.ceil(.8/scale));
-    // Remove only the measured forearms, including hands, from the fixed body.
+    painter.scale(scale*.9,scale);
+    painter.translate(-headX,-groundY);
+    // Remove the painted static arm before drawing its articulated replacement.
+    painter.save();painter.beginPath();
+    painter.rect(-2,-2,sw+4,sh+4);painter.rect(armLeft,armTop,armWidth,armHeight);
+    painter.clip('evenodd');painter.drawImage(sheet,sx,sy,sw,sh,0,0,sw,sh);painter.restore();
+    // Continue the jacket/trousers beneath the moving arm, leaving its outer edge clear.
+    const bodyX=bodySide>0?armLeft-6:armLeft+armWidth;
+    painter.drawImage(sheet,sx+bodyX,sy+armTop,6,armHeight,
+      bodySide>0?armLeft:armLeft+armWidth-10,armTop,10,armHeight);
+    const swing=Math.sin(phase)*.32*Math.min(1,amount||0);
     painter.save();
-    if(forearms.length){
-      painter.beginPath();painter.rect(left-2,top-2,sw*scaleX+4,sh*scale+4);
-      for(const [ax,ay,aw,ah] of forearms)painter.rect(left+ax*scaleX,top+ay*scale,aw*scaleX,ah*scale);
-      painter.clip('evenodd');
-    }
-    painter.drawImage(sheet,sx,sy,sw,torsoEnd,left,top,sw*scaleX,torsoEnd*scale);
-    painter.restore();
-    for(const [ax,ay,aw,ah] of forearms){
-      const drawWidth=aw*scaleX,armHeight=ah*scale;
-      const swing=wave*(ax+aw/2<sw/2?1:-1)*(gait.running?.23:.17)*amount;
-      const rotation=swing*(.8+.2*Math.abs(Math.sin(angle)))*(Math.sin(angle)<0?-1:1);
-      const cosine=Math.cos(rotation),sine=Math.sin(rotation);
-      painter.save();painter.translate(left+(ax+aw/2)*scaleX,top+ay*scale);
-      painter.transform(cosine,sine,-sine,cosine,0,0);
-      painter.drawImage(sheet,sx+ax,sy+ay,aw,ah,-drawWidth/2,0,drawWidth,armHeight);
-      painter.restore();
-      // Overlap the elbow with its original sleeve so the joint stays closed.
-      painter.drawImage(sheet,sx+ax,sy+ay,aw,4,left+ax*scaleX,top+ay*scale,drawWidth,4*scale);
-    }
-    painter.restore();
+    const backDiagonal=direction===1||direction===7;
+    painter.translate(armLeft+armWidth/2+(backDiagonal?facing*5:0),armTop+2);
+    painter.rotate(facing*((backDiagonal?-.14:0)+swing));
+    painter.drawImage(sheet,sx+armLeft,sy+armTop,armWidth,armHeight,-armWidth/2,-2,armWidth,armHeight);
+    painter.restore();painter.restore();
   }
   function drawPerson(x, y, angle, time, moving, bikePose = false, gait = null) {
     if(!bikePose&&drawSurvivorSprite(x,y,angle,gait))return;
@@ -3061,22 +3144,38 @@
         else if (supply.type === 'ration') { hunger = Math.min(100, hunger + 42); setToast('RAÇÃO MILITAR — FOME REDUZIDA'); }
         else if (supply.type === 'water') { thirst = Math.min(100, thirst + 38); setToast('GARRAFA ENCONTRADA — SEDE REDUZIDA'); }
         else if (supply.type === 'toolkit') { repairKits++; setToast(`KIT DE FERRAMENTAS — REPAROS DISPONÍVEIS: ${repairKits}`); }
+        else if (supply.type === 'medical') characterHealth.restock();
         else { hunger = Math.min(100, hunger + 21); setToast('ENLATADO ENCONTRADO — FOME REDUZIDA'); }
       }
     }
     ctx.save();
+    drawRoomMoss(true);
     const p = { x: explorer.x, y: explorer.y };
     const angle=explorer.angle??Math.PI,gait=applyReturnPose(explorer,angle,explorer.gait);
     ctx.fillStyle = '#080d0e88'; ctx.beginPath(); ctx.ellipse(p.x,p.y + 5,8*ACTOR_VISUAL_SCALE,4*ACTOR_VISUAL_SCALE,0,0,Math.PI*2); ctx.fill();
     drawPerson(p.x,p.y,angle,time,!!gait&&gait.stage!=='idle',false,gait);
+    drawRoomMoss(false);
     ctx.restore();
     drawAtmosphere(time, 'world');
     panel(10, 9, 180, 33, '#101a1deF', '#667a6e'); ctx.fillStyle = '#d5c18b'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.fillText(exploreBuilding === 10 ? 'EXPLORAÇÃO · POSTO DE GASOLINA' : `INTERIOR · SETOR ${String(exploreBuilding + 1).padStart(2,'0')}`, 18, 22); ctx.fillStyle = '#9da99a'; ctx.fillText(Math.hypot(explorer.x - 78, explorer.y - 200) < 42 ? 'E  SAIR PELA PORTA' : 'PROCURE A PORTA PARA SAIR', 18, 34);
     if (Math.hypot(explorer.x - 78, explorer.y - 200) < 42) hint('E  SAIR PELA PORTA', W / 2, 43, time);
     drawSurvivalHud();
   }
+  function drawRoomMoss(behind){
+    for(const creature of mossEcology.entities.filter(entity=>entity.indoors&&entity.home===exploreBuilding)
+      .sort((a,b)=>a.roomY-b.roomY)){
+      if((creature.roomY<=explorer.y)!==behind)continue;
+      mossRenderer.draw(ctx,creature,creature.roomX,creature.roomY,creature.roomAngle,creature.roomPhase);
+    }
+  }
 
   function drawExploreSupply(type, x, y, time) {
+    if(type==='medical'){
+      ctx.save();ctx.translate(x,y+Math.sin(time*3)*1.5);
+      ctx.fillStyle='#10191b';ctx.fillRect(-13,-12,26,24);ctx.fillStyle='#c4c3ac';ctx.fillRect(-11,-10,22,20);
+      ctx.strokeStyle='#87978a';ctx.lineWidth=2;ctx.strokeRect(-5,-15,10,5);
+      ctx.fillStyle='#8e514d';ctx.fillRect(-3,-7,6,14);ctx.fillRect(-7,-3,14,6);ctx.restore();return;
+    }
     const bob = Math.sin(time * 3.2) * 1.5;
     y += bob;
     ctx.fillStyle = '#070d0e99'; ctx.beginPath(); ctx.ellipse(x, y + 14, type === 'ration' ? 19 : 11, 5, 0, 0, Math.PI * 2); ctx.fill();
@@ -3279,13 +3378,13 @@
       if (y > CHASE_BIKE_Y + 36) { o.cleared = true; continue; }
       if (Math.abs(y - CHASE_BIKE_Y) > 20 || Math.abs(o.x - chaser.x) > 40) continue;
       o.cleared = true;
-      if (chaseInvulnerable <= 0) { chaseLives--; chaseInvulnerable = 1.1; chaseLag = Math.min(390, chaseLag + 42); chaser.x += chaser.x < W * .5 ? -24 : 24; applyBikeImpact(chaseSpeed,'IMPACTO NOS ESCOMBROS'); }
+      if (chaseInvulnerable <= 0) { chaseLives--; chaseInvulnerable = 1.1; chaseLag = Math.min(390, chaseLag + 42); chaser.x += chaser.x < W * .5 ? -24 : 24; applyMountedImpact(chaseSpeed,'IMPACTO NOS ESCOMBROS'); }
     }
     const pose = chaseMachinePose(gameTime, tower);
     for (const foot of pose.feet) {
       if (foot.y > 184 && Math.hypot(foot.x - chaser.x, foot.y - CHASE_BIKE_Y) < 36 && chaseInvulnerable <= 0) {
         chaseLives--; chaseInvulnerable = 1.4; chaseLag = Math.min(390, chaseLag + 58); chaser.x += chaser.x < foot.x ? -55 : 55;
-        applyBikeImpact(chaseSpeed,'PISÃO NA MOTO'); break;
+        applyMountedImpact(chaseSpeed,'PISÃO NA MOTO'); break;
       }
     }
     if (chaseLag >= 375) { state = 'drive'; grappleAvailable = false; keys.clear(); bike.speed = 0; setToast('VOCÊ FICOU PARA TRÁS — REENCONTRE A MÁQUINA NO MAPA', 3.2); updateObjective(); return; }
@@ -3679,7 +3778,7 @@
     const beamHit = Math.abs(climber.feet - 179) < 8 && climber.x > beamX - 4 && climber.x < beamX + 40;
     const beamHit2 = Math.abs(climber.feet - 118) < 8 && climber.x > secondBeam - 4 && climber.x < secondBeam + 32;
     if ((droneHit || beamHit || beamHit2) && hazardCooldown <= 0 && climber.invulnerable <= 0) {
-      climbLives--; climber.invulnerable = 1.05; hazardCooldown = .75;
+      climbLives--; woundCharacter('impact',1);climber.invulnerable = 1.05; hazardCooldown = .75;
       if (climbLives <= 0) {
         climbLives = 2;
         climbCheckpoint = Math.max(0, climbCheckpoint - 1);
@@ -3772,6 +3871,7 @@
     else if (state === 'grapple') drawGrappleView(time);
     else if (state === 'climb' || state === 'hack') drawClimber(time, dt);
     else if (state === 'ending') drawEnding(time);
+    if(state==='drive'||state==='explore')mossRenderer.drawGlitch(ctx,W,H,time,mossEcology.glitch);
     if(state==='chase'||state==='grapple'){drawSurvivalHud();drawBikeDashboard(time);}
     if (flash > 0) { ctx.fillStyle = `rgba(203,255,224,${Math.min(.55, flash * .45)})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt * 1.4); }
     if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) toast.classList.remove('visible'); }
@@ -3798,6 +3898,7 @@
     if (!lastTime) lastTime = now;
     const dt = Math.min(.045, (now - lastTime) / 1000); lastTime = now;
     gameTime += dt;
+    updateCharacterCare(dt);
     if(fuel<=0||bikeLife<=0)bikeEngineRunning=false;
     if(ignition.active)ignition.update(dt);
     updateBikeGearbox(dt,state==='chase'||state==='grapple'?chaseSpeed:bike.speed,bikeControlsMounted()&&keys.has('w'));
@@ -3818,10 +3919,11 @@
       explorer.invulnerable = Math.max(0, explorer.invulnerable - dt);
       const hazard = interiorHazards.find(h => Math.hypot(explorer.x - h.x, explorer.y - h.y) < (h.kind === 'gap' ? 18 : 16));
       if (hazard && explorer.invulnerable <= 0) {
-        explorer.hp--; explorer.invulnerable = 1.3;
+        woundCharacter(hazard.kind==='ceiling'?'ceiling':hazard.kind==='gap'?'fall':'impact',hazard.kind==='gap'?1.5:1);
+        explorer.hp=characterHealth.status().critical?0:Math.max(1,Math.ceil(characterHealth.status().health/34));explorer.invulnerable = 1.3;
         setToast(hazard.kind === 'weak' ? 'O PISO CEDEU — DESVIE DAS PLACAS FENDIDAS' : hazard.kind === 'gap' ? 'SEM CHÃO! VOCÊ VOLTOU AO ÚLTIMO APOIO' : 'TETO DESABOU — PROCURE UM ABRIGO');
         if(explorer.hp<=0){
-          explorer.hp=3;
+          characterHealth.stabilize();explorer.hp=2;
           returnToRoad('VOCÊ ESCAPOU DA CONSTRUÇÃO POR POUCO.');
         }else{
           beginCheckpointReturn(explorer,()=>{
@@ -3866,7 +3968,7 @@
       const tower = active();
       if (tower && bikeEngineRunning && distance(bike, tower) < 155) { bike.speed *= .25; startChase(); }
       else if (blockedFraction>.15) {
-        applyBikeImpact(impactSpeed*blockedFraction);
+        applyMountedImpact(impactSpeed*blockedFraction);
         bike.speed *= blockedFraction>.85?.38:.8;
       }
       if (bikeLife <= 0) { bike.speed=0; if (mounted) { mounted=false; player.x=bike.x+Math.cos(bike.angle)*18; player.y=bike.y+Math.sin(bike.angle)*18; setToast('MOTO QUEBROU — USE E AO LADO DELA COM UM KIT.'); } }
@@ -3876,6 +3978,17 @@
       updateObjective();
     } else if (state === 'chase' || state === 'grapple') updateChase(dt);
     else if (state === 'climb' || state === 'hack') updateClimb(dt);
+    if(state==='drive'||state==='explore')mossEcology.update(dt,{
+      light:worldLighting(gameTime),target:state==='explore'?worldReturn:player,
+      room:state==='explore'?exploreBuilding:-1,roomTarget:state==='explore'?explorer:null,moveRoom:moveExplorer
+    });
+    if((state==='explore'||state==='drive'&&!mounted)&&!checkpointReturn&&creatureHitCooldown<=0){
+      const actor=state==='explore'?explorer:player;
+      const contact=mossEcology.entities.find(creature=>state==='explore'
+        ?creature.indoors&&creature.home===exploreBuilding&&Math.hypot(creature.roomX-actor.x,creature.roomY-actor.y)<14
+        :!creature.indoors&&Math.hypot(creature.x-actor.x,creature.y-actor.y)<16);
+      if(contact){woundCharacter('creature',contact.kind===2?1.4:1);creatureHitCooldown=2.5;flash=.18;}
+    }
     finishFrame(gameTime, dt);
     requestAnimationFrame(frame);
   }

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><title>Caminhada em 8 direções</title>
+<style>body{margin:24px;background:#293238;color:#eee;font:16px system-ui}canvas{max-width:100%;image-rendering:pixelated}a{color:#cbdaba}</style>
+<h1>Caminhada em 8 direções</h1><p>Ciclo corrigido e alinhado · <a href="../../tests/walk-cycle-browser.html">Ver os quadros usados no jogo e conferir alinhamento</a></p>
+<canvas width="960" height="560"></canvas>
+<script src="caminhada-8-v2.js"></script><script>
+const image=new Image(),canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const right=new Image();right.src=SURVIVOR_WALK_D.file;
+const names=['Norte','Nordeste','Leste','Sudeste','Sul','Sudoeste','Oeste','Noroeste'];
+image.onload=()=>requestAnimationFrame(draw);image.src=SURVIVOR_WALK_V2.file;
+function draw(time){
+  ctx.fillStyle='#293238';ctx.fillRect(0,0,960,560);ctx.imageSmoothingEnabled=false;
+  const w=image.naturalWidth/8,h=image.naturalHeight/8,frame=Math.floor(time/125)%8;
+  for(let row=0;row<8;row++){
+    const x=(row%4)*240,y=Math.floor(row/4)*280;
+    if(row===3&&right.complete&&right.naturalWidth){
+      const index=Math.floor(time/1000*SURVIVOR_WALK_D.frames.length)%SURVIVOR_WALK_D.frames.length;
+      const [sx,sy,sw,sh,headX,groundY]=SURVIVOR_WALK_D.frames[index],scale=189/SURVIVOR_WALK_D.height;
+      ctx.imageSmoothingEnabled=true;
+      ctx.drawImage(right,sx,sy,sw,sh,x+120-headX*scale*.9,y+210-groundY*scale,sw*scale*.9,sh*scale);
+      ctx.fillStyle='#eee';ctx.font='18px system-ui';ctx.textAlign='center';ctx.fillText('Sudeste · D',x+120,y+245);continue;
+    }
+    const mirror=(row===0||row===4)&&frame>=4;
+    const [sx,sy,sw,sh,headX,groundY]=SURVIVOR_WALK_V2.frames[row*8+(mirror?frame-4:frame)];
+    ctx.save();ctx.translate(x+120,y+210);if(mirror)ctx.scale(-1,1);
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(image,sx,sy,sw,sh,-headX*1.2,-groundY*1.35,sw*1.2,sh*1.35);ctx.restore();
+    ctx.fillStyle='#eee';ctx.font='18px system-ui';ctx.textAlign='center';ctx.fillText(names[row],x+120,y+245);
+  }
+  requestAnimationFrame(draw);
+}
+</script></html>

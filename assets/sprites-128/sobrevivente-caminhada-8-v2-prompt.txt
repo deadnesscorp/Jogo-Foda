@@ -1,0 +1,6 @@
+Tool: built-in image_gen. Reference: sobrevivente-parado-128.png.
+Generate corrected production WALK CYCLE sheet for the same survivor: helmet white cross, silver hair, mask, olive jacket, brown backpack, black boots. Transparent square image with exact 8 by 8 equal cells.
+Rows: north, northeast, east, southeast, south, southwest, west, northwest. Fixed direction throughout each row.
+Eight columns form a full two-step cycle: left contact, left planted/right knee lift, right passing, right reach, right contact, right planted/left knee lift, left passing, left reach. Opposite arm counter-swing. Both legs move. Do not duplicate a half cycle or animate only one leg.
+Identical helmet registration, scale, full body, clear transparent cell margins. No text, grid, floor or shadow. Match the detailed painted reference style.
+Runtime: helmet anchors measured by tools/build-walk-metadata.ps1. Constant scale and vertical registration for all poses. Front/back second step uses mirrored first-half poses to ensure opposite limbs.

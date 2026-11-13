@@ -1,0 +1,57 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Criaturas de musgo preto</title>
+<style>body{margin:20px;background:#202a2b;color:#e0e4db;font:15px system-ui}canvas{max-width:100%;image-rendering:pixelated}iframe{width:900px;height:640px;border:1px solid #59605e}pre{white-space:pre-wrap}p{color:#b0b8af}</style>
+<h1>Criaturas de musgo preto</h1><pre id="result">Carregando…</pre>
+<p>Encoberto · Rastejante · Coroa — quatro direções e quatro poses de caminhada por criatura.</p>
+<canvas id="sprites" width="1000" height="300"></canvas>
+<h2>Jogo: noite e criaturas no mapa</h2><div id="game"></div>
+<script src="../assets/creatures/atlas.js"></script><script src="../moss-creatures.js"></script><script src="moss-creatures.test.js"></script>
+<script>
+(async()=>{try{
+  const result=document.querySelector('#result'),reports=[runMossCreatureTests(MossCreatures)];
+  const source=await(await fetch('../game.js')).text();new Function(source);
+  const renderer=MossCreatures.createRenderer(MOSS_CREATURE_ATLAS,{assetRoot:'../assets/creatures/'});
+  await Promise.all(renderer.sheets.map(image=>image.complete&&image.naturalWidth?Promise.resolve():new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('Image failed: '+image.src));})));
+  const canvas=document.querySelector('#sprites'),ctx=canvas.getContext('2d');
+  for(let kind=0;kind<3;kind++)for(let frame=0;frame<4;frame++){
+    const x=kind*330+45+frame*75;
+    ctx.save();ctx.translate(x,200);ctx.scale(3,3);
+    renderer.draw(ctx,{kind},0,0,Math.PI,frame/4*Math.PI*2);ctx.restore();
+  }
+  for(let kind=0;kind<3;kind++){
+    ctx.font='18px system-ui';ctx.fillStyle='#e0e4db';ctx.fillText(MossCreatures.TYPES[kind].name,kind*330+70,245);
+    const meta=MOSS_CREATURE_ATLAS.types[kind];
+    if(meta.frames.length!==16)throw Error('Faltam poses');
+    for(const [x,y,w,h] of meta.frames)if(w<=0||h<=0||x<0||y<0||x+w>meta.width||y+h>meta.sheetHeight)throw Error('Recorte inválido');
+  }
+  reports.push('48 sprite crops loaded and checked');
+  const html=await(await fetch('../index.html')).text();
+  const iframe=document.createElement('iframe');iframe.style.cssText='width:900px;height:640px;border:1px solid #59605e';
+  document.querySelector('#game').attachShadow({mode:'open'}).appendChild(iframe);
+  const errors=[];
+  window.addEventListener('message',event=>{if(event.source===iframe.contentWindow&&event.data?.mossError)errors.push(event.data.mossError);});
+  const debug=`window.__mossTest={
+    start(hour){startGame();startHour=hour;gameTime=0;mossEcology.reset(worldLighting(0),player);},
+    snapshot(){return {count:mossEcology.entities.length,night:mossEcology.night};},
+    room(){const creature=mossEcology.entities[0];creature.indoors=true;exploreBuilding=creature.home;state='explore';
+      mossEcology.update(.05,{light:worldLighting(0),target:player,room:exploreBuilding,roomTarget:explorer,moveRoom:moveExplorer});
+      finishFrame(0,.016);return mossEcology.entities.some(e=>e.indoors&&e.home===exploreBuilding);},
+    anomaly(){state='drive';const creature=mossEcology.entities[0];Object.assign(creature,{sunRunner:true,indoors:false,x:player.x+60,y:player.y});
+      mossEcology.update(.1,{light:worldLighting(0),target:player});finishFrame(0,.016);return mossEcology.glitch>0;},
+    show(){finishFrame(gameTime,.016);}
+  };`;
+  const instrumented=source.replace(/\}\)\(\);\s*$/,debug+'})();');
+  iframe.srcdoc=html.replace('<head>','<head><base href="../"><script>window.addEventListener("error",e=>parent.postMessage({mossError:e.message},"*"));<\/script>')
+    .replace(/<script src="game\.js[^\"]*"><\/script>/,()=>'<script>'+instrumented.replace(/<\/script/gi,'<\\/script')+'<\/script>');
+  await new Promise(resolve=>iframe.onload=resolve);
+  const game=iframe.contentWindow.__mossTest;if(!game)throw Error('Game failed to initialize: '+errors.join('; '));
+  game.start(12);const daytime=game.snapshot();
+  if(daytime.night||daytime.count!==6)throw Error('Daytime game population incorrect');
+  if(!game.room())throw Error('Sheltered creature missing in interior');
+  if(!game.anomaly())throw Error('Nearby daytime anomaly does not distort the screen');
+  game.start(0);game.show();const nighttime=game.snapshot();
+  if(!nighttime.night||nighttime.count!==42)throw Error('Night game population incorrect');
+  if(errors.length)throw Error(errors.join('; '));
+  reports.push('Real game: day/night populations, interior residents, anomaly screen effect and depth rendering checked');
+  result.textContent='PASS\n'+reports.join('\n');document.body.dataset.result='passed';
+}catch(error){document.querySelector('#result').textContent='FAIL: '+(error.stack||error.message||String(error));document.body.dataset.result='failed';}})();
+</script></html>

@@ -7,6 +7,7 @@
   <meta name="description" content="Um jogo de aventura em pixel art sobre reconectar a humanidade." />
   <title>OUTLINE — Além do Silêncio</title>
   <link rel="stylesheet" href="style.css?v=20261108-fullscreen-p">
+  <link rel="stylesheet" href="character-health.css?v=20261112-care">
 </head>
 <body>
   <main class="game-shell">
@@ -28,6 +29,7 @@
         <section id="controls-panel" class="controls-panel" hidden aria-label="Controles do jogo">
           <div class="controls-heading"><strong>CONTROLES</strong><button id="close-controls" type="button" aria-label="Fechar controles">×</button></div>
           <div class="control-row"><span>A pé</span><kbd>W A S D</kbd><small>Mover · Shift corre</small></div>
+          <div class="control-row"><span>Saúde</span><kbd>H</kbd><small>Ferimentos e primeiros socorros</small></div>
           <div class="control-row"><span>Interagir</span><kbd>E</kbd><small>Usar máquinas e itens</small></div>
           <div class="control-row"><span>Moto</span><kbd>W A S D</kbd><small>Virar, acelerar e frear</small></div>
           <div class="control-row"><span>Montar</span><kbd>F</kbd><small>Subir ou descer</small></div>
@@ -53,7 +55,12 @@
   <script src="display.js?v=20261108-fullscreen-p"></script>
   <script src="assets/sprites-128/piloto-moto-unificado.js?v=20261110-angular-grounded"></script>
   <script src="mounted-rider.js?v=20261111-bike-grounded"></script>
-  <script src="game.js?v=20261111-connected-forearms"></script>
+  <script src="assets/sprites-128/caminhada-8-v2.js?v=20261112-d-sixteen-poses"></script>
+  <script src="assets/creatures/atlas.js?v=20261112-moss"></script>
+  <script src="moss-creatures.js?v=20261112-moss"></script>
+  <script src="character-health.js?v=20261112-care"></script>
+  <script src="character-health-panel.js?v=20261112-care"></script>
+  <script src="game.js?v=20261112-character-health"></script>
   <script>
     const controlsPanel=document.querySelector('#controls-panel');
     const controlsButton=document.querySelector('#show-controls');

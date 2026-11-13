@@ -1,0 +1,2 @@
+Built-in image_gen edit. Reference: sobrevivente-caminhada-8-v2.png.
+Fix raised hands during walking in all 64 sprites, especially right-facing rows 2, 3 and 4. Preserve the exact 8x8 grid, directions, leg poses, helmet registration, character proportions, palette, clothes and backpack. Upper arms hang down beside torso, relaxed almost straight elbows, hands below belt at upper thigh height throughout the walk. Tiny natural shoulder swing. No fists at chest, raised forearms, punching or jogging arms. Transparent background, no text or shadows.

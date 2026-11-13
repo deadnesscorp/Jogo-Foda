@@ -1,0 +1,2 @@
+Tool: built-in image_gen edit. Reference: sobrevivente-caminhada-8-v3.png.
+Localized arm correction for northeast/back-right row 2 (W in the isometric world) and northwest/back-left row 8. Visible near arm attaches at the side of ribcage in front of backpack, sleeve nearly vertical, elbow alongside waist, hand beside outer upper thigh below belt. Keep hand from appearing behind hip or backpack. Small relaxed walking swing, far arm naturally occluded. Preserve helmet, body, backpack, legs, grid, scale, direction and transparent background. Preserve other rows.
