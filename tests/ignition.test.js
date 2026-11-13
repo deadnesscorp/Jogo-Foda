@@ -1,4 +1,4 @@
-// Run with: node tests/ignition.test.js
+// Run with: node tests/ignition.test.js [--module-only]
 function runIgnitionTests(factory,source) {
   let assertions=0;
   const check=(condition,message)=>{assertions++;if(!condition)throw Error(message);};
@@ -76,7 +76,7 @@ function runIgnitionTests(factory,source) {
     h.key('Escape');check(!h.game.active&&h.cancelled===2,'escape still closes captionless ignition');
   }
   {
-    const h=create(1,()=>0);h.game.open();h.down(214,156);h.up(318,131);
+    const h=create(1,()=>0,()=>0);h.game.open();h.down(214,156);h.up(318,131);
     for(let i=0;i<5;i++) {
       h.key('Enter');check(h.game.snapshot.phase==='failed'&&h.started===0,'failed turn never starts engine');
       h.key('Enter');h.game.update(1);
@@ -89,7 +89,7 @@ function runIgnitionTests(factory,source) {
     check(h.game.snapshot.phase==='failed','successful start resets consecutive failures');
   }
   {
-    for(const [condition,roll,expected] of [[100,.36,'success'],[50,.59,'failed'],[50,.61,'success'],[0,.84,'failed'],[0,.86,'success'],[-50,.86,'success'],[150,.36,'success']]) {
+    for(const [condition,roll,expected] of [[100,0,'success'],[90,0,'success'],[89,.00005,'failed'],[89,.0001,'success'],[80,.009,'failed'],[80,.01,'success'],[50,.15,'failed'],[50,.16,'success'],[0,.79,'failed'],[0,.81,'success'],[-50,.81,'success'],[150,0,'success']]) {
       const h=create(1,()=>roll,()=>condition);h.game.open();h.down(214,156);h.up(318,131);h.key('Enter');
       check(h.game.snapshot.phase===expected,'damage adjusts failure probability and clamps condition');
     }
@@ -150,5 +150,6 @@ function runIgnitionTests(factory,source) {
   return assertions+' ignition checks passed';
 }
 if(typeof module!=='undefined'&&typeof require==='function') {
-  console.log(runIgnitionTests(require('../ignition.js'),require('fs').readFileSync(require('path').join(__dirname,'../game.js'),'utf8')));
+  const source=process.argv.includes('--module-only')?undefined:require('fs').readFileSync(require('path').join(__dirname,'../game.js'),'utf8');
+  console.log(runIgnitionTests(require('../ignition.js'),source));
 }

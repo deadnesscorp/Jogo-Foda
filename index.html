@@ -7,7 +7,7 @@
   <meta name="description" content="Um jogo de aventura em pixel art sobre reconectar a humanidade." />
   <title>OUTLINE — Além do Silêncio</title>
   <link rel="stylesheet" href="style.css?v=20261108-fullscreen-p">
-  <link rel="stylesheet" href="character-health.css?v=20261112-care">
+  <link rel="stylesheet" href="character-health.css?v=20261113-care-debuffs">
 </head>
 <body>
   <main class="game-shell">
@@ -28,14 +28,15 @@
         <div class="title-actions"><button id="start-game" class="start-button" type="button"><span>▶</span> INICIAR MISSÃO</button><button id="show-controls" class="menu-button" type="button" aria-expanded="false" aria-controls="controls-panel">VER CONTROLES</button></div>
         <section id="controls-panel" class="controls-panel" hidden aria-label="Controles do jogo">
           <div class="controls-heading"><strong>CONTROLES</strong><button id="close-controls" type="button" aria-label="Fechar controles">×</button></div>
-          <div class="control-row"><span>A pé</span><kbd>W A S D</kbd><small>Mover · Shift corre</small></div>
+          <div class="control-row"><span>A pé</span><kbd>W A S D</kbd><small>Mover · Shift corre e faz mais ruído</small></div>
           <div class="control-row"><span>Saúde</span><kbd>H</kbd><small>Ferimentos e primeiros socorros</small></div>
           <div class="control-row"><span>Interagir</span><kbd>E</kbd><small>Usar máquinas e itens</small></div>
           <div class="control-row"><span>Moto</span><kbd>W A S D</kbd><small>Virar, acelerar e frear</small></div>
           <div class="control-row"><span>Montar</span><kbd>F</kbd><small>Subir ou descer</small></div>
+          <div class="control-row"><span>Arrastar moto</span><kbd>G + WASD</kbd><small>Segure G perto da moto · solte para largar</small></div>
           <div class="control-row"><span>Farol</span><kbd>C</kbd><small>Ligar ou desligar</small></div>
           <div class="control-row"><span>Marchas</span><kbd>Q / E</kbd><small>Reduzir / aumentar</small></div>
-          <div class="control-row"><span>Motor</span><kbd>R</kbd><small>Desligar ou ligar</small></div>
+          <div class="control-row"><span>Motor</span><kbd>R</kbd><small>Ligar / desligar · ligado atrai criaturas</small></div>
         </section>
         <div class="title-controls">W A S D <span>—</span> MOVER <i>·</i> SHIFT <span>—</span> CORRER <i>·</i> E <span>—</span> INTERAGIR</div>
       </div>
@@ -51,16 +52,16 @@
     <footer class="site-footer"><span>✦ <b>UMA FREQUÊNCIA DE CADA VEZ</b></span><span>FEITO PARA JOGAR NO NAVEGADOR <i>·</i> SEM INSTALAÇÃO</span></footer>
   </main>
   <script src="assets/sprites-128/atlas.js?v=20261111-measured-forearms"></script>
-  <script src="ignition.js?v=20261111-loose-keychain"></script>
+  <script src="ignition.js?v=20261113-reliable-healthy-engine"></script>
   <script src="display.js?v=20261108-fullscreen-p"></script>
   <script src="assets/sprites-128/piloto-moto-unificado.js?v=20261110-angular-grounded"></script>
   <script src="mounted-rider.js?v=20261111-bike-grounded"></script>
   <script src="assets/sprites-128/caminhada-8-v2.js?v=20261112-d-sixteen-poses"></script>
   <script src="assets/creatures/atlas.js?v=20261112-moss"></script>
-  <script src="moss-creatures.js?v=20261112-moss"></script>
-  <script src="character-health.js?v=20261112-care"></script>
-  <script src="character-health-panel.js?v=20261112-care"></script>
-  <script src="game.js?v=20261112-character-health"></script>
+  <script src="moss-creatures.js?v=20261113-creature-combat-profiles"></script>
+  <script src="character-health.js?v=20261113-care-debuffs"></script>
+  <script src="character-health-panel.js?v=20261113-care-debuffs"></script>
+  <script src="game.js?v=20261113-creature-bike-attacks"></script>
   <script>
     const controlsPanel=document.querySelector('#controls-panel');
     const controlsButton=document.querySelector('#show-controls');

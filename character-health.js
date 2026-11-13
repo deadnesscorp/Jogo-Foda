@@ -36,13 +36,28 @@
       const rawPain=wounds.reduce((sum,w)=>sum+WOUNDS[w.type].pain*w.severity*(w.remaining/w.total)*(w.splint?.55:1)+(w.infected?8:0),0);
       const pain=clamp(rawPain-(medicine>0?35:0),0,100);
       const health=clamp(Math.min(vitality,blood*.85+15),0,100);
-      let legs=0;
-      for(const id of ['leftLeg','rightLeg']){
-        const wound=parts[id].wound;
-        if(wound)legs+=(wound.type==='fracture'?(wound.splint?.16:.32):.10)*wound.severity*(wound.remaining/wound.total);
+      let legs=0,arms=0,chest=0,head=0,abdomen=0;
+      const effects=[];
+      for(const [id,label] of PARTS){
+        const wound=parts[id].wound;if(!wound)continue;
+        const damage=wound.severity*(wound.remaining/wound.total)*(wound.type==='fracture'?(wound.splint?.5:1):wound.type==='deep'?.85:wound.type==='cut'?.6:wound.type==='bruise'?.45:.25);
+        let detail;
+        if(id.endsWith('Leg')){legs+=damage*.32;detail='Passos mais lentos; a corrida também perde velocidade.';}
+        else if(id.endsWith('Arm')){arms+=damage*.25;detail='Menos controle da moto e tratamentos mais demorados.';}
+        else if(id==='chest'){chest+=damage*.35;detail='Fôlego reduzido: menor velocidade ao correr.';}
+        else if(id==='head'){head+=damage*.3;detail='Menor precisão no rapel e menos tempo útil no terminal.';}
+        else {abdomen+=damage*.6;detail='Fome e sede aumentam mais rápido.';}
+        effects.push({id,part:id,label:WOUNDS[wound.type].name+' · '+label,detail});
       }
+      const weakness=clamp((65-blood)/100,0,.4);
+      if(bleeding>0)effects.push({id:'bleeding',label:'Sangramento',detail:'Perda contínua de sangue e condição. Abaixo de 65% de sangue, andar e correr ficam mais lentos.'});
+      if(pain>0)effects.push({id:'pain',label:'Dor',detail:'Reduz a velocidade de movimento. Analgésicos aliviam esse efeito temporariamente.'});
+      if(wounds.some(w=>w.infected))effects.push({id:'infection',label:'Infecção',detail:'Perda gradual de condição e cicatrização mais lenta. Retire o curativo e desinfete.'});
+      if(weakness>0)effects.push({id:'weakness',label:'Fraqueza',detail:'Pouco sangue: movimento e corrida prejudicados.'});
       return {health,blood,pain,bleeding,wounds:wounds.length,infected:wounds.some(w=>w.infected),
-        movement:clamp(1-legs-pain*.002,.35,1),critical:health<=12||blood<=18,
+        movement:clamp(1-legs-pain*.002-weakness,.35,1),sprint:clamp(1-chest-weakness,.45,1),
+        handling:clamp(1-arms,.5,1),dexterity:clamp(1-arms,.45,1),focus:clamp(1-head,.5,1),
+        metabolism:1+Math.min(1.2,abdomen),effects,critical:health<=12||blood<=18,
         description:bleeding>.01?'Sangramento ativo':wounds.some(w=>w.infected)?'Infecção local':wounds.length?'Em recuperação':'Sem ferimentos'};
     }
     function injure(part,type='scratch',severity=1){
@@ -86,7 +101,7 @@
     }
     function start(kind,part,context={}){
       const allowed=eligibility(kind,part,context);if(!allowed.ok){onNotice(allowed.reason);return false;}
-      const job=ACTIONS[kind];action={kind,part,elapsed:0,duration:job.duration};return true;
+      const job=ACTIONS[kind];action={kind,part,elapsed:0,duration:job.duration/status().dexterity};return true;
     }
     function cancel(message='Tratamento cancelado. Nenhum material consumido.'){
       if(!action)return false;action=null;onNotice(message);return true;

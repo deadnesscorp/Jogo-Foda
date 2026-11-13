@@ -372,7 +372,7 @@
   const characterHealth=CharacterHealth.create({onNotice:message=>setToast(message)});
   const healthPanel=createCharacterHealthPanel({container:canvas.parentElement,model:characterHealth,
     onOpen:()=>{keys.clear();bikeInspectOpen=false;bikeService=null;},onClose:()=>keys.clear()});
-  let creatureHitCooldown=0;
+  let creatureHitCooldown=0,creatureBikeCooldown=0,playerKnockdown=0,knockdownAngle=0;
   function characterMoving(){
     if(state==='drive'&&mounted)return Math.abs(bike.speed)>2;
     if(state==='climb')return !climber.grounded||['a','d','arrowleft','arrowright'].some(key=>keys.has(key));
@@ -388,6 +388,8 @@
   function updateCharacterCare(dt){
     const active=state!=='title'&&state!=='ending';
     creatureHitCooldown=Math.max(0,creatureHitCooldown-dt);
+    creatureBikeCooldown=Math.max(0,creatureBikeCooldown-dt);
+    playerKnockdown=Math.max(0,playerKnockdown-dt);
     if(active){
       characterHealth.update(dt,{moving:characterMoving(),running:keys.has('shift'),hunger,thirst});
       const condition=characterHealth.status();
@@ -489,6 +491,7 @@
   let fuel = 68, hunger = 100, thirst = 100, exploreBuilding = -1;
   let repairKits = 1, bikeLife = 100, bikeWearClock = 0, bikeCrashCooldown = 0, bikeParts = { motor: 100, handlebar: 100, frontTire: 100, rearTire: 100 };
   let bikeInspectOpen = false;
+  let bikeDragging=false,bikeDragSpeed=0;
   let bikeInspectHover = null;
   const bikeWorkshopWindow={x:null,y:null,full:false,drag:null};
   let bikeInspectTab = 'Info', bikeTireSelected = 'frontTire', bikeService = null;
@@ -526,6 +529,18 @@
     getBuildings:()=>buildings,getSize:()=>world,isBlocked:worldBlocked,getShadows:mossShadowRegions
   });
   const mossRenderer=MossCreatures.createRenderer(MOSS_CREATURE_ATLAS);
+  function creatureSounds(){
+    const sounds=[],actor=state==='explore'?explorer:player;
+    if(state==='explore'||!mounted){
+      const footstep=MossCreatures.playerNoise({x:actor.x,y:actor.y,
+        speed:Math.hypot(actor.gait?.vx||0,actor.gait?.vy||0),running:!!actor.gait?.running,
+        room:state==='explore'?exploreBuilding:-1});
+      if(footstep)sounds.push(footstep);
+    }
+    const engine=MossCreatures.playerNoise({x:bike.x,y:bike.y,speed:bikeDragging?bikeDragSpeed:bike.speed,vehicle:true,engineRunning:bikeEngineRunning});
+    if(engine){engine.player=state!=='explore'&&mounted;sounds.push(engine);}
+    return sounds;
+  }
   function mossShadowRegions(light){
     return buildings.map(([x,y,w,h],home)=>{
       const shape=isoBuildingGeometry(x,y,w,h,home);
@@ -741,6 +756,36 @@
     if (!worldBlocked(entity.x, targetY, radius)) { entity.y = targetY; moved = true; }
     return moved;
   }
+  function stopBikeDrag(){
+    bikeDragging=false;bikeDragSpeed=0;keys.delete('g');
+  }
+  function startBikeDrag(){
+    if(state!=='drive'||mounted||checkpointReturn||healthPanel.open||playerKnockdown>0)return false;
+    if(distance(player,bike)>43){setToast('CHEGUE PERTO DA MOTO PARA ARRASTAR.');return false;}
+    bikeInspectOpen=false;bikeService=null;
+    bike.speed=0;bike.steering=0;bike.bank=0;
+    player.gait=null;bikeDragging=true;keys.add('g');
+    setToast('SEGURE G + WASD PARA ARRASTAR — SOLTE G PARA LARGAR.');return true;
+  }
+  function moveDraggedBike(actor,dx,dy,radius){
+    const beforeX=bike.x,beforeY=bike.y,bikeRadius=12*ACTOR_VISUAL_SCALE;
+    function step(sx,sy){
+      const ax=actor.x+sx,ay=actor.y+sy,bx=bike.x+sx,by=bike.y+sy;
+      if(Math.min(ax,ay,bx,by)<18||Math.max(ax,bx)>world.w-18||Math.max(ay,by)>world.h-18)return false;
+      if(worldBlocked(ax,ay,radius)||worldBlocked(bx,by,bikeRadius))return false;
+      actor.x=ax;actor.y=ay;bike.x=bx;bike.y=by;return true;
+    }
+    // Move both bodies together, with short steps to keep fences solid.
+    const steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/3));
+    for(let i=0;i<steps;i++)if(!step(dx/steps,dy/steps)){step(dx/steps,0);step(0,dy/steps);}
+    const travel=Math.hypot(bike.x-beforeX,bike.y-beforeY);
+    if(travel>0){
+      const heading=Math.atan2(bike.x-beforeX,-(bike.y-beforeY));
+      const turn=Math.atan2(Math.sin(heading-bike.angle),Math.cos(heading-bike.angle));
+      bike.angle+=turn*Math.min(1,travel/18);bike.wheel+=travel/9;
+    }
+    return travel>0;
+  }
   function randomizeTowerSpawns() {
     const placed = [];
     function sampleRoadAtX(targetX) {
@@ -814,7 +859,9 @@
     else setObjective('A máquina está em movimento. Volte à moto para alcançá-la.', activeTower);
   }
   function startGame() {
-    characterHealth.reset();healthPanel.setOpen(false);creatureHitCooldown=0;
+    stopBikeDrag();
+    buildingOpacities.clear();
+    characterHealth.reset();healthPanel.setOpen(false);creatureHitCooldown=0;creatureBikeCooldown=0;playerKnockdown=0;
     startHour = Math.floor(Math.random() * 1440) / 60;
     bikeVisualFacings.clear();
     player.gait=null;
@@ -852,6 +899,7 @@
     setToast('A PÉ — A MOTO FICOU ESTACIONADA AQUI. F PARA VOLTAR'); updateObjective();
   }
   function mount() {
+    if(playerKnockdown>0){setToast('ESPERE O PERSONAGEM SE LEVANTAR.');return;}
     if (distance(player, bike) > 43) { setToast('A MOTO ESTÁ FORA DE ALCANCE.'); return; }
     bike.steering=0;bike.bank=0;
     mounted = true; player.x = bike.x; player.y = bike.y; player.angle = bike.angle;
@@ -885,7 +933,7 @@
     const needle = .5 + Math.sin(motion) * .46;
     const lateralDrift = (chaser.x - W * .5) / W * .16 + Math.sin(time * 7.4 + activeTower) * .07;
     const target = Math.max(.13, Math.min(.87, .5 + Math.sin(pose.phase * 1.2) * .21 + lateralDrift));
-    const stable = Math.abs(needle - target) < .07 && pose.target.planted && chaseLag < 130;
+    const stable = Math.abs(needle - target) < .07*characterHealth.status().focus && pose.target.planted && chaseLag < 130;
     return { needle, target, stable, pose };
   }
   function attemptGrapple() {
@@ -1041,10 +1089,11 @@
     if(ignition.active&&['e','f'].includes(e.key.toLowerCase())){e.preventDefault();if(!e.repeat){ignition.close(false);if(e.key.toLowerCase()==='f')dismount();}return;}
     if(ignition.active){ignition.key(e);return;}
     const key = e.key.toLowerCase();
+    if(bikeDragging&&['e','f','h','r','escape'].includes(key))stopBikeDrag();
     if(key==='h'&&['drive','explore','climb'].includes(state)&&!e.repeat){e.preventDefault();healthPanel.setOpen(!healthPanel.open);return;}
     if(healthPanel.key(key)){e.preventDefault();return;}
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
-    if (bikeInspectOpen && key !== 'f' && (key !== 'e' || bikeService)) {
+    if (bikeInspectOpen && key !== 'f' && key !== 'g' && (key !== 'e' || bikeService)) {
       e.preventDefault();
       if(!bikeService&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift'].includes(key)){keys.add(key);return;}
       if (!e.repeat && bikeService) {
@@ -1062,6 +1111,8 @@
     }
     if (state === 'title') { if (key === 'enter') startGame(); return; }
     if (state === 'ending') { if (key === 'enter') { state = 'title'; titleScreen.classList.remove('dismissed'); } return; }
+    if(playerKnockdown>0){e.preventDefault();return;}
+    if(key==='g'&&!e.repeat){e.preventDefault();startBikeDrag();return;}
     if(key==='f'&&state==='drive'&&!e.repeat){bikeInspectOpen=false;bikeService=null;if(mounted)dismount();else mount();return;}
     if(key==='c'&&state==='drive'&&(mounted||distance(player,bike)<=43)&&!e.repeat){bikeHeadlightOn=!bikeHeadlightOn;setToast(bikeHeadlightOn?'FAROL LIGADO':'FAROL DESLIGADO');return;}
     if(key==='r'&&state==='drive'&&(mounted||distance(player,bike)<=43)&&!e.repeat){switchOffBike();return;}
@@ -1082,10 +1133,10 @@
     }
     keys.add(key);
   }
-  function keyUp(e) { keys.delete(e.key.toLowerCase()); }
+  function keyUp(e) { const key=e.key.toLowerCase();keys.delete(key);if(key==='g')stopBikeDrag(); }
   addEventListener('keydown', keyDown);
   addEventListener('keyup', keyUp);
-  addEventListener('blur', () => keys.clear());
+  addEventListener('blur', () => {keys.clear();stopBikeDrag();});
 
   const GROUND_CHUNK_SIZE=256,groundTextureCache=new Map();
   function groundTextureChunk(x,y) {
@@ -1166,7 +1217,9 @@
       shape.base.every(p=>p.y < -64)||shape.roof.every(p=>p.y>H+128)
     );
   }
-  function drawIsoBuilding(x, y, width, height, index, time, geometry) {
+  function drawIsoBuilding(x, y, width, height, index, time, geometry, opacity=1) {
+    ctx.save();ctx.globalAlpha*=opacity;
+    const buildingAlpha=ctx.globalAlpha;
     const {w,h,base,roof,lift} = geometry||isoBuildingGeometry(x,y,width,height,index);
     ctx.fillStyle = '#11191a88'; ctx.beginPath(); ctx.ellipse((base[0].x + base[2].x) / 2 + 4, (base[0].y + base[2].y) / 2 + 3, w * .48, h * .18, 0, 0, Math.PI * 2); ctx.fill();
     polygon([base[1], base[2], roof[2], roof[1]], index % 2 ? '#1a2425' : '#161f21');
@@ -1212,10 +1265,10 @@
     ctx.fillStyle = index % 4 === 0 && Math.sin(time * 2.7 + index * 1.8) > -.2 ? '#bb754e' : '#4e4138'; ctx.fillRect(center.x + 11, center.y - lift * .35 - 3, 3, 3);
     for (let puff = 0; puff < 3; puff++) {
       const rise = (time * 7 + index * 11 + puff * 13) % 32;
-      ctx.globalAlpha = .16 * (1 - rise / 34); ctx.fillStyle = '#969d98';
+      ctx.globalAlpha = buildingAlpha * .16 * (1 - rise / 34); ctx.fillStyle = '#969d98';
       ctx.beginPath(); ctx.ellipse(center.x + 20 + puff * 4, center.y - lift * .4 - rise, 2 + rise * .12, 1 + rise * .08, -.2, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
   function drawIsoTower(tower, index, time) {
     const screenCenter = projectPoint(tower.x, tower.y);
@@ -1349,11 +1402,77 @@
     drawBikeFuelTrail();
     ctx.restore();
   }
+  const buildingOpacities=new Map();
+  function screenPolygonOverlapsRect(points,rect){
+    const corners=[{x:rect.left,y:rect.top},{x:rect.right,y:rect.top},{x:rect.right,y:rect.bottom},{x:rect.left,y:rect.bottom}];
+    const axes=[{x:1,y:0},{x:0,y:1}];
+    for(let i=0;i<points.length;i++){
+      const a=points[i],b=points[(i+1)%points.length];axes.push({x:-(b.y-a.y),y:b.x-a.x});
+    }
+    for(const axis of axes){
+      let pMin=Infinity,pMax=-Infinity,rMin=Infinity,rMax=-Infinity;
+      for(const p of points){const d=p.x*axis.x+p.y*axis.y;pMin=Math.min(pMin,d);pMax=Math.max(pMax,d);}
+      for(const p of corners){const d=p.x*axis.x+p.y*axis.y;rMin=Math.min(rMin,d);rMax=Math.max(rMax,d);}
+      if(pMax<rMin||rMax<pMin)return false;
+    }
+    return true;
+  }
+  function buildingOccludesActor(shape,rect,buildingDepth,actorDepth){
+    if(buildingDepth<=actorDepth)return false;
+    const {base,roof}=shape;
+    return screenPolygonOverlapsRect(roof,rect)||
+      screenPolygonOverlapsRect([base[1],base[2],roof[2],roof[1]],rect)||
+      screenPolygonOverlapsRect([base[2],base[3],roof[3],roof[2]],rect);
+  }
+  function buildingOpacity(index,occluded,time){
+    const previous=buildingOpacities.get(index)||{value:1,time:time-1/60};
+    const target=occluded ? .22 : 1,dt=Math.max(0,Math.min(.1,time-previous.time));
+    previous.value=target+(previous.value-target)*Math.exp(-12*dt);
+    if(Math.abs(previous.value-target)<.005)previous.value=target;
+    previous.time=time;buildingOpacities.set(index,previous);return previous.value;
+  }
+  let buildingRevealLayer=null;
+  function drawBuildingWithReveal(draw,opacity,circle){
+    if(opacity>=.995){draw(1);return;}
+    // Save only the small patch behind the wall, then blend it back with a
+    // feathered radial mask. This keeps the rest of the building fully solid.
+    const t=ctx.getTransform(),cx=t.a*circle.x+t.c*circle.y+t.e,cy=t.b*circle.x+t.d*circle.y+t.f;
+    const rx=circle.radius*Math.hypot(t.a,t.c),ry=circle.radius*Math.hypot(t.b,t.d);
+    const left=Math.floor(cx-rx)-1,top=Math.floor(cy-ry)-1;
+    const width=Math.ceil(cx+rx)-left+1,height=Math.ceil(cy+ry)-top+1;
+    if(!buildingRevealLayer)buildingRevealLayer=document.createElement('canvas');
+    const layer=buildingRevealLayer;
+    if(layer.width!==width)layer.width=width;if(layer.height!==height)layer.height=height;
+    const painter=layer.getContext('2d');
+    painter.setTransform(1,0,0,1,0,0);painter.globalCompositeOperation='source-over';painter.globalAlpha=1;
+    painter.clearRect(0,0,width,height);
+    painter.drawImage(ctx.canvas,left,top,width,height,0,0,width,height);
+    draw(1);
+    painter.save();painter.setTransform(t.a,t.b,t.c,t.d,t.e-left,t.f-top);
+    const mask=painter.createRadialGradient(circle.x,circle.y,circle.radius*.45,circle.x,circle.y,circle.radius);
+    for(const step of [0,.25,.5,.75,1]){
+      const fade=1-step*step*(3-2*step);
+      mask.addColorStop(step,'rgba(0,0,0,'+((1-opacity)*fade)+')');
+    }
+    painter.globalCompositeOperation='destination-in';painter.fillStyle=mask;
+    painter.fillRect(circle.x-circle.radius-2,circle.y-circle.radius-2,circle.radius*2+4,circle.radius*2+4);painter.restore();
+    ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.filter='none';
+    ctx.drawImage(layer,left,top);ctx.restore();
+  }
   function drawIsoDepthObjects(time, includeActors) {
     const objects = [];
+    const actor=mounted?bike:player,actorPoint=projectPoint(actor.x,actor.y);
+    const halfWidth=mounted?18:7;
+    const actorRect={left:actorPoint.x-halfWidth,right:actorPoint.x+halfWidth,top:actorPoint.y-(mounted?30:22),bottom:actorPoint.y+6};
+    const revealCircle={x:actorPoint.x,y:actorPoint.y-8,radius:mounted?34:24};
     buildings.forEach(([x,y,w,h],i)=>{
       const geometry=isoBuildingGeometry(x,y,w,h,i);
-      if(isoBuildingVisible(geometry))objects.push({depth:x+y+(w+h)*.82,draw:()=>drawIsoBuilding(x,y,w,h,i,time,geometry)});
+      if(isoBuildingVisible(geometry)){
+        const depth=x+y+(w+h)*.82;
+        const occluded=includeActors&&state==='drive'&&buildingOccludesActor(geometry,actorRect,depth,actor.x+actor.y);
+        const opacity=buildingOpacity(i,occluded,time);
+        objects.push({depth,draw:()=>drawBuildingWithReveal(alpha=>drawIsoBuilding(x,y,w,h,i,time,geometry,alpha),opacity,revealCircle)});
+      }
     });
     towers.forEach((tower,i)=>{
       const p=projectPoint(tower.x,tower.y);
@@ -1554,6 +1673,73 @@
     const impacted=applyBikeImpact(speed,label);
     if(impacted&&mounted&&Math.abs(speed)>45)woundCharacter('impact',Math.min(1.8,.65+Math.abs(speed)/150));
     return impacted;
+  }
+  function creatureCanHit(creature,target,inRoom=false,radius=4){
+    const origin=inRoom?{x:creature.roomX,y:creature.roomY}:creature;
+    if(distance(origin,target)>MossCreatures.TYPES[creature.kind].attackReach+radius)return false;
+    for(const fraction of [.25,.5,.75]){
+      const x=origin.x+(target.x-origin.x)*fraction,y=origin.y+(target.y-origin.y)*fraction;
+      if(inRoom?interiorWalls.some(w=>x>=w.x&&x<=w.x+w.w&&y>=w.y&&y<=w.y+w.h):worldBlocked(x,y,1))return false;
+    }
+    return true;
+  }
+  function damageBikeByCreature(profile){
+    let parts=profile.bikeTargets.filter(part=>bikeParts[part]>0);
+    if(!parts.length)parts=Object.keys(bikeParts).filter(part=>bikeParts[part]>0);
+    let label='ESTRUTURA';
+    if(parts.length){
+      const part=parts[Math.floor(Math.random()*parts.length)];
+      damageBikePart(part,profile.bikeDamage,true);label=bikePartNames[part];
+    }
+    bikeLife=Math.max(0,bikeLife-profile.bikeDamage*.6);
+    creatureBikeCooldown=1.2;
+    if(bikeLife<=0){bikeEngineRunning=false;bikeRpm=0;bike.speed=0;}
+    return label;
+  }
+  function knockRiderOff(creature,profile){
+    mounted=false;bike.speed=0;bike.steering=0;bike.bank=0;
+    stopBikeDrag();bikeInspectOpen=false;bikeService=null;
+    if(ignition.active)ignition.close(false);
+    healthPanel.setOpen(false);keys.clear();player.gait=null;
+    const away=Math.atan2(bike.y-creature.y,bike.x-creature.x);
+    let landing={x:bike.x,y:bike.y};
+    search:for(const radius of [24,32,40])candidateSearch:for(const turn of [0,.5,-.5,1,-1,2,-2,Math.PI]){
+      const angle=away+turn,candidate={x:bike.x+Math.cos(angle)*radius,y:bike.y+Math.sin(angle)*radius};
+      if(candidate.x<18||candidate.y<18||candidate.x>world.w-18||candidate.y>world.h-18)continue;
+      for(let step=1;step<=8;step++)if(worldBlocked(bike.x+(candidate.x-bike.x)*step/8,bike.y+(candidate.y-bike.y)*step/8,7*ACTOR_VISUAL_SCALE))continue candidateSearch;
+      landing=candidate;break search;
+    }
+    player.x=landing.x;player.y=landing.y;
+    playerKnockdown=profile.stun;knockdownAngle=creature.x>bike.x?-Math.PI/2:Math.PI/2;
+    creatureHitCooldown=Math.max(creatureHitCooldown,profile.stun+1.5);
+    updateObjective();
+  }
+  function updateCreatureCombat(){
+    if(!['drive','explore'].includes(state)||checkpointReturn)return;
+    const inRoom=state==='explore',actor=inRoom?explorer:mounted?bike:player;
+    for(const creature of mossEcology.entities){
+      if((creature.attackCooldown||0)>0||creature.retired)continue;
+      if(inRoom?(!creature.indoors||creature.home!==exploreBuilding):creature.indoors)continue;
+      const profile=MossCreatures.TYPES[creature.kind];
+      if(creatureHitCooldown<=0&&creatureCanHit(creature,actor,inRoom,mounted?8:4)){
+        const wasMounted=mounted&&!inRoom;
+        const hit=MossCreatures.attackOutcome(creature.kind,{mounted:wasMounted,speed:bike.speed});
+        const part=profile.targets[Math.floor(Math.random()*profile.targets.length)];
+        characterHealth.injure(part,profile.wound,hit.severity);
+        creature.attackCooldown=profile.attackInterval;creatureHitCooldown=2.5;flash=.28;
+        let message=profile.name.toUpperCase()+' ATACOU — '+CharacterHealth.WOUNDS[profile.wound].name.toUpperCase();
+        if(wasMounted){
+          const damaged=creatureBikeCooldown<=0?damageBikeByCreature(profile):'MOTO';
+          if(hit.knockedOff||bikeLife<=0){knockRiderOff(creature,profile);message=profile.name.toUpperCase()+' DERRUBOU VOCÊ! '+damaged+' DANIFICADO.';}
+          else {bike.speed*=1-profile.knockOffChance*.65;message=profile.name.toUpperCase()+' ATINGIU O PILOTO E A MOTO · '+damaged+' DANIFICADO.';}
+        }
+        setToast(message,3);return;
+      }
+      if(!inRoom&&creatureBikeCooldown<=0&&(bikeEngineRunning||creature.pursuingPlayer||creature.behavior==='investigate')&&creatureCanHit(creature,bike,false,8)){
+        const damaged=damageBikeByCreature(profile);creature.attackCooldown=profile.attackInterval;
+        setToast(profile.name.toUpperCase()+' ATACOU A MOTO · '+damaged+' DANIFICADO.',2.5);
+      }
+    }
   }
   function selectedBikePart() {
     return bikeInspectTab === 'Motor' ? 'motor' : bikeInspectTab === 'Guidão' ? 'handlebar' : bikeTireSelected;
@@ -2680,7 +2866,7 @@
   }
   const FOOT_WALK_KMH=16,FOOT_RUN_KMH=35;
   function footSpeedMultiplier() {
-    return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?FOOT_RUN_KMH/FOOT_WALK_KMH:1;
+    return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?Math.max(1,FOOT_RUN_KMH/FOOT_WALK_KMH*(typeof characterHealth==='undefined'?1:characterHealth.status().sprint)):1;
   }
   function footWalkSpeed() {
     const condition=.55+.45*Math.min(hunger,thirst)/100;
@@ -2696,6 +2882,12 @@
   function footFrameIndex(phase,frameCount,pingPong) {
     const frame=Math.floor(phase);
     return pingPong?Math.min(frame,2*(frameCount-1)-frame):frame;
+  }
+  function rightWalkFrame(phase,count) {
+    // The painted reach is one way: play it back before starting another reach.
+    const period=2*(count-1);
+    const step=((Math.floor(phase/(Math.PI*2)*count)%period)+period)%period;
+    return footFrameIndex(step,count,true);
   }
   function footPlaybackFrames(walk,running,heading) {
     if(running===true)return walk.runFrames;
@@ -2819,13 +3011,13 @@
     if(!hitsWall(x,actor.y))actor.x=x;
     if(!hitsWall(actor.x,y))actor.y=y;
   }
-  function updateFootMovement(actor,dt,move,screenAngle) {
+  function updateFootMovement(actor,dt,move,screenAngle,speedScale=1) {
     if(dt<=0)return;
     const gait=actor.gait??=createFootGait();
     const dx=Number(keys.has('d')||keys.has('arrowright'))-Number(keys.has('a')||keys.has('arrowleft'));
     const dy=Number(keys.has('s')||keys.has('arrowdown'))-Number(keys.has('w')||keys.has('arrowup'));
-    const input=Math.hypot(dx,dy),walkSpeed=footWalkSpeed();
-    const multiplier=footSpeedMultiplier(),running=input?multiplier>1:gait.running;
+    const input=Math.hypot(dx,dy),walkSpeed=footWalkSpeed()*speedScale;
+    const multiplier=speedScale<1?1:footSpeedMultiplier(),running=input?multiplier>1:gait.running;
     const targetSpeed=walkSpeed*multiplier/(input||1);
     const targetX=dx*targetSpeed,targetY=dy*targetSpeed;
     // Integrate the velocity ramp over the whole interval, including partial frames.
@@ -2886,7 +3078,7 @@
       const frame=((Math.floor(phase/(Math.PI*2)*8)%8)+8)%8;
       if(direction===3&&survivorWalkRightSheet.complete&&survivorWalkRightSheet.naturalWidth>0){
         const count=SURVIVOR_WALK_D.frames.length;
-        const rightFrame=((Math.floor(phase/(Math.PI*2)*count)%count)+count)%count;
+        const rightFrame=rightWalkFrame(phase,count);
         const [sx,sy,sw,sh,headX,groundY]=SURVIVOR_WALK_D.frames[rightFrame];
         const scale=34*ACTOR_VISUAL_SCALE/SURVIVOR_WALK_D.height;
         ctx.imageSmoothingEnabled=true;
@@ -2965,6 +3157,7 @@
     ctx.save();
     const gait=applyReturnPose(player,angle,player.gait);
     ctx.fillStyle = '#080f1088'; ctx.beginPath(); ctx.ellipse(x + 2*ACTOR_VISUAL_SCALE, y + 5, 6*ACTOR_VISUAL_SCALE, 3.5*ACTOR_VISUAL_SCALE, 0, 0, Math.PI * 2); ctx.fill();
+    if(playerKnockdown>0){ctx.translate(x,y+5);ctx.rotate(knockdownAngle*Math.min(1,playerKnockdown/.25));ctx.translate(-x,-y-5);}
     drawPerson(x, y, angle, time, !!gait&&gait.stage!=='idle', mounted, gait);
     ctx.restore();
   }
@@ -2996,11 +3189,15 @@
     drawMinimap(); drawSurvivalHud();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
     ctx.fillText(mounted ? `W ACELERA · S FREIA/RÉ · A/D VIRA · Q REDUZ · E SOBE · C FAROL · R ${bikeEngineRunning?'DESLIGA':'LIGA'} · F DESCE` : 'W A S D MOVER  ·  E INTERAGIR  ·  F MONTAR', W - 12, H - 7);
-    if (!mounted && nearbyEntrance(player.x, player.y) >= 0) hint('E  ENTRAR PELA PORTA', W / 2, 31, time);
+    if(playerKnockdown>0)hint('DERRUBADO — LEVANTANDO...',W/2,31,time);
+    else if (!mounted && nearbyEntrance(player.x, player.y) >= 0) hint('E  ENTRAR PELA PORTA', W / 2, 31, time);
     else if (!mounted && distance(player,bike)<55 && (bikeLife<75 || Object.values(bikeParts).some(value=>value<70))) hint(repairKits>0?'E  REPARAR MOTO · F  MONTAR':'E  INSPECIONAR · PROCURE UM KIT',W/2,31,time);
     else if (tower && !mounted && distance(player, bike) < 55) hint('F  MONTAR NA MOTO', W / 2, 31, time);
     else if (tower && mounted && distance(bike, tower) < 205) hint('APROXIME-SE PARA INICIAR A PERSEGUIÇÃO', W / 2, 31, time);
-    if (!mounted && distance(player,bike)<85) hint('E  INSPECIONAR MOTO',W/2,50,time);
+    if(playerKnockdown<=0){
+      if(bikeDragging)hint('ARRASTANDO · WASD MOVER · SOLTE G PARA LARGAR',W/2,50,time);
+      else if (!mounted && distance(player,bike)<85) hint(distance(player,bike)<=43?'E  INSPECIONAR · SEGURE G PARA ARRASTAR':'E  INSPECIONAR MOTO',W/2,50,time);
+    }
     if (bikeInspectOpen && !mounted) drawBikeInspectMenu();
   }
   function hint(text, x, y, time) {
@@ -3361,7 +3558,7 @@
     const left = keys.has('a') || keys.has('arrowleft'), right = keys.has('d') || keys.has('arrowright');
     const steer = (right ? 1 : 0) - (left ? 1 : 0);
     chaser.steer += (steer - chaser.steer) * Math.min(1, dt * 8);
-    chaser.x = Math.max(40, Math.min(W - 40, chaser.x + steer * 250 * dt));
+    chaser.x = Math.max(40, Math.min(W - 40, chaser.x + steer * 250 * dt*characterHealth.status().handling));
     const condition=(.65+.35*Math.min(hunger,thirst)/100)*(.62+.38*Math.min(bikeParts.frontTire,bikeParts.rearTire)/100);
     const limit=bikeGearSpeedLimit();
     const targetSpeed=fuel<=0||bikeLife<=0?0:keys.has('w')?limit:keys.has('s')?Math.min(38,limit):Math.min(100,limit);
@@ -3745,7 +3942,7 @@
     climbTime += dt; hazardCooldown = Math.max(0, hazardCooldown - dt); climber.invulnerable = Math.max(0, climber.invulnerable - dt);
     if (state === 'hack') {
       if(climber.gait)updateFootGait(climber.gait,0,climber.spriteAngle,82,dt,spriteAtlas.survivor.walk);
-      hackTime -= dt; pulseClock += dt;
+      hackTime -= dt/characterHealth.status().focus; pulseClock += dt;
       if (hackTime <= 0) { state = 'climb'; hackStep = 0; hackTime = 36; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
       return;
     }
@@ -3899,6 +4096,7 @@
     const dt = Math.min(.045, (now - lastTime) / 1000); lastTime = now;
     gameTime += dt;
     updateCharacterCare(dt);
+    if(bikeDragging&&(!keys.has('g')||state!=='drive'||mounted||healthPanel.open||bikeInspectOpen||ignition.active||checkpointReturn||distance(player,bike)>44))stopBikeDrag();
     if(fuel<=0||bikeLife<=0)bikeEngineRunning=false;
     if(ignition.active)ignition.update(dt);
     updateBikeGearbox(dt,state==='chase'||state==='grapple'?chaseSpeed:bike.speed,bikeControlsMounted()&&keys.has('w'));
@@ -3907,7 +4105,8 @@
     if(state!=='title'&&state!=='ending')updateBikeCondition(dt,state==='chase'||state==='grapple'?chaseSpeed:state==='drive'&&mounted?bike.speed:0);
     if(state!=='title'&&state!=='ending')updateBikeFuelTrail(dt);
     updateMachines(gameTime);
-    hunger = Math.max(0, hunger - dt * .035); thirst = Math.max(0, thirst - dt * .06);
+    const metabolism=characterHealth.status().metabolism;
+    hunger = Math.max(0, hunger - dt * .035*metabolism); thirst = Math.max(0, thirst - dt * .06*metabolism);
     if(checkpointReturn){
       advanceCheckpointReturn(dt);
       finishFrame(gameTime,dt);
@@ -3934,7 +4133,9 @@
       }
     }
     if (state === 'drive' && !mounted) {
-      updateFootMovement(player,dt,moveWorldEntity,projectFacing);
+      const beforeX=bike.x,beforeY=bike.y;
+      if(playerKnockdown<=0)updateFootMovement(player,dt,bikeDragging?moveDraggedBike:moveWorldEntity,projectFacing,bikeDragging ? .75*characterHealth.status().dexterity : 1);
+      bikeDragSpeed=dt>0?Math.hypot(bike.x-beforeX,bike.y-beforeY)/dt:0;
       if (active() && Math.hypot(player.x - active().x, player.y - active().y) > 205 && !mounted) { /* the machine remains safely out of reach on foot */ }
       updateObjective();
     } else if (state === 'drive' && mounted) {
@@ -3957,7 +4158,7 @@
       bike.speed=Math.max(-48,bike.speed);
       if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt*(reverse?.045:.11)*(1+(100-bikeParts.motor)/38));
       const travelSpeed=(previousSpeed+bike.speed)/2;
-      const steeringDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt);
+      const steeringDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt)*characterHealth.status().handling;
       const turnDelta=bikeWorldTurnDelta(bike.angle,steeringDelta);
       const travelAngle=bike.angle+turnDelta/2;
       bike.angle+=turnDelta;
@@ -3980,15 +4181,9 @@
     else if (state === 'climb' || state === 'hack') updateClimb(dt);
     if(state==='drive'||state==='explore')mossEcology.update(dt,{
       light:worldLighting(gameTime),target:state==='explore'?worldReturn:player,
-      room:state==='explore'?exploreBuilding:-1,roomTarget:state==='explore'?explorer:null,moveRoom:moveExplorer
+      room:state==='explore'?exploreBuilding:-1,roomTarget:state==='explore'?explorer:null,moveRoom:moveExplorer,sounds:creatureSounds()
     });
-    if((state==='explore'||state==='drive'&&!mounted)&&!checkpointReturn&&creatureHitCooldown<=0){
-      const actor=state==='explore'?explorer:player;
-      const contact=mossEcology.entities.find(creature=>state==='explore'
-        ?creature.indoors&&creature.home===exploreBuilding&&Math.hypot(creature.roomX-actor.x,creature.roomY-actor.y)<14
-        :!creature.indoors&&Math.hypot(creature.x-actor.x,creature.y-actor.y)<16);
-      if(contact){woundCharacter('creature',contact.kind===2?1.4:1);creatureHitCooldown=2.5;flash=.18;}
-    }
+    updateCreatureCombat();
     finishFrame(gameTime, dt);
     requestAnimationFrame(frame);
   }

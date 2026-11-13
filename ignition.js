@@ -43,7 +43,9 @@
       if(session.phase!=='turn'||session.angle<TURN)return;
       const drag=session.drag;
       const condition=Math.max(0,Math.min(100,getCondition()));
-      const failureChance=.35+(1-condition/100)*.5;
+      // A well-maintained bike starts reliably; meaningful wear raises the risk.
+      const wear=Math.max(0,(90-condition)/90);
+      const failureChance=.8*wear*wear;
       if(failures<5&&random()<failureChance) {
         failures++;session.phase='failed';session.success=.65;session.drag=null;
         session.message='O motor falhou. Gire a chave novamente.';

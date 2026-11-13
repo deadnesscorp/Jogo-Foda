@@ -2,19 +2,32 @@
 const fs=require('node:fs');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../game.js'),'utf8');
 const helper=source.slice(source.indexOf('  const FOOT_WALK_KMH='),source.indexOf('  function drawSurvivorSprite('));
-const createWorld=new Function('position',`
+const createWorld=new Function('position','characterHealth',`
   let state='explore',mounted=false;
   const BIKE_SPEED_TO_KMH=.52,hunger=100,thirst=100,ACTOR_VISUAL_SCALE=.75;
   const keys=new Set(),actor={...position};
   const interiorWalls=[{x:142,y:111,w:10,h:77}];
   const walk={directions:8,frameCount:8,fps:10},spriteAtlas={survivor:{walk}};
   ${helper}
-  return {actor,walk,updateFootGait,createFootGait,advanceFootPhase,footFrameIndex,footAtlasFrame,
+  return {actor,walk,updateFootGait,createFootGait,advanceFootPhase,footFrameIndex,footAtlasFrame,rightWalkFrame,
     tick(dt,held){keys.clear();held.forEach(key=>keys.add(key));updateFootMovement(actor,dt,moveExplorer);}};
 `);
 let checks=0;
 function check(ok,message){checks++;if(!ok)throw Error(message);}
 const start={x:83,y:198};
+const rightWalk=createWorld(start).rightWalkFrame;
+const rightFrames=Array.from({length:61},(_,step)=>rightWalk((step+.01)/16*Math.PI*2,16));
+check(rightFrames.slice(0,31).join(',')===[...Array.from({length:16},(_,i)=>i),...Array.from({length:15},(_,i)=>14-i)].join(','),'D plays the full reach and returns through every pose');
+check(rightFrames.every((frame,i)=>!i||Math.abs(frame-rightFrames[i-1])===1),'D never jumps or repeats an endpoint across consecutive cycles');
+const healthAPI=require('../character-health.js');
+const legHealth=healthAPI.create();legHealth.injure('leftLeg','fracture',1.8);
+const slowWalker=createWorld({x:83,y:198},legHealth),normalWalker=createWorld({x:83,y:198});
+for(let i=0;i<30;i++){slowWalker.tick(1/60,['d']);normalWalker.tick(1/60,['d']);}
+check(slowWalker.actor.x-83<(normalWalker.actor.x-83)*.6,'Leg damage reduces actual player displacement');
+const chestHealth=healthAPI.create();chestHealth.injure('chest','fracture',1.8);
+const slowRunner=createWorld({x:83,y:198},chestHealth),normalRunner=createWorld({x:83,y:198});
+for(let i=0;i<30;i++){slowRunner.tick(1/60,['d','shift']);normalRunner.tick(1/60,['d','shift']);}
+check(slowRunner.actor.x-83<(normalRunner.actor.x-83)*.6,'Chest damage reduces actual sprint displacement');
 function simulate(hz,segments,position=start){
   const world=createWorld(position);
   for(const [seconds,keys] of segments){

@@ -57,6 +57,38 @@ function runCharacterHealthTests(api){
   check(Math.abs(at30.status().health-at144.status().health)<.02&&Math.abs(at30.status().blood-at144.status().blood)<.02,'healing and bleeding are stable across frame rates');
   check(at30.items.bandages===at144.items.bandages,'frame rate does not change supply consumption');
   const stock=create();stock.restock();check(stock.items.bandages===9&&stock.items.antiseptic===5,'medical loot replenishes care materials');
+  const healthy=create().status();
+  check(healthy.movement===1&&healthy.sprint===1&&healthy.handling===1&&healthy.dexterity===1&&healthy.focus===1&&healthy.metabolism===1&&healthy.effects.length===0,'healthy character has no gameplay penalties');
+  for(const [part] of api.PARTS){
+    const h=create();h.injure(part,'fracture',1.8);const injured=h.status();
+    check(injured.effects.some(effect=>effect.part===part),'every body region explains its active penalty');
+    if(part.endsWith('Leg'))check(injured.movement<.6,'severely injured leg substantially slows walking');
+    if(part.endsWith('Arm')){
+      check(injured.handling<1&&injured.dexterity<1,'injured arms reduce steering and treatment speed');
+      h.start('splint',part);check(h.action.duration>api.ACTIONS.splint.duration,'arm penalty increases the actual treatment duration');
+      h.update(h.action.duration);check(h.parts[part].wound.splint,'slower treatment still completes');
+    }
+    if(part==='chest')check(injured.sprint<1,'chest injury reduces sprint speed');
+    if(part==='head')check(injured.focus<1,'head injury reduces focus for grapple and terminal');
+    if(part==='abdomen')check(injured.metabolism>1,'abdomen injury increases hunger and thirst drain');
+  }
+  for(const type of Object.keys(api.WOUNDS)){
+    const h=create();h.injure('leftLeg',type);
+    check(h.status().movement<1&&h.status().effects.length>0,type+' has a gameplay penalty');
+  }
+  const mild=create(),severe=create();mild.injure('leftLeg','scratch');severe.injure('leftLeg','fracture',2);
+  check(severe.status().movement<mild.status().movement,'stronger wounds have stronger penalties');
+  const impaired=create();impaired.injure('head','fracture');const focus=impaired.status().focus;
+  impaired.start('splint','head');impaired.update(7);
+  check(impaired.status().focus>focus,'a splint restores some function without immediately removing the wound');
+  impaired.parts.head.wound.remaining=impaired.parts.head.wound.total*.1;
+  check(impaired.status().focus>.95,'region debuffs fade as the wound heals');
+  impaired.reset();check(impaired.status().effects.length===0&&impaired.status().focus===1,'new game clears all debuffs');
+  const loss=create();loss.injure('chest','deep',2);loss.update(65,{hunger:0,thirst:0});
+  check(loss.status().blood<65&&loss.status().effects.some(effect=>effect.id==='weakness')&&loss.status().movement<1,'blood loss causes actual movement weakness');
+  check(loss.status().effects.some(effect=>effect.id==='bleeding'),'active bleeding is explained');
+  loss.parts.chest.wound.infected=true;
+  check(loss.status().effects.some(effect=>effect.id==='infection'),'infection penalty is explained');
   return checks+' character-health checks passed';
 }
 if(typeof module!=='undefined'&&module.exports)console.log(runCharacterHealthTests(require('../character-health.js')));
