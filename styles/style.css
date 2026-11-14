@@ -25,3 +25,46 @@
 .control-row kbd{font-size:10px}
 .control-row small{grid-column:1/-1;color:#b1c0b9;font-size:12px;line-height:1.6}
 @media(max-width:700px){.controls-panel{inset:8px 8px 8px auto;width:calc(100% - 16px);padding:12px 14px}.controls-heading{top:-12px}.controls-group{font-size:10px}.control-row{font-size:11px;padding:10px 0}.control-row small,.title-screen .controls-intro{font-size:11px}}
+
+/* Fit the complete 16:9 game inside both the available width and height. */
+:root{--game-page-space:132px}
+body{padding-inline:max(8px,env(safe-area-inset-left)) max(8px,env(safe-area-inset-right))}
+.game-shell{width:min(100%,1920px,calc((100svh - var(--game-page-space)) * 16 / 9));min-width:0;padding:12px 0}
+.game-frame{container-type:inline-size}
+.site-header{gap:12px}
+.display-button{display:flex;align-items:center;gap:8px;flex-shrink:0;padding:6px 9px;border:1px solid #52665d;background:#142024;color:#dce4d9;font:9px 'DM Mono',monospace;cursor:pointer}
+.display-button kbd{font:inherit;color:#e1b579}
+.display-button:focus-visible{outline:2px solid #b9d7bb;outline-offset:3px}
+.mission-objective,.mission-objective>span:last-child{min-width:0}
+.mission-objective strong{overflow-wrap:anywhere;line-height:1.5}
+.objective-index{flex-shrink:0}
+.title-screen{overflow-y:auto;padding:clamp(12px,5cqw,60px)}
+.title-screen h1{font-size:clamp(22px,7cqw,84px)}
+.title-actions{flex-shrink:0;flex-wrap:wrap}
+.toast{max-width:calc(100% - 24px);max-height:35%;overflow-y:auto;font-size:clamp(8px,1.2cqw,11px)}
+@media(max-width:600px){
+  :root{--game-page-space:144px}
+  .game-shell{padding-top:8px}
+  .brand{font-size:10px;letter-spacing:.1em;gap:7px}
+  .brand-mark{width:27px;height:27px}
+  .title-kicker,.title-controls{display:none}
+  .title-screen{justify-content:flex-start;padding:10px 12px}
+  .title-screen h1{font-size:clamp(22px,6cqw,36px);margin:0 0 4px;line-height:.9}
+  .title-screen>p{margin:4px 0 8px;font-size:10px;line-height:1.35}
+  .title-actions{gap:6px}
+  .start-button,.menu-button{min-height:30px;padding:0 9px;font-size:8px;letter-spacing:.06em}
+  .mission-bar{gap:6px;margin-top:8px;padding:8px}
+  .mission-objective{gap:7px}
+  .mission-objective strong{font-size:10px}
+}
+@media(max-height:500px) and (orientation:landscape){
+  :root{--game-page-space:104px}
+  .game-shell{padding:4px 0}
+  .site-header{height:26px;margin-bottom:4px}
+  .mission-bar{margin-top:6px;padding:5px 8px}
+  .title-kicker,.title-controls{display:none}
+  .title-screen{padding:12px 18px}
+  .title-screen h1{font-size:clamp(22px,6cqw,42px);margin:0 0 6px}
+  .title-screen>p{font-size:10px;line-height:1.4;margin:4px 0 8px}
+  .start-button,.menu-button{min-height:30px;padding:0 10px}
+}

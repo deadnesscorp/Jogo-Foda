@@ -2,7 +2,8 @@
   'use strict';
   function gameRenderResolution(width,height,pixelRatio=1,quality=1) {
     const scale=Math.max(2,Math.min(4,Math.max(width/480,height/270)*pixelRatio)*quality);
-    return {width:Math.round(480*scale),height:Math.round(270*scale)};
+    const unit=Math.round(30*scale);
+    return {width:16*unit,height:9*unit};
   }
   function createRenderBudget(onChange) {
     let quality=1,elapsed=0,samples=0,stable=0;
@@ -25,9 +26,14 @@
   }
   function initGameDisplay({canvas,onResize}) {
     const frame=canvas.closest('.game-frame'),button=document.querySelector('#fullscreen-toggle');
-    let expanded=false,pending=false;
+    let expanded=false,pending=false,resizePending=false;
     const budget=createRenderBudget(()=>resize());
     function resize(){const bounds=canvas.getBoundingClientRect();onResize(gameRenderResolution(bounds.width,bounds.height,window.devicePixelRatio||1,budget.quality));}
+    function scheduleResize(){
+      if(resizePending)return;
+      resizePending=true;
+      window.requestAnimationFrame(()=>{resizePending=false;resize();});
+    }
     function active(){return document.fullscreenElement===frame||expanded;}
     function sync(){
       document.body.classList.toggle('game-fullscreen',expanded);
@@ -55,8 +61,9 @@
       if(event.key.toLowerCase()!=='p'||event.ctrlKey||event.metaKey||event.altKey||event.target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName||''))return;
       event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)return toggle();
     },true);
-    window.addEventListener('resize',resize);
-    if(window.ResizeObserver)new window.ResizeObserver(resize).observe(canvas);
+    window.addEventListener('resize',scheduleResize);
+    window.visualViewport?.addEventListener('resize',scheduleResize);
+    if(window.ResizeObserver)new window.ResizeObserver(scheduleResize).observe(canvas);
     sync();
     return {sampleFrame(ms){if(!document.hidden)budget.sampleFrame(ms);},get quality(){return budget.quality;}};
   }

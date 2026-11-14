@@ -57,3 +57,14 @@ atual de três perguntas, escolha de melhoria e conclusão dos cinco computadore
 continua coberto por `tests/frame-optimization.test.js`, junto da reutilização
 da iluminação e da visibilidade dos computadores. Vida, dano e cura rápida
 continuam no sistema atual.
+
+### Tamanhos de tela
+
+A área do jogo se ajusta à largura e à altura disponíveis, mantendo a proporção
+16:9. O menu e o guia de controles se adaptam a janelas estreitas; em telas
+baixas, os espaços da página ficam mais compactos. Use o botão **Tela cheia**
+ou a tecla **P** para ampliar o jogo.
+
+Redimensionar a janela mantém a partida em andamento. A resolução de desenho
+considera a densidade da tela e respeita o limite de desempenho. Os controles
+continuam sendo por teclado e mouse.
