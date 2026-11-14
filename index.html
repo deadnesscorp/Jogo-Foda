@@ -7,7 +7,6 @@
   <meta name="description" content="Um jogo de aventura em pixel art sobre reconectar a humanidade." />
   <title>OUTLINE — Além do Silêncio</title>
   <link rel="stylesheet" href="style.css?v=20261113-clean-hud">
-  <link rel="stylesheet" href="character-health.css?v=20261113-care-debuffs">
 </head>
 <body>
   <main class="game-shell">
@@ -23,27 +22,20 @@
       <div class="title-screen" id="title-screen">
         <div class="title-kicker"><span></span> UMA HISTÓRIA DE UM MUNDO DESLIGADO</div>
         <h1>ALÉM DO<br><em>SILÊNCIO</em></h1>
-        <p>A noite tomou as estradas.<br>Encontre abrigo. Sobreviva até o amanhecer.</p>
+        <p>Siga o sinal até os 5 computadores e acerte as perguntas.<br>Cada computador libera uma melhoria. Se a vida zerar, a partida acaba.</p>
         <div class="title-actions"><button id="start-game" class="start-button" type="button"><span>▶</span> INICIAR MISSÃO</button><button id="show-controls" class="menu-button" type="button" aria-expanded="false" aria-controls="controls-panel">VER CONTROLES</button></div>
         <section id="controls-panel" class="controls-panel" hidden aria-label="Controles do jogo">
           <div class="controls-heading"><strong>CONTROLES</strong><button id="close-controls" type="button" aria-label="Fechar controles">×</button></div>
-          <div class="control-row"><span>A pé</span><kbd>W A S D</kbd><small>Mover · Shift corre e faz mais ruído</small></div>
-          <div class="control-row"><span>Saúde</span><kbd>H</kbd><small>Ferimentos e primeiros socorros</small></div>
-          <div class="control-row"><span>Chutar</span><kbd>ESPAÇO</kbd><small>A pé · chute para a frente · intervalo de 1,7 s</small></div>
-          <div class="control-row"><span>Interface</span><kbd>TAB</kbd><small>Mostrar ou ocultar indicadores e atalhos completos</small></div>
-          <div class="control-row"><span>Tela cheia</span><kbd>P</kbd><small>Entrar ou sair da tela cheia</small></div>
-          <div class="control-row"><span>Emergência</span><kbd>V / B / J</kbd><small>Sinalizador / isca sonora / curativo rápido a pé</small></div>
-          <div class="control-row"><span>Fuga</span><kbd>X</kbd><small>Perto da janela verde · cruz verde identifica abrigo seguro</small></div>
-          <div class="control-row"><span>Abrigo</span><kbd>Z / T / I / O</kbd><small>Dormir / rádio e rota / fabricar / observar a rua · Esc fecha</small></div>
-          <div class="control-row"><span>Fabricação</span><kbd>1 / 2 / 3</kbd><small>No menu I: sinalizador / isca / bandagem · mover cancela sem gastar</small></div>
-          <div class="control-row"><span>Equilíbrio</span><kbd>CLIQUE / ESPAÇO</kbd><small>Na faixa verde para evitar cair da moto em movimento</small></div>
-          <div class="control-row"><span>Interagir</span><kbd>E</kbd><small>Abrir portas e usar itens</small></div>
-          <div class="control-row"><span>Moto</span><kbd>W A S D</kbd><small>Virar, acelerar e frear</small></div>
-          <div class="control-row"><span>Montar</span><kbd>F</kbd><small>Subir ou descer</small></div>
-          <div class="control-row"><span>Arrastar moto</span><kbd>G + WASD</kbd><small>Segure G perto da moto · solte para largar</small></div>
-          <div class="control-row"><span>Farol</span><kbd>C</kbd><small>Ligar ou desligar</small></div>
-          <div class="control-row"><span>Marchas</span><kbd>Q / E</kbd><small>Reduzir / aumentar</small></div>
-          <div class="control-row"><span>Motor</span><kbd>R</kbd><small>Ligar / desligar · ligado atrai criaturas</small></div>
+          <div class="control-row"><span>Andar</span><kbd>W A S D</kbd><small>W sobe, S desce, A esquerda, D direita. Segure Shift para correr.</small></div>
+          <div class="control-row"><span>Usar / abrir</span><kbd>E</kbd><small>Chegue perto: abre portas, acessa computadores, dorme na cama ou abre a oficina junto da moto.</small></div>
+          <div class="control-row"><span>Montar / descer</span><kbd>F</kbd><small>F monta e abre o minigame: arraste a chave até a fechadura e gire para a direita. F desce e desliga. Farol automático.</small></div>
+          <div class="control-row"><span>Dirigir</span><kbd>W A S D</kbd><small>W acelera, S freia ou dá ré, A/D viram.</small></div>
+          <div class="control-row"><span>Marchas manuais</span><kbd>Q / E</kbd><small>Na moto, Q reduz e E aumenta a marcha, da 1ª à 4ª. Também pode clicar nos botões − e + do painel.</small></div>
+          <div class="control-row"><span>Arrastar a moto</span><kbd>G + WASD</kbd><small>A pé e perto da moto, segure G e mova com WASD. Solte G para largar. Funciona sem gasolina e com a moto quebrada.</small></div>
+          <div class="control-row"><span>Chutar / equilíbrio</span><kbd>ESPAÇO</kbd><small>A pé: chute na direção em que olha. Na moto: aperte na faixa verde quando aparecer o aviso de equilíbrio.</small></div>
+          <div class="control-row"><span>Curar</span><kbd>J</kbd><small>A pé, usa um curativo e recupera 30 de vida. Precisa ter curativos.</small></div>
+          <div class="control-row"><span>Responder / melhorar</span><kbd>1 / 2 / 3 / 4</kbd><small>Escolha uma das 4 opções ou clique nela. Acerte as 3 perguntas para escolher uma melhoria.</small></div>
+          <div class="control-row"><span>Nova partida</span><kbd>ENTER</kbd><small>No menu, inicia uma partida com vida e recursos restaurados.</small></div>
         </section>
         <div class="title-controls">W A S D <span>—</span> MOVER <i>·</i> SHIFT <span>—</span> CORRER <i>·</i> E <span>—</span> INTERAGIR</div>
       </div>
@@ -52,7 +44,7 @@
 
     <section class="mission-bar" aria-live="polite">
         <div class="mission-objective"><span class="objective-index" id="objective-index"></span><span><small>OBJETIVO ATUAL</small><strong id="objective">Sobreviva à noite: encontre abrigo, água e comida.</strong></span></div>
-      <div class="mission-controls"><kbd>TAB</kbd><span>DETALHES</span><kbd>H</kbd><span>SAÚDE</span></div>
+      <div class="mission-controls"><kbd>TAB</kbd><span>DETALHES</span></div>
     </section>
 
     <footer class="site-footer"><span>✦ <b>UMA NOITE DE CADA VEZ</b></span><span>FEITO PARA JOGAR NO NAVEGADOR <i>·</i> SEM INSTALAÇÃO</span></footer>
@@ -64,12 +56,10 @@
   <script src="mounted-rider.js?v=20261111-bike-grounded"></script>
   <script src="assets/sprites-128/caminhada-8-v2.js?v=20261112-d-sixteen-poses"></script>
   <script src="assets/creatures/atlas.js?v=20261112-moss"></script>
-  <script src="moss-creatures.js?v=20261113-brute-speed"></script>
-  <script src="character-health.js?v=20261113-fed-rest-recovery"></script>
-  <script src="character-health-panel.js?v=20261113-simpler-health"></script>
+  <script src="moss-creatures.js?v=20261113-lazy-shadows"></script>
   <script src="shelter-survival.js?v=20261113-shelter-activities"></script>
   <script src="urban-structures.js?v=20261113-performance2"></script>
-  <script src="game.js?v=20261113-survival-no-robots"></script>
+  <script src="game.js?v=20261113-building-sprite-cache"></script>
   <script>
     const controlsPanel=document.querySelector('#controls-panel');
     const controlsButton=document.querySelector('#show-controls');

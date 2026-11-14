@@ -7,7 +7,7 @@ function create({blocked=()=>false,health=healthAPI.create(),fuel=68,life=100,en
   return new Function('worldBlocked','characterHealth','fuel','bikeLife','engineRunning',`
     let state='drive',mounted=false,checkpointReturn=null,bikeInspectOpen=false,bikeService=null,playerKnockdown=0;
     let bikeDragging=false,bikeDragSpeed=0,bikeEngineRunning=engineRunning,bikeRpm=engineRunning?1000:0;
-    const healthPanel={open:false},keys=new Set(),world={w:500,h:500};
+    const healthPanel={open:false},keys=new Set(),world={w:500,h:500},shelterLife={speed:1};
     const ACTOR_VISUAL_SCALE=.6,BIKE_SPEED_TO_KMH=.52,hunger=100,thirst=100;
     const bike={x:100,y:100,angle:0,wheel:0,speed:0,steering:0,bank:0};
     const player={x:100,y:119,angle:0,gait:null},spriteAtlas={survivor:{walk:{directions:8,frameCount:8,fps:10}}};

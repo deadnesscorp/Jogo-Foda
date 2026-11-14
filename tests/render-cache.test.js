@@ -33,6 +33,7 @@ function runRenderCacheTests(source) {
   const geometrySource=source.slice(source.indexOf('  const buildingGeometryCache='),source.indexOf('  function isoBuildingVisible('));
   const geometry=new Function(`
     let W=640,H=360,calls=0;const camera={x:0,y:0};
+    const UrbanStructures={TYPES:Array.from({length:5},()=>({height:100}))};
     const projectPoint=(x,y)=>{calls++;return {x:W/2+x-camera.x,y:H/2+y-camera.y};};
     ${geometrySource}
     return {get:isoBuildingGeometry,get calls(){return calls;},move(){camera.x++;},resize(){W++;}};
@@ -57,7 +58,7 @@ function runRenderCacheTests(source) {
     const drawMountedRiderPose=(painter,art,pose)=>{
       blends++;
       turnWeights.push(painter.globalAlpha);
-      sampledOriginal=art===seatedRiderSpriteSheet&&pose===mountedPose&&painter.imageSmoothingEnabled&&painter.imageSmoothingQuality==='medium';
+      sampledOriginal=art===seatedRiderSpriteSheet&&pose===mountedPose&&!painter.imageSmoothingEnabled;
     };
     const bikeSpritesReady=()=>true,smoothBikeFacing=angle=>({angle,direction:Math.round(angle/(Math.PI/64))%128});
     const bikeOcclusionLayer={width:320,height:320},bikeOcclusionContext={clearRect(){},drawImage(){}};
@@ -75,7 +76,7 @@ function runRenderCacheTests(source) {
   check(blended.blends>beforeResize,'resizing invalidates cached sprite');
   const beforeMount=blended.blends;blended.mount();const rider=blended.draw(200,200,20*Math.PI/64,0,4);
   check(blended.blends>beforeMount&&rider.integrated,'mounting refreshes sprite and embeds rider in motorcycle');
-  check(blended.sampledOriginal,'mounted rendering samples the original art with high-quality scaling');
+  check(blended.sampledOriginal,'mounted rendering samples the original pixel art without smoothing');
   blended.draw(200,200,127.5*Math.PI/64,80,5);
   check(blended.turnWeights.at(-1)===1,'turning draws one opaque pose without ghost silhouettes');
   const turn=speed=>blended.turn(speed,1,100,100,1/60);

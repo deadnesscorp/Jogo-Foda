@@ -26,7 +26,7 @@ check(api.opacity(1,false,0)===1,'another building has independent opacity');
 const drawSource=source.slice(source.indexOf('  function drawIsoBuilding('),source.indexOf('  function drawIsoTower('));
 const alphas=[],stack=[];
 const ctx=new Proxy({globalAlpha:.7,save(){stack.push(this.globalAlpha);},restore(){this.globalAlpha=stack.pop();},fillRect(){alphas.push(this.globalAlpha);},fill(){alphas.push(this.globalAlpha);}}, {get:(target,key)=>target[key]??(()=>{})});
-const draw=new Function('ctx','polygon',drawSource+';return drawIsoBuilding;')(ctx,()=>alphas.push(ctx.globalAlpha));
+const draw=new Function('ctx','polygon','drawUrbanBuildingSprite',drawSource+';return drawIsoBuilding;')(ctx,()=>alphas.push(ctx.globalAlpha),()=>alphas.push(ctx.globalAlpha));
 draw(0,0,50,50,1,0,{...shape,w:82.5,h:82.5,lift:100},.22);
 check(alphas.every(alpha=>alpha<=.7*.22+1e-8),'all building details and smoke respect the fade');
 check(ctx.globalAlpha===.7&&stack.length===0,'building drawing restores the previous canvas opacity');

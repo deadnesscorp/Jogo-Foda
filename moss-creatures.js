@@ -2,23 +2,24 @@
 (() => {
   'use strict';
   const TYPES=[
-    {id:'encoberto',name:'Encoberto',role:'Caçador esguio',daySpeed:5,nightSpeed:62,runSpeed:88,height:30,reach:240,
-      damage:.25,wound:'scratch',attackReach:15,bikeDamage:10,knockOffChance:.68,attackInterval:2.4,stun:1,
+    {id:'encoberto',name:'Encoberto',role:'Caçador esguio',daySpeed:5,nightSpeed:74,runSpeed:102,height:30,reach:240,
+      damage:.25,damageMin:25,damageMax:50,wound:'scratch',attackReach:15,bikeDamage:10,knockOffChance:.68,attackInterval:1.7,stun:1,
       targets:['chest','abdomen','leftArm','rightArm'],bikeTargets:['handlebar','motor']},
-    {id:'rastejante',name:'Rastejante',role:'Quadrúpede veloz',daySpeed:7,nightSpeed:82,runSpeed:108,height:20,reach:310,
-      damage:.15,wound:'scratch',attackReach:12,bikeDamage:7,knockOffChance:.55,attackInterval:1.8,stun:.75,
+    {id:'rastejante',name:'Rastejante',role:'Quadrúpede veloz',daySpeed:7,nightSpeed:98,runSpeed:126,height:20,reach:310,
+      damage:.15,damageMin:5,damageMax:20,wound:'scratch',attackReach:12,bikeDamage:7,knockOffChance:.55,attackInterval:1.3,stun:.75,
       targets:['leftLeg','rightLeg','leftArm','rightArm'],bikeTargets:['frontTire','rearTire']},
-    {id:'coroa',name:'Coroa',role:'Brutamontes',daySpeed:5,nightSpeed:42,runSpeed:58,height:32,reach:190,
-      damage:2,wound:'fracture',attackReach:19,bikeDamage:22,knockOffChance:.88,attackInterval:3.4,stun:1.25,
+    {id:'coroa',name:'Coroa',role:'Brutamontes',daySpeed:5,nightSpeed:74,runSpeed:102,height:32,reach:190,
+      damage:2,damageMin:50,damageMax:80,wound:'fracture',attackReach:19,bikeDamage:22,knockOffChance:.88,attackInterval:2.4,stun:1.25,
       targets:['head','chest','leftLeg','rightLeg'],bikeTargets:['motor','handlebar','frontTire','rearTire']}
   ];
   function attackOutcome(kind,{mounted=false,speed=0,random=Math.random}={}){
     const profile=TYPES[kind]||TYPES[0];
-    return {profile,severity:Math.min(2,profile.damage+(mounted?Math.min(.35,Math.abs(speed)/500):0)),
+    const damage=profile.damageMin+Math.min(profile.damageMax-profile.damageMin,Math.floor(random()*(profile.damageMax-profile.damageMin+1)));
+    return {profile,damage,severity:Math.min(2,profile.damage+(mounted?Math.min(.35,Math.abs(speed)/500):0)),
       knockedOff:mounted&&random()<profile.knockOffChance};
   }
-  const DAY_COUNT=3,NIGHT_COUNT=67,SUN_RUNNER_CHANCE=.05,SUN_LIFETIME=17;
-  const HEARING_MEMORY=4,SPAWN_START_INTERVAL=10,SPAWN_MIN_INTERVAL=2,SPAWN_INTERVAL_STEP=2;
+  const DAY_COUNT=12,NIGHT_COUNT=67,SUN_RUNNER_CHANCE=.05,SUN_LIFETIME=17;
+  const HEARING_MEMORY=7,SPAWN_START_INTERVAL=10,SPAWN_MIN_INTERVAL=2,SPAWN_INTERVAL_STEP=2;
   function playerNoise({x,y,speed=0,running=false,vehicle=false,engineRunning=false,room=-1}){
     speed=Math.abs(speed);
     const radius=vehicle?(engineRunning?75+Math.min(125,speed*.65):speed>2?25+Math.min(35,speed*.3):0):speed>1?(running?75:32):0;
@@ -38,11 +39,14 @@
     return inside;
   }
   function createEcology({random=Math.random,getBuildings,getSize,isBlocked,getShadows}){
-    let entities=[],night=false,initialized=false,serial=0,spawnClock=0,spawnInterval=SPAWN_START_INTERVAL,shadeClock=0,regions=[],glitch=0;
+    let entities=[],night=false,initialized=false,serial=0,spawnClock=0,spawnInterval=SPAWN_START_INTERVAL,shadeClock=0,regions=[],glitch=0,shadeLight=null;
     const roomResidents=new Map();
     const nearHomes=target=>getBuildings().map((b,index)=>({index,d:distance(target,{x:b[0]+b[2]*.825,y:b[1]+b[3]*.825})})).sort((a,b)=>a.d-b.d).slice(0,10);
     function door(home){const b=getBuildings()[home];return {x:b[0]+b[2]*1.155,y:b[1]+b[3]*1.65+14};}
-    function shaded(x,y){return regions.some(region=>inPolygon(x,y,region.points));}
+    function shaded(x,y){
+      if(!night&&shadeClock<=0&&shadeLight){regions=getShadows(shadeLight);shadeClock=.35;}
+      return regions.some(region=>inPolygon(x,y,region.points));
+    }
     function shadePoint(home){
       const region=regions.find(item=>item.home===home);
       if(!region)return null;
@@ -88,18 +92,18 @@
       return null;
     }
     function shelter(entity){entity.indoors=true;entity.destination=null;entity.speed=0;entity.heard=null;entity.heardPlayer=false;entity.pursuingPlayer=false;entity.alert=0;Object.assign(entity,door(entity.home));}
-    function kick({x,y,angle=0,room=-1,isRoomBlocked=()=>false}){
+    function kick({x,y,angle=0,room=-1,range=34,stunScale=1,isRoomBlocked=()=>false}){
       const candidates=entities.filter(e=>!e.retired&&(room<0?!e.indoors:e.indoors&&e.home===room))
         .map(e=>({e,x:room<0?e.x:e.roomX,y:room<0?e.y:e.roomY}))
         .filter(p=>{
           const dx=p.x-x,dy=p.y-y,d=Math.hypot(dx,dy);
-          if(d>34||(d>1&&(dx*Math.sin(angle)-dy*Math.cos(angle))/d<.15))return false;
+          if(d>range||(d>1&&(dx*Math.sin(angle)-dy*Math.cos(angle))/d<.15))return false;
           for(let i=1;i<=8;i++)if(room<0?isBlocked(x+dx*i/8,y+dy*i/8,2):isRoomBlocked(x+dx*i/8,y+dy*i/8))return false;
           return true;
         }).sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y));
       if(!candidates.length)return null;
       const hit=candidates[0],e=hit.e,dx=hit.x-x,dy=hit.y-y,d=Math.hypot(dx,dy);
-      e.kickStun=e.kind===2?1.5:e.kind===1?1.1:.9;
+      e.kickStun=(e.kind===2?1.5:e.kind===1?1.1:.9)*stunScale;
       e.kickFlight=e.kind===2?0:.3;e.kickRemaining=e.kind===1?105:e.kind===0?70:0;
       e.kickX=d>1?dx/d:Math.sin(angle);e.kickY=d>1?dy/d:-Math.cos(angle);
       e.destination=null;e.roomDestination=null;e.speed=0;e.behavior='stunned';
@@ -111,7 +115,7 @@
       let strongest=0;
       for(const sound of sounds){
         if(!sound||(sound.room??-1)!==room||!Number.isFinite(sound.radius)||sound.radius<=0)continue;
-        const radius=sound.radius*TYPES[entity.kind].reach/240*.85;
+        const radius=sound.radius*TYPES[entity.kind].reach/240*1.1;
         const strength=1-distance(position,sound)/radius;
         if(strength>strongest){
           strongest=strength;entity.heard={x:sound.x,y:sound.y};entity.heardRoom=room;entity.alert=HEARING_MEMORY;
@@ -119,7 +123,7 @@
         }
       }
       // Sight is deliberately short: silent players can evade a distant hunter.
-      if(visibleTarget&&distance(position,visibleTarget)<(room<0?55:30)&&
+      if(visibleTarget&&distance(position,visibleTarget)<(room<0?95:45)&&
         (room>=0||!isBlocked((position.x+visibleTarget.x)/2,(position.y+visibleTarget.y)/2,2))){
         entity.pursuingPlayer=true;entity.behavior='chase';return visibleTarget;
       }
@@ -129,7 +133,7 @@
     }
     function add(target,nightOnly=false,forcedHome){
       if(entities.length>=NIGHT_COUNT)return null;
-      const position=dispersedPoint(target,nightOnly&&serial%3===0);
+      const position=dispersedPoint(target,night?nightOnly&&serial%3===0:serial%3!==2);
       const homes=nearHomes(position||target);if(!homes.length)return null;
       const home=forcedHome??homes[Math.floor(random()*homes.length)].index;
       // One roll per creature, never a per-frame roll that eventually becomes inevitable.
@@ -138,15 +142,13 @@
         heard:null,heardRoom:-1,heardPlayer:false,pursuingPlayer:false,alert:0,behavior:'wander',spawnAge:0,attackCooldown:0,
         roomX:90+random()*280,roomY:125+random()*125,roomPhase:0,roomAngle:Math.PI,roomDestination:null};
       entities.push(entity);
-      if(night||entity.sunRunner){if(position)Object.assign(entity,position);else shelter(entity);}
-      else if(entity.id%3===0){const p=shadePoint(home);if(p)Object.assign(entity,p);else shelter(entity);}
-      else shelter(entity);
+      if(position)Object.assign(entity,position);else shelter(entity);
       return entity;
     }
     function reset(light,target){
       entities=[];roomResidents.clear();serial=0;spawnClock=0;spawnInterval=SPAWN_START_INTERVAL;glitch=0;shadeClock=0;
-      night=light.daylight<.28;regions=night?[]:getShadows(light);initialized=true;
-      for(let i=0;i<DAY_COUNT;i++)add(target);
+      night=light.daylight<.28;regions=[];shadeLight=light;initialized=true;
+      for(let i=0;i<(night?3:4);i++)add(target);
     }
     function move(entity,dx,dy,dayRestricted){
       const size=getSize();let x=Math.max(8,Math.min(size.w-8,entity.x+dx)),y=Math.max(8,Math.min(size.h-8,entity.y+dy));
@@ -202,10 +204,12 @@
     }
     function herdTowardBrute(entity,interest,positions,room){
       if(entity.kind!==1||!interest||!entity.pursuingPlayer)return null;
-      const origin=positions.get(entity),brute=entities.filter(other=>other.kind===2&&!other.indoors&&!other.retired)
-        .map(other=>({entity:other,position:positions.get(other)}))
-        .filter(other=>distance(other.position,interest)<250)
-        .sort((a,b)=>distance(a.position,interest)-distance(b.position,interest))[0];
+      const origin=positions.get(entity);let brute=null,best=250*250;
+      for(const other of entities){
+        if(other.kind!==2||other.indoors||other.retired)continue;
+        const position=positions.get(other),d=(position.x-interest.x)**2+(position.y-interest.y)**2;
+        if(d<best){best=d;brute={position};}
+      }
       if(!brute)return null;
       const bx=interest.x-brute.position.x,by=interest.y-brute.position.y,len=Math.hypot(bx,by)||1;
       const side=entity.id%2?1:-1,offset=side*26;
@@ -217,24 +221,34 @@
     function update(dt,{light,target,room=-1,roomTarget=null,moveRoom=null,sounds=[],repellents=[]}){
       if(!initialized)reset(light,target);
       if(!Number.isFinite(dt)||dt<=0)return;
-      dt=Math.min(.1,dt);shadeClock-=dt;
+      dt=Math.min(.1,dt);shadeClock-=dt;shadeLight=light;
       const nextNight=night?light.daylight<.45:light.daylight<.28;
       if(nextNight!==night){
         night=nextNight;
         spawnClock=0;spawnInterval=SPAWN_START_INTERVAL;
         shadeClock=0;
-        if(night)for(const entity of entities){
+        if(!night)entities=entities.slice(0,DAY_COUNT);
+        for(const entity of entities){
           if(entity.indoors){const p=door(entity.home);if(!isBlocked(p.x,p.y,5)){Object.assign(entity,p);entity.indoors=false;}}
           entity.destination=null;
         }
       }
-      // Night creatures do not use shadow polygons; avoid rebuilding them then.
-      if(!night&&shadeClock<=0){regions=getShadows(light);shadeClock=.35;}
+      // Creatures no longer flee sunlight; shadow polygons are built on demand.
       const populationLimit=night?populationForLight(light):DAY_COUNT;
-      if(night&&entities.length<populationLimit){
+      const interval=night?spawnInterval:12;
+      // Reuse far-away daytime population slots so a larger city still has encounters.
+      if(!night&&room<0&&entities.length>=populationLimit){
         spawnClock+=dt;
-        if(spawnClock+1e-8>=spawnInterval){
-          const spawned=add(target,true);spawnClock=Math.max(0,spawnClock-spawnInterval);
+        if(spawnClock+1e-8>=interval){
+          const far=entities.findIndex(e=>!e.indoors&&distance(e,target)>1800);
+          if(far>=0){const previous=entities.splice(far,1)[0];if(!add(target,false))entities.push(previous);}
+          spawnClock=0;
+        }
+      }else
+      if(entities.length<populationLimit){
+        spawnClock+=dt;
+        if(spawnClock+1e-8>=interval){
+          const spawned=add(target,night);spawnClock=Math.max(0,spawnClock-interval);
           if(spawned)spawnInterval=Math.max(SPAWN_MIN_INTERVAL,spawnInterval-SPAWN_INTERVAL_STEP);
         }
       }else spawnClock=0;
@@ -249,21 +263,13 @@
         entity.attackCooldown=Math.max(0,(entity.attackCooldown||0)-dt);
         entity.alert=Math.max(0,entity.alert-dt);
         if(entity.alert<=1e-8){entity.alert=0;entity.heard=null;}
-        const type=TYPES[entity.kind],restricted=!night&&!entity.sunRunner;
-        if(!night&&entity.nightOnly&&!entity.sunRunner){shelter(entity);entity.retired=true;continue;}
+        const type=TYPES[entity.kind],restricted=false;
+
         const inRoom=entity.indoors&&entity.home===room&&roomTarget&&moveRoom;
         const interest=entity.indoors
           ?(inRoom?investigate(entity,{x:entity.roomX,y:entity.roomY},room,sounds,roomTarget):null)
           :investigate(entity,entity,-1,sounds,room<0?target:null);
-        // The first outdoor daytime pursuit starts an irreversible countdown.
-        // Wandering or investigating an unattended engine never starts it.
-        if(entity.sunAge!==null||(!night&&entity.sunRunner&&!entity.indoors&&entity.pursuingPlayer)){
-          entity.sunAge=(entity.sunAge??0)+dt;
-          if(entity.sunAge>=SUN_LIFETIME-1e-8){entity.retired=true;continue;}
-        }
-        // Average exposure over the frame keeps the gradual slowdown consistent
-        // at different refresh rates, reaching 15% speed just before dissolution.
-        const sunSpeed=1-.85*Math.min(1,Math.max(0,(entity.sunAge??0)-dt*.5)/SUN_LIFETIME);
+        const sunSpeed=1;
         if(entity.kickStun>0){
           entity.kickStun=Math.max(0,entity.kickStun-dt);entity.behavior='stunned';entity.speed=0;
           if(entity.kickFlight>0){
@@ -284,7 +290,7 @@
             const to=interest||entity.roomDestination;
             const dx=to.x-entity.roomX,dy=to.y-entity.roomY,len=Math.hypot(dx,dy)||1;
             const pursuing=!restricted&&(night?!!interest:entity.pursuingPlayer);
-            const speed=(pursuing?(!night&&entity.sunRunner?type.runSpeed:type.nightSpeed):type.daySpeed)*sunSpeed;
+            const speed=(pursuing?(night?type.nightSpeed:type.nightSpeed*.8):type.daySpeed)*sunSpeed;
             const local={x:entity.roomX,y:entity.roomY};
             moveRoom(local,dx/len*Math.min(len,speed*dt),dy/len*Math.min(len,speed*dt),4);
             const travel=Math.hypot(local.x-entity.roomX,local.y-entity.roomY);
@@ -314,7 +320,7 @@
         const to=herdTowardBrute(entity,interest,positions,room)||encircle(entity,interest,positions,room)||
           ambush(entity,interest,visibleTarget,positions,room)||interest||entity.destination;
         const pursuing=!restricted&&(night?chasing:entity.pursuingPlayer);
-        const speed=(pursuing?(!night&&entity.sunRunner?type.runSpeed:type.nightSpeed):type.daySpeed)*sunSpeed;
+        const speed=(pursuing?(night?type.nightSpeed:type.nightSpeed*.65):type.daySpeed)*sunSpeed;
         entity.speed=0;
         if(to){
           const dx=to.x-entity.x,dy=to.y-entity.y,len=Math.hypot(dx,dy);

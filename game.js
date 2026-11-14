@@ -367,9 +367,21 @@
   const objectiveNode = document.querySelector('#objective');
   const objectiveIndex = document.querySelector('#objective-index');
   const keys = new Set();
-  const characterHealth=CharacterHealth.create({onNotice:message=>setToast(message)});
-  const healthPanel=createCharacterHealthPanel({container:canvas.parentElement,model:characterHealth,
-    onOpen:()=>{keys.clear();bikeInspectOpen=false;bikeService=null;},onClose:()=>keys.clear()});
+  const upgrades={fuel:0,armor:0,health:0,kick:0};
+  const characterHealth=(()=>{
+    let hp=100;const items={bandages:6};
+    const max=()=>100+upgrades.health*25;
+    return {items,reset(){hp=100;items.bandages=6;},
+      status(){return {health:hp,maxHealth:max(),critical:hp<=0,bleeding:0,movement:1,sprint:1,handling:1,dexterity:1,focus:1,metabolism:1};},
+      damage(amount){hp=Math.max(0,hp-amount);},
+      injure(part,type,severity=1){hp=Math.max(0,hp-({fracture:20,deep:18,cut:12,bruise:9,scratch:6}[type]||10)*severity);},
+      update(dt,{hunger,thirst}){if(hunger<=0||thirst<=0)hp=Math.max(0,hp-dt*.8);},
+      stabilize(){hp=max()*.6;},restock(){items.bandages+=3;hp=Math.min(max(),hp+35);},
+      quickBandage(){if(items.bandages>0&&hp<max()){items.bandages--;hp=Math.min(max(),hp+30);}},
+      boost(){hp=Math.min(max(),hp+25);}
+    };
+  })();
+  const healthPanel={open:false,setOpen(){},key(){return false;},update(){}};
   let creatureHitCooldown=0,creatureBikeCooldown=0,playerKnockdown=0,knockdownAngle=0;
   function characterMoving(){
     if(state==='drive'&&mounted)return Math.abs(bike.speed)>2;
@@ -392,20 +404,22 @@
       characterHealth.update(dt,{moving:characterMoving(),running:keys.has('shift'),hunger,thirst});
       const condition=characterHealth.status();
       player.hp=explorer.hp=condition.critical?0:Math.max(1,Math.ceil(condition.health/34));
-      if(condition.critical&&!checkpointReturn){
-        healthPanel.setOpen(false);characterHealth.stabilize();
-        const actor=state==='explore'?explorer:state==='climb'||state==='hack'?climber:player;
-        beginCheckpointReturn(actor,()=>{
-          state='drive';mounted=false;bike.speed=0;player.x=bike.x+20;player.y=bike.y+20;player.gait=null;
-          camera.x=player.x;camera.y=player.y;keys.clear();creatureHitCooldown=5;
-          setToast('VOCÊ RECUOU À MOTO — ESTABILIZADO, MAS AINDA PRECISA SE CUIDAR.');return player;
-        });
+      if(condition.critical){
+        state='title';mounted=false;bike.speed=0;bikeEngineRunning=false;bikeRpm=0;
+        keys.clear();stopBikeDrag();ignition.reset();healthPanel.setOpen(false);
+        bikeInspectOpen=false;bikeService=null;shelterLife.cancel();shelterView=null;
+        balanceEvent=null;checkpointReturn=null;playerKnockdown=0;flash=0;
+        titleScreen.classList.remove('dismissed');
+        document.querySelector('#start-game').textContent='JOGAR NOVAMENTE';
+        setObjective('Voce morreu. Inicie uma nova partida para tentar novamente.');
+        setToast('VOCE MORREU - ENTER OU JOGAR NOVAMENTE',5);
+        return;
       }
     }
     healthPanel.update(dt,{available:active&&['drive','explore','climb'].includes(state)&&!ignition.active,moving:active&&characterMoving()});
   }
-  const world = { w: 5600, h: 3600 };
-  const towers = [];
+  const world = { w: 12800, h: 4800 };
+  const towers = Array.from({length:5},(_,i)=>({x:0,y:0,disabled:false,design:i,pace:0,phase:0,name:`COMPUTADOR 0${i+1}`}));
   let roads = [
     [0, 1450], [260, 1450], [440, 1120], [570, 570], [650, 460],
     [940, 520], [1240, 800], [1460, 1130], [1830, 1290], [2160, 870],
@@ -423,8 +437,10 @@
     [390, 1480, 68, 54], [730, 1250, 76, 62], [1530, 1560, 90, 73], [2170, 180, 72, 58]
   ];
   const fenceHitboxes = [];
+  let collisionGrid=null;
   let fenceSegments = [[60, 635, 130, 0], [1030, 360, 100, Math.PI / 2], [1390, 900, 160, 0]];
   function rebuildFenceHitboxes() {
+    collisionGrid=null;
     fenceHitboxes.length = 0;
     fenceSegments.forEach(([fx, fy, length, angle]) => {
     const addRect = (x,y,w,h) => fenceHitboxes.push([fx,fy,x,y,w,h,angle]);
@@ -482,6 +498,13 @@
   ];
   let hazardCooldown = 0;
   let fuel = 68, hunger = 100, thirst = 100, exploreBuilding = -1;
+  const toolboxes=[100];
+  function addToolbox(){toolboxes.push(100);repairKits=toolboxes.length;}
+  function spendTools(){
+    if(!toolboxes.length)return 0;
+    const cost=Math.min(toolboxes[0],1+Math.floor(Math.random()*10));
+    toolboxes[0]-=cost;if(toolboxes[0]<=0)toolboxes.shift();repairKits=toolboxes.length;return cost;
+  }
   let repairKits = 1, bikeLife = 100, bikeWearClock = 0, bikeCrashCooldown = 0, bikeParts = { motor: 100, handlebar: 100, frontTire: 100, rearTire: 100 };
   let bikeInspectOpen = false;
   let bikeDragging=false,bikeDragSpeed=0;
@@ -512,7 +535,7 @@
     ]
   };
   const bikePartNames = { motor: 'MOTOR', handlebar: 'GUIDÃO', frontTire: 'PNEU DIANTEIRO', rearTire: 'PNEU TRASEIRO' };
-  let supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .28 : Math.random() < .24 }));
+  let supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .9 : Math.random() < .85 }));
   const worldReturn = { x: 0, y: 0 };
   const explorer = { x: 240, y: 145, hp: 3, invulnerable: 0 };
   const interiorWalls = [];
@@ -541,41 +564,24 @@
     if(!['drive','explore'].includes(state)||mounted||kickCooldown>0||checkpointReturn||playerKnockdown>0||healthPanel.open||bikeInspectOpen)return;
     shelterLife.cancel();shelterView=null;stopBikeDrag();
     const actor=state==='explore'?explorer:player;
-    const hit=mossEcology.kick({x:actor.x,y:actor.y,angle:actor.angle,room:state==='explore'?exploreBuilding:-1,
+    const hit=mossEcology.kick({x:actor.x,y:actor.y,angle:actor.angle,room:state==='explore'?exploreBuilding:-1,range:34+upgrades.kick*12,stunScale:1+upgrades.kick*.5,
       isRoomBlocked:(x,y)=>interiorWalls.some(w=>x>=w.x&&x<=w.x+w.w&&y>=w.y&&y<=w.y+w.h)});
     kickCooldown=1.7;kickVisual=.25;
     if(hit)setToast(hit.kind===2?'BRUTAMONTES ATORDOADO — CORRA!':hit.kind===1?'RASTEJANTE ARREMESSADO!':'ENCOBERTO AFASTADO!',1.2);
   }
   const isShelter=index=>index>=0&&index!==10&&index%6===0;
   const shelterLife=ShelterSurvival.create();
-  let shelterView=null,radioRoute=-1,radioText='',radioLast=-100;
+  let shelterView=null;
   const inSafeShelter=()=>state==='explore'&&isShelter(exploreBuilding);
   function shelterKey(key){
     if(!inSafeShelter()||healthPanel.open||checkpointReturn)return false;
     if(['escape','w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','x'].includes(key)){
       shelterLife.cancel();shelterView=null;return key==='escape';
     }
-    if(!['z','t','i','o','1','2','3'].includes(key))return false;
-    if(['1','2','3'].includes(key)&&shelterView!=='craft')return false;
+    if(!['z','o'].includes(key))return false;
     shelterLife.cancel();keys.clear();explorer.gait=null;
-    if(key==='z'){shelterView=null;shelterLife.sleep();setToast('DESCANSANDO — MOVA-SE PARA ACORDAR.');}
-    if(key==='i')shelterView=shelterView==='craft'?null:'craft';
+    if(key==='z'){shelterView=null;shelterLife.sleep();setToast('DESCANSANDO - MOVA-SE PARA ACORDAR.');}
     if(key==='o')shelterView=shelterView==='observe'?null:'observe';
-    if(key==='t'){
-      shelterView='radio';
-      if(gameTime-radioLast<12){setToast('AGUARDE A PRÓXIMA TRANSMISSÃO.');return true;}
-      radioLast=gameTime;
-      const candidates=supplies.map((s,index)=>({s,index,d:distance(buildingDoor(exploreBuilding),buildingDoor(index))}))
-        .filter(p=>p.index!==exploreBuilding&&isShelter(p.index)&&p.s.available&&!p.s.found).sort((a,b)=>a.d-b.d);
-      const next=candidates[0];radioRoute=next?.index??-1;
-      const names={medical:'primeiros socorros',fuel:'combustível',water:'água',ration:'ração',can:'enlatados',toolkit:'ferramentas'};
-      radioText=next?`SETOR ${String(next.index+1).padStart(2,'0')} · ${names[next.s.type]||'suprimentos'} · ${Math.round(next.d)} m`:'SEM SUPRIMENTOS CONFIRMADOS. EXPLORE OUTROS SETORES.';
-      setToast('RÁDIO: '+radioText,5);
-    }
-    if(['1','2','3'].includes(key)){
-      const id=['flare','bait','bandage'][Number(key)-1];
-      if(!shelterLife.craft(id))setToast('MATERIAIS INSUFICIENTES — PROCURE SUPRIMENTOS.');
-    }
     return true;
   }
   function updateShelter(dt){
@@ -585,9 +591,6 @@
     const moving=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(k=>keys.has(k));
     const result=shelterLife.update(dt,{safe:safe&&!checkpointReturn,moving,running:moving&&keys.has('shift')});
     if(result==='rested')setToast('DESCANSADO — FÔLEGO E EQUILÍBRIO RECUPERADOS.');
-    else if(result==='bandage'){characterHealth.items.bandages++;setToast('BANDAGEM FABRICADA.');}
-    else if(result){survivalItems[result]++;setToast(shelterLife.recipes[result].label.toUpperCase()+' FABRICADO.');}
-    if(radioRoute>=0&&supplies[radioRoute]?.found){radioRoute=-1;radioText='DESTINO VASCULHADO — OUÇA UMA NOVA TRANSMISSÃO.';}
   }
   function drawShelter(){
     if(!['drive','explore'].includes(state))return;
@@ -598,29 +601,22 @@
     }
     if(inSafeShelter()){
       if(!shelterView&&!shelterLife.activity&&!hudDetails){
-        ctx.fillStyle='#bdd8c8';ctx.fillText('ABRIGO · Z DORMIR · T RÁDIO · I ITENS · O OLHAR',12,H-30);ctx.restore();return;
+        ctx.fillStyle='#bdd8c8';ctx.fillText('ABRIGO - E NA CAMA PARA DORMIR',12,H-30);ctx.restore();return;
       }
       const y=H-119;
       panel(8,y,Math.min(W-16,390),77,'#0c1b21f2','#78ad93');ctx.fillStyle='#d8e9d9';
-      ctx.fillText('ABRIGO · Z DORMIR · T RÁDIO · I FABRICAR · O OBSERVAR',16,y+13);
+      ctx.fillText('ABRIGO - E NA CAMA PARA DORMIR',16,y+13);
       const job=shelterLife.activity;
       if(job?.kind==='sleep'){
         ctx.fillText('DORMINDO · O TEMPO CONTINUA · MOVA-SE PARA ACORDAR',16,y+29);
         ctx.fillStyle='#73dca7';ctx.fillRect(16,y+40,(1-shelterLife.fatigue/100)*250,5);
-      }else if(shelterView==='craft'){
-        ctx.fillText(`MOCHILA · SUCATA ${shelterLife.materials.scrap} · TECIDO ${shelterLife.materials.cloth}`,16,y+26);
-        ctx.fillText('1 SINAL: 3 SUCATA + 1 TECIDO · 2 ISCA: 2 SUCATA',16,y+39);
-        ctx.fillText('3 BANDAGEM: 2 TECIDOS · ESC FECHA',16,y+52);
-        if(job)ctx.fillText(`FABRICANDO ${Math.floor(job.elapsed/job.duration*100)}% · MOVER CANCELA`,16,y+66);
-      }else if(shelterView==='radio'){
-        ctx.fillText(radioText,16,y+30);ctx.fillText('ANOTE O SETOR E A DISTÂNCIA · ESC FECHA',16,y+47);
       }else if(shelterView==='observe'){
         const door=buildingDoor(exploreBuilding),near=mossEcology.entities.filter(c=>!c.indoors&&distance(c,door)<300);
         ctx.fillText(`PELA FRESTA · ${near.length} CRIATURA(S) A ATÉ 300 m`,16,y+30);
         ctx.fillText('O OU ESC VOLTA · MOVIMENTO NA RUA CONTINUA',16,y+46);
       }else{
         ctx.fillText('DESCANSE, PREPARE ITENS E ESCOLHA A PRÓXIMA ROTA.',16,y+30);
-        ctx.fillText('VASCULHAR SUPRIMENTOS RENDE SUCATA E TECIDO.',16,y+47);
+        ctx.fillText('PROCURE COMIDA, AGUA E FERRAMENTAS NAS CASAS.',16,y+47);
       }
     }
     ctx.restore();
@@ -779,21 +775,29 @@
       { q: 'Qual serviço entrega IP aos aparelhos?', a: ['DHCP', 'HDMI', 'BIOS'], ok: 0 }
     ],
     [
-      { q: 'Qual protocolo aprende rotas entre redes?', a: ['BGP', 'USB', 'JPEG'], ok: 0 },
+      { q: 'O que significa LAN?', a: ['Rede local', 'Monitor', 'Teclado'], ok: 0 },
       { q: 'O que faz a máscara de sub-rede?', a: ['Define a parte de rede do IP', 'Criptografa o monitor', 'Aumenta o sinal Wi-Fi'], ok: 0 },
       { q: 'Qual endereço identifica uma rede local privada?', a: ['192.168.1.10', '8.8.8.8', '1.1.1.1'], ok: 0 }
     ],
     [
-      { q: 'Qual protocolo evita loops em switches?', a: ['STP', 'FTP', 'NTP'], ok: 0 },
+      { q: 'Qual tecnologia conecta sem cabos?', a: ['Wi-Fi', 'HDMI', 'USB'], ok: 0 },
       { q: 'O que é o gateway padrão?', a: ['Rota de saída para outras redes', 'Senha do Wi-Fi', 'Cabo de fibra'], ok: 0 },
-      { q: 'Qual equipamento encaminha quadros pela MAC?', a: ['Switch', 'Roteador de áudio', 'Modem USB'], ok: 0 }
+      { q: 'Qual serviço traduz nomes de sites em IP?', a: ['DNS', 'Teclado', 'Monitor'], ok: 0 }
     ]
   ];
+  networkQuestions.flat().forEach((question,i)=>question.a.push(['Bluetooth','Cabo de energia','Impressora','Antena de TV','Placa de som'][i%5]));
+  const upgradeOptions=['Economia: -20% de consumo de gasolina','Blindagem: +30% de resistencia da moto','Vitalidade: +25 de vida maxima','Chute: +12 de alcance e +50% de stun'];
+  function chooseUpgrade(choice){
+    upgrades[['fuel','armor','health','kick'][choice]]++;
+    if(choice===2)characterHealth.boost();
+    completeHack();
+  }
   const platforms = [
     { x: 0, w: 82, y: 245 }, { x: 80, w: 73, y: 214 }, { x: 153, w: 70, y: 183 },
     { x: 225, w: 70, y: 152 }, { x: 295, w: 72, y: 121 }, { x: 368, w: 112, y: 90 }
   ];
   const rubble = [];
+  const cityProps=[];
   let seed = 98201;
   function random() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
   for (let i = 0; i < 390; i++) {
@@ -814,13 +818,13 @@
   function generateMapLayout() {
     roads = [[180, 3300]];
     let roadY = 3300;
-    const intervals = 17, span = world.w - 360;
+    const intervals = 36, span = world.w - 360;
     for (let i = 1; i <= intervals; i++) {
       roadY = Math.max(300, Math.min(world.h - 300, roadY + (Math.random() - .5) * 930));
       roads.push([Math.round(180 + span * i / intervals), Math.round(roadY)]);
     }
     branchRoads = [];
-    const branchCount = 5 + Math.floor(Math.random() * 4);
+    const branchCount = 12 + Math.floor(Math.random() * 5);
     for (let b = 0; b < branchCount; b++) {
       const segment = 2 + Math.floor(Math.random() * (roads.length - 4));
       const [ax,ay] = roads[segment], [bx,by] = roads[segment+1];
@@ -832,7 +836,7 @@
       branchRoads.push(path);
     }
     buildings = [];
-    for (let i = 0; i < 58; i++) {
+    for (let i = 0; i < 160; i++) {
       const gasStation = i === 10;
       const w = gasStation ? 100 : 42 + Math.random() * 78;
       const h = gasStation ? 78 : 36 + Math.random() * 68;
@@ -853,7 +857,7 @@
       if (!building) building = [220 + i * 91 % (world.w - 420), 180 + i * 137 % (world.h - 360), Math.round(w), Math.round(h)];
       buildings.push(building);
     }
-    supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : Math.random() < .18 ? 'toolkit' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .28 : Math.random() < .24 }));
+    supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : Math.random() < .3 ? 'toolkit' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .9 : Math.random() < .85 }));
     seed = Math.floor(Math.random() * 4294967296);
     rubble.length = 0;
     for (let i = 0; i < 1450; i++) {
@@ -869,34 +873,55 @@
       fenceSegments.push([(ax + bx) * .5 - dy / span * 105, (ay + by) * .5 + dx / span * 105, length, angle]);
     });
     rebuildFenceHitboxes();
+    cityProps.length=0;
+    for(let i=0;i<220;i++){
+      const segment=1+Math.floor(Math.random()*(roads.length-2));
+      const [ax,ay]=roads[segment],[bx,by]=roads[segment+1],t=Math.random(),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1;
+      const side=i%2?1:-1,offset=side*(95+Math.random()*45);
+      const x=ax+dx*t-dy/len*offset,y=ay+dy*t+dx/len*offset;
+      if(x<40||y<40||x>world.w-40||y>world.h-40||worldBlocked(x,y,26))continue;
+      cityProps.push({x,y,kind:i%4,tint:i%3});
+    }
   }
 
   function active() { return towers.find(t => !t.disabled) || null; }
   function updateMachines(time) {
-    for (const t of towers) {
-      if (t.disabled) continue;
-      const phase = time * t.pace + t.phase;
-      const sway = Math.sin(phase * .57 + .6) * t.rangeY * .22;
-      if (t.design === 0) { t.x = t.baseX + Math.sin(phase) * t.rangeX + Math.sin(phase * .43) * 24; t.y = t.baseY + Math.sin(phase * .5) * t.rangeY + sway; }
-      else if (t.design === 1) { t.x = t.baseX + Math.cos(phase) * t.rangeX + Math.sin(phase * .38) * 30; t.y = t.baseY + Math.sin(phase) * t.rangeY + sway; }
-      else if (t.design === 2) { t.x = t.baseX + Math.sin(phase) * t.rangeX + Math.sin(phase * 2) * t.rangeY + sway; }
-      else if (t.design === 3) { t.x = t.baseX + Math.sin(phase * 1.7) * t.rangeX + Math.sin(phase * .6) * 25; t.y = t.baseY + Math.cos(phase * 1.35) * t.rangeY + sway * 1.8; }
-      else { t.x = t.baseX + Math.sin(phase * .46) * t.rangeX; t.y = t.baseY + Math.sin(phase * .92) * t.rangeY + Math.sin(phase * .23) * 17; }
-    }
+    // Network computers stay at their reachable spawn positions.
   }
   function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function nearbyCollisionCells(x,y,radius){
+    if(!collisionGrid){
+      collisionGrid=new Map();
+      function insert(rect,left,top,right,bottom){
+        for(let gx=Math.floor(left/256);gx<=Math.floor(right/256);gx++)for(let gy=Math.floor(top/256);gy<=Math.floor(bottom/256);gy++){
+          const key=gx+','+gy;let cell=collisionGrid.get(key);if(!cell){cell=[];collisionGrid.set(key,cell);}cell.push(rect);
+        }
+      }
+      for(const [x,y,w,h] of buildings)insert({x,y,left:0,top:0,right:w*1.65,bottom:h*1.65,c:1,s:0},x,y,x+w*1.65,y+h*1.65);
+      for(const [x,y,left,top,w,h,angle] of fenceHitboxes){
+        const c=Math.cos(angle),s=Math.sin(angle),right=left+w,bottom=top+h;
+        const points=[[left,top],[right,top],[right,bottom],[left,bottom]].map(([px,py])=>({x:x+px*c-py*s,y:y+px*s+py*c}));
+        insert({x,y,left,top,right,bottom,c,s},Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y)));
+      }
+    }
+    const cells=[];
+    for(let gx=Math.floor((x-radius)/256);gx<=Math.floor((x+radius)/256);gx++)for(let gy=Math.floor((y-radius)/256);gy<=Math.floor((y+radius)/256);gy++){
+      const cell=collisionGrid.get(gx+','+gy);if(cell)cells.push(cell);
+    }
+    return cells;
+  }
+  function obstacleDistanceSquared(rect,x,y){
+    const dx=x-rect.x,dy=y-rect.y,lx=dx*rect.c+dy*rect.s,ly=-dx*rect.s+dy*rect.c;
+    return (lx-Math.max(rect.left,Math.min(lx,rect.right)))**2+(ly-Math.max(rect.top,Math.min(ly,rect.bottom)))**2;
+  }
   function worldBlocked(x, y, radius) {
-    for (const [bx, by, bw, bh] of buildings) {
-      const left = bx, top = by, right = bx + bw * 1.65, bottom = by + bh * 1.65;
-      const nearestX = Math.max(left, Math.min(x, right)), nearestY = Math.max(top, Math.min(y, bottom));
-      if ((x - nearestX) ** 2 + (y - nearestY) ** 2 < radius * radius) return true;
-    }
-    for (const [fx,fy,rx,ry,rw,rh,angle] of fenceHitboxes) {
-      const dx=x-fx,dy=y-fy,localX=dx*Math.cos(angle)+dy*Math.sin(angle),localY=-dx*Math.sin(angle)+dy*Math.cos(angle);
-      const nearestX=Math.max(rx,Math.min(localX,rx+rw)),nearestY=Math.max(ry,Math.min(localY,ry+rh));
-      if ((localX-nearestX)**2+(localY-nearestY)**2<radius*radius) return true;
-    }
+    for(const cell of nearbyCollisionCells(x,y,radius))for(const rect of cell)if(obstacleDistanceSquared(rect,x,y)<radius*radius)return true;
     return false;
+  }
+  function obstacleClearance(x,y,radius){
+    let nearest=120+radius;
+    for(const cell of nearbyCollisionCells(x,y,nearest))for(const rect of cell)nearest=Math.min(nearest,Math.sqrt(obstacleDistanceSquared(rect,x,y)));
+    return Math.max(0,nearest-radius);
   }
   function nearbyBuilding(x, y) {
     return buildings.findIndex(([bx, by, bw, bh]) => x > bx - 24 && x < bx + bw * 1.65 + 24 && y > by - 24 && y < by + bh * 1.65 + 24);
@@ -967,15 +992,20 @@
       return {x:targetX,y:roads[Math.floor(roads.length/2)][1],nx:0,ny:1};
     }
     towers.forEach((tower, i) => {
-      const anchor = [1000,2100,3200,4300,5400][i], roadAnchor=sampleRoadAtX(anchor);
+      const anchor = [1600,4100,6600,9100,11600][i], roadAnchor=sampleRoadAtX(anchor);
       let point = null;
       for (let attempt = 0; attempt < 180 && !point; attempt++) {
         const candidate = { x: anchor, y: Math.max(120, Math.min(world.h - 120, roadAnchor.y + (Math.random() - .5) * 180)) };
-        if (distance(candidate, bike) < 650 || placed.some(p => distance(candidate, p) < 850) || worldBlocked(candidate.x, candidate.y, 48)) continue;
+        if (distance(candidate, bike) < 1000 || placed.some(p => distance(candidate, p) < 2300) || worldBlocked(candidate.x, candidate.y, 48)) continue;
         point = candidate;
       }
       if (!point) {
-        point = { x: roadAnchor.x, y: roadAnchor.y };
+        // A blocked road must never place a computer inside a building.
+        for(let offset=0;offset<world.h&&!point;offset+=48)for(const side of [1,-1]){
+          const candidate={x:anchor,y:roadAnchor.y+offset*side};
+          if(candidate.y>=120&&candidate.y<=world.h-120&&!worldBlocked(candidate.x,candidate.y,48)){point=candidate;break;}
+        }
+        if(!point)point={x:roadAnchor.x,y:120};
       }
       tower.baseX = tower.x = point.x; tower.baseY = tower.y = point.y;
       tower.rangeX = tower.design === 3 ? 72 + Math.random() * 26 : tower.design === 4 ? 32 + Math.random() * 20 : 28 + Math.random() * 30;
@@ -1012,13 +1042,14 @@
   function updateObjective() {
     if (state === 'explore') setObjective('Procure recursos nas construções e volte ao abrigo antes da noite.');
     else if (state === 'ending') setObjective('Você sobreviveu. Continue explorando este mundo abandonado.');
-    else if (mounted) setObjective('Atravesse a cidade, procure suprimentos e cuide da moto.');
+    else if(active()) setObjective(`Siga o sinal até o ${active().name}. A pé, pressione E e responda 3 perguntas. (${network}/5)`);
     else setObjective('Sobreviva à noite: encontre abrigo, água e comida.');
   }
   function startGame() {
+    Object.keys(upgrades).forEach(key=>upgrades[key]=0);
     kickCooldown=0;kickVisual=0;
     hudDetails=false;
-    shelterLife.reset();shelterView=null;radioRoute=-1;radioText='';radioLast=-100;
+    shelterLife.reset();shelterView=null;
     survivalItems={flare:3,bait:4};survivalEffects=[];balanceEvent=null;escapeCooldown=0;
     stopBikeDrag();
     buildingOpacities.clear();
@@ -1035,17 +1066,17 @@
     mounted = false; approachedByBike = false; totalRide = 0; fuel = 68; hunger = 100; thirst = 100;
     bikeFuelStains.length=0;bikeFuelDripClock=0;
     player.x=bike.x+Math.cos(bike.angle)*19;player.y=bike.y+Math.sin(bike.angle)*19;
-    repairKits = 1; bikeLife = 100; bikeWearClock = 0; bikeCrashCooldown = 0; Object.keys(bikeParts).forEach(part => bikeParts[part] = 100);
+    toolboxes.splice(0,toolboxes.length,100);repairKits = 1; bikeLife = 100; bikeWearClock = 0; bikeCrashCooldown = 0; Object.keys(bikeParts).forEach(part => bikeParts[part] = 100);
     bikeInspectOpen = false;
     bikeService = null; Object.values(bikeFaults).forEach(faults => faults.fill(100));
     generateMapLayout(); camera.x = player.x; camera.y = player.y;
     mossEcology.reset(worldLighting(0),player);
-    supplies.forEach(s => { s.found = false; s.available = Math.random() < (s.type === 'fuel' ? .28 : s.type==='medical' ? .55 : .24); });
+    supplies.forEach(s => { s.found = false; s.available = Math.random() < (s.type === 'fuel' ? .9 : .85); });
     supplies.forEach((s,i)=>{if(isShelter(i)){s.type='medical';s.available=true;}});
     towers.forEach(t => t.disabled = false);
     randomizeTowerSpawns();
     titleScreen.classList.add('dismissed'); keys.clear(); updateObjective();
-    setToast('F PARA SUBIR NA MOTO E DAR A PARTIDA');
+    setToast('WASD MOVE - E INTERAGE - F MONTA - ESPACO CHUTA - J CURA');
   }
   document.querySelector('#start-game').addEventListener('click', startGame);
 
@@ -1053,6 +1084,7 @@
     player.gait=null;
     bike.steering=0;bike.bank=0;
     mounted = false;
+    bikeEngineRunning=false;bikeRpm=0;
     approachedByBike = false;
     player.x = bike.x + Math.cos(bike.angle) * 19;
     player.y = bike.y + Math.sin(bike.angle) * 19;
@@ -1067,10 +1099,12 @@
     mounted = true; player.x = bike.x; player.y = bike.y; player.angle = bike.angle;
     player.gait=null;
     keys.clear();
-    if(!bikeEngineRunning) {
-      ignition.open();setObjective('Encaixe a chave e gire para ligar a moto.',activeTower);
+    bikeHeadlightOn=true;
+    if(!bikeEngineRunning){
+      ignition.open();
+      setObjective('Arraste a chave até a fechadura e gire para a direita para ligar a moto.');
       toastTimer=0;toast.classList.remove('visible');
-    } else {setToast('MOTOR JÁ LIGADO — BOA VIAGEM!');updateObjective();}
+    }else updateObjective();
   }
   function switchOffBike() {
     if(state!=='drive'||(!mounted&&distance(player,bike)>43))return;
@@ -1153,6 +1187,8 @@
     if (state === 'grapple') { attemptGrapple(); return; }
     if (state === 'drive') {
       if (mounted) { dismount(); return; }
+      const terminal = active();
+      if(terminal && distance(player,terminal)<65){state='hack';hackStep=0;hackTime=90;hackMode='question';keys.clear();bikeInspectOpen=false;setToast(terminal.name+' — RESPONDA AS 3 PERGUNTAS');return;}
       const building = nearbyEntrance(player.x, player.y);
       const bikeDistance=distance(player,bike),doorDistance=building>=0?distance(player,buildingDoor(building)):Infinity;
       const chooseDoor=building>=0&&(bikeDistance>=43||doorFacesPriority(player,building,43));
@@ -1188,8 +1224,9 @@
     const tower = active();
     tower.disabled = true; network++; activeTower = towers.findIndex(t => !t.disabled); approachedByBike = false;
     flash = 1; state = active() ? 'drive' : 'ending'; mounted = false; bike.speed = 0;
-    player.x = bike.x + Math.cos(bike.angle) * 20; player.y = bike.y + Math.sin(bike.angle) * 20; player.angle = bike.angle;
-    setToast(active() ? `${tower.name} DESATIVADO — SINAL RESTAURADO` : 'REDE RESTAURADA — A HUMANIDADE VOLTOU A OUVIR', 4);
+    creatureHitCooldown=Math.max(creatureHitCooldown,4);
+    keys.clear();
+    setToast(active() ? `${tower.name} CONCLUÍDO — SINAL RESTAURADO` : 'REDE RESTAURADA — A HUMANIDADE VOLTOU A OUVIR', 4);
     if (active()) updateObjective(); else setObjective('Rede restaurada. O mundo voltou a responder.', towers.length - 1);
   }
   function beginCableChallenge() {
@@ -1206,12 +1243,13 @@
     } else { connectSelected = -1; hackTime -= 3; setToast('PORTA ERRADA — CONFIRA WAN, LAN E BACKBONE'); }
   }
   function hackInput(choice) {
-    if (state !== 'hack' || choice < 0 || choice > 2) return;
+    if (state !== 'hack' || choice < 0 || choice > 3) return;
+    if(hackMode==='upgrade'){chooseUpgrade(choice);return;}
     if (hackMode === 'question') {
       const question = networkQuestions[activeTower][hackStep];
       if (choice === question.ok) {
         hackStep++;
-        if (hackStep >= networkQuestions[activeTower].length) beginCableChallenge();
+        if (hackStep >= networkQuestions[activeTower].length) {hackMode='upgrade';keys.clear();setToast('ESCOLHA UMA MELHORIA PERMANENTE');}
         else setToast('RESPOSTA CERTA — PRÓXIMA PERGUNTA');
       } else { hackTime -= 4; setToast('RESPOSTA INCORRETA — TENTE OUTRA OPÇÃO', 1.2); }
     } else if (hackMode === 'connect') {
@@ -1236,9 +1274,9 @@
   function handleHackPointer(event) {
     if (state !== 'hack') return;
     const {x,y}=bikeCanvasPointer(event);
-    if (hackMode === 'question') {
-      const choice = Math.floor((y - 108) / 32);
-      if (x >= 100 && x <= 380 && choice >= 0 && choice < 3) hackInput(choice);
+    if (hackMode === 'question'||hackMode==='upgrade') {
+      const choice = Math.floor((y - 108) / 27);
+      if (x >= 107 && x <= 373 && y<213 && choice >= 0 && choice < 4) hackInput(choice);
     } else if (hackMode === 'connect') {
       const row = Math.round((y - 125) / 35);
       if (row < 0 || row > 2) return;
@@ -1260,7 +1298,6 @@
     if(balanceEvent&&key===' '){e.preventDefault();if(!e.repeat)attemptBalance();return;}
     if(['v','b','j','x'].includes(key)&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();survivalUse(key);return;}
     if(bikeDragging&&['e','f','h','r','escape'].includes(key))stopBikeDrag();
-    if(key==='h'&&['drive','explore','climb'].includes(state)&&!e.repeat){e.preventDefault();healthPanel.setOpen(!healthPanel.open);return;}
     if(healthPanel.key(key)){e.preventDefault();return;}
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
     if (bikeInspectOpen && key !== 'f' && key !== 'g' && (key !== 'e' || bikeService)) {
@@ -1284,17 +1321,15 @@
     if(playerKnockdown>0){e.preventDefault();return;}
     if(key===' '&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();kickCreature();return;}
     if(key==='g'&&!e.repeat){e.preventDefault();startBikeDrag();return;}
+    if(bikeControlsMounted()&&['q','e'].includes(key)){e.preventDefault();if(!e.repeat)shiftBikeGear(key==='e'?1:-1);return;}
     if(key==='f'&&state==='drive'&&!e.repeat){bikeInspectOpen=false;bikeService=null;if(mounted)dismount();else mount();return;}
-    if(key==='c'&&state==='drive'&&(mounted||distance(player,bike)<=43)&&!e.repeat){bikeHeadlightOn=!bikeHeadlightOn;setToast(bikeHeadlightOn?'FAROL LIGADO':'FAROL DESLIGADO');return;}
-    if(key==='r'&&state==='drive'&&(mounted||distance(player,bike)<=43)&&!e.repeat){switchOffBike();return;}
-    if(bikeControlsMounted()&&['e','q'].includes(key)){e.preventDefault();if(!e.repeat)shiftBikeGear(key==='e'?1:-1);return;}
     if (state === 'drive' && !mounted && key === 'e' && !e.repeat && (bikeInspectOpen || distance(player,bike)<=43) && !doorFacesPriority(player,nearbyEntrance(player.x,player.y),43)) {
       if (distance(player,bike) <= 43) { bikeInspectOpen = !bikeInspectOpen; keys.clear(); bikeInspectTab = 'Info'; bikeService = null; }
       else setToast('CHEGUE PERTO DA MOTO PARA INSPECIONÁ-LA.');
       return;
     }
     if (state === 'hack') {
-      if (['1','2','3'].includes(key) && !e.repeat) hackInput(Number(key) - 1);
+      if (['1','2','3','4'].includes(key) && !e.repeat) hackInput(Number(key) - 1);
       return;
     }
     if (state === 'explore' && key === 'e' && !e.repeat) { interact(); return; }
@@ -1388,9 +1423,34 @@
       shape.base.every(p=>p.y < -64)||shape.roof.every(p=>p.y>H+128)
     );
   }
+  const urbanSpriteCache=new Map();
+  let urbanSpriteBytes=0;
+  const URBAN_SPRITE_BUDGET=24*1024*1024;
+  function drawUrbanBuildingSprite(shape,index){
+    const key=index+':'+shape.w+':'+shape.h+':'+shape.lift+':'+RENDER_SCALE;
+    let sprite=urbanSpriteCache.get(key);
+    if(!sprite){
+      const origin=shape.base[0],pad=40+Math.ceil(Math.max(shape.w,shape.h)*.3);
+      const points=shape.base.concat(shape.roof);
+      const left=Math.floor(Math.min(...points.map(p=>p.x-origin.x))-pad);
+      const top=Math.floor(Math.min(...points.map(p=>p.y-origin.y))-pad);
+      const width=Math.ceil(Math.max(...points.map(p=>p.x-origin.x))-left+pad);
+      const height=Math.ceil(Math.max(...points.map(p=>p.y-origin.y))-top+pad);
+      const layer=document.createElement('canvas');layer.width=Math.ceil(width*RENDER_SCALE);layer.height=Math.ceil(height*RENDER_SCALE);
+      const painter=layer.getContext('2d');painter.scale(RENDER_SCALE,RENDER_SCALE);painter.imageSmoothingEnabled=false;
+      const local=p=>({x:p.x-origin.x-left,y:p.y-origin.y-top});
+      UrbanStructures.draw(painter,{...shape,base:shape.base.map(local),roof:shape.roof.map(local)},index);
+      sprite={layer,left,top,width:layer.width/RENDER_SCALE,height:layer.height/RENDER_SCALE,bytes:layer.width*layer.height*4};
+      while(urbanSpriteCache.size&&urbanSpriteBytes+sprite.bytes>URBAN_SPRITE_BUDGET){
+        const oldest=urbanSpriteCache.keys().next().value;urbanSpriteBytes-=urbanSpriteCache.get(oldest).bytes;urbanSpriteCache.delete(oldest);
+      }
+      urbanSpriteCache.set(key,sprite);urbanSpriteBytes+=sprite.bytes;
+    }else{urbanSpriteCache.delete(key);urbanSpriteCache.set(key,sprite);}
+    ctx.drawImage(sprite.layer,shape.base[0].x+sprite.left,shape.base[0].y+sprite.top,sprite.width,sprite.height);
+  }
   function drawIsoBuilding(x, y, width, height, index, time, geometry, opacity=1) {
     if(index!==10){
-      ctx.save();ctx.globalAlpha*=opacity;UrbanStructures.draw(ctx,geometry||isoBuildingGeometry(x,y,width,height,index),index);ctx.restore();return;
+      ctx.save();ctx.globalAlpha*=opacity;drawUrbanBuildingSprite(geometry||isoBuildingGeometry(x,y,width,height,index),index);ctx.restore();return;
     }
     ctx.save();ctx.globalAlpha*=opacity;
     const buildingAlpha=ctx.globalAlpha;
@@ -1633,13 +1693,42 @@
     ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.filter='none';
     ctx.drawImage(layer,left,top);ctx.restore();
   }
+  function drawCityProp(prop,p){
+    ctx.save();ctx.translate(p.x,p.y);
+    ctx.fillStyle='#080f1380';ctx.beginPath();ctx.ellipse(0,3,prop.kind===0?30:14,7,0,0,Math.PI*2);ctx.fill();
+    if(prop.kind===0){
+      // Abandoned car with broken windows and flat tires.
+      ctx.fillStyle='#101619';ctx.fillRect(-23,-1,10,7);ctx.fillRect(15,-1,10,7);
+      ctx.fillStyle=['#6c5148','#4d6260','#6c694f'][prop.tint];ctx.fillRect(-29,-13,58,15);ctx.fillRect(-15,-23,32,13);
+      ctx.fillStyle='#1b343c';ctx.fillRect(-12,-21,12,9);ctx.fillRect(3,-21,11,9);
+      ctx.strokeStyle='#90a09a';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-7,-21);ctx.lineTo(-3,-16);ctx.lineTo(-9,-13);ctx.stroke();
+      ctx.fillStyle='#c8ba81';ctx.fillRect(-28,-10,4,4);ctx.fillStyle='#443a35';ctx.fillRect(23,-11,5,7);
+    }else if(prop.kind===1){
+      ctx.fillStyle='#2d393b';ctx.fillRect(-2,-48,4,51);ctx.fillRect(-2,-48,17,3);
+      ctx.fillStyle='#b5ab82';ctx.fillRect(9,-45,10,4);ctx.fillStyle='#626d64';ctx.fillRect(-6,0,12,4);
+    }else if(prop.kind===2){
+      ctx.fillStyle='#333e3b';ctx.fillRect(-19,-1,4,7);ctx.fillRect(15,-1,4,7);
+      ctx.fillStyle='#77664c';ctx.fillRect(-22,-8,44,6);ctx.fillRect(-22,-18,44,4);ctx.fillRect(-20,-15,3,9);ctx.fillRect(17,-15,3,9);
+    }else{
+      ctx.fillStyle='#455a51';ctx.fillRect(-12,-18,24,22);ctx.fillStyle='#657367';ctx.fillRect(-14,-21,28,5);
+      ctx.fillStyle='#263d34';for(let i=0;i<4;i++)ctx.fillRect(-8+i*5,-14,2,14);
+    }
+    ctx.restore();
+  }
   function drawIsoDepthObjects(time, includeActors) {
     const objects = [];
     const actor=mounted?bike:player,actorPoint=projectPoint(actor.x,actor.y);
     const halfWidth=mounted?18:7;
     const actorRect={left:actorPoint.x-halfWidth,right:actorPoint.x+halfWidth,top:actorPoint.y-(mounted?30:22),bottom:actorPoint.y+6};
     const revealCircle={x:actorPoint.x,y:actorPoint.y-8,radius:mounted?56:40};
+    for(const prop of cityProps){
+      const p=projectPoint(prop.x,prop.y);
+      if(p.x<-80||p.x>W+80||p.y<-40||p.y>H+100)continue;
+      objects.push({depth:prop.x+prop.y,draw:()=>drawCityProp(prop,p)});
+    }
     buildings.forEach(([x,y,w,h],i)=>{
+      const corner=projectPoint(x,y),lift=i===10?100:UrbanStructures.TYPES[i%5].height;
+      if(corner.x+w*1.65*ISO_X < -80||corner.x-h*1.65*ISO_X>W+80||corner.y-lift>H+128||corner.y+(w+h)*1.65*ISO_Y < -80)return;
       const geometry=isoBuildingGeometry(x,y,w,h,i);
       if(isoBuildingVisible(geometry)){
         const depth=x+y+(w+h)*.82;
@@ -1648,9 +1737,23 @@
         objects.push({depth,draw:()=>drawBuildingWithReveal(alpha=>drawIsoBuilding(x,y,w,h,i,time,geometry,alpha),opacity,revealCircle)});
       }
     });
-    // Keep the giant machines out of the world map render; their chase, grapple,
-    // climbing and terminal encounters still use the active tower data.
-    const tower = active();
+    towers.forEach(terminal=>objects.push({depth:terminal.x+terminal.y,draw:()=>{
+      const p=projectPoint(terminal.x,terminal.y),color=terminal.disabled?'#72958b':'#83efc1';
+      ctx.save();ctx.translate(p.x,p.y);
+      ctx.fillStyle='#07111488';ctx.beginPath();ctx.ellipse(0,5,35,10,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#263c40';ctx.fillRect(-29,-14,58,17);ctx.fillStyle='#425a5b';ctx.fillRect(-29,-14,58,4);
+      ctx.fillStyle='#101c24';ctx.fillRect(18,-46,15,31);ctx.fillStyle='#547075';ctx.fillRect(18,-46,15,3);
+      ctx.fillStyle=color;ctx.fillRect(22,-39,3,3);ctx.fillRect(22,-33,7,1);
+      ctx.fillStyle='#071017';ctx.fillRect(-25,-49,40,32);ctx.strokeStyle='#69858a';ctx.strokeRect(-25.5,-49.5,41,33);
+      ctx.fillStyle=terminal.disabled?'#203d36':'#123e39';ctx.fillRect(-22,-46,34,25);
+      ctx.fillStyle=color;ctx.font='5px monospace';ctx.textAlign='left';
+      ctx.fillText(terminal.disabled?'REDE OK':'> REDE_0'+(terminal.design+1),-20,-39);
+      for(let line=0;line<3;line++){ctx.globalAlpha=.4+line*.15;ctx.fillRect(-20,-35+line*4,12+line*5,1);}ctx.globalAlpha=1;
+      ctx.fillStyle='#698285';ctx.fillRect(-9,-17,7,5);ctx.fillRect(-15,-12,20,2);
+      ctx.fillStyle='#7d8f89';ctx.fillRect(-23,-8,31,6);ctx.fillStyle='#253a3c';
+      for(let row=0;row<2;row++)for(let col=0;col<9;col++)ctx.fillRect(-21+col*3,-7+row*2,2,1);
+      ctx.fillStyle=color;ctx.textAlign='center';ctx.fillText(terminal.name,0,-57);ctx.restore();
+    }}));
     if (includeActors && mounted) objects.push({ depth: bike.x + bike.y, draw: () => {
       const p = projectPoint(bike.x, bike.y);
       const rider = drawBike(p.x, p.y, projectFacing(bike.angle), bike.speed, time);
@@ -1809,6 +1912,7 @@
     return .35*bikeHoleSeverity()**2;
   }
   function damageBikePart(part, amount, impact = false) {
+    amount/=1+upgrades.armor*.3;
     if (impact) {
       const faults=bikeFaults[part].map((value,index)=>value>0?index:-1).filter(index=>index>=0);
       if(!faults.length)return;
@@ -1818,7 +1922,7 @@
     bikeParts[part] = bikeFaults[part].reduce((a,b)=>a+b,0)/4;
   }
   function updateBikeCondition(dt,speed=0) {
-    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt);
+    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt/(1+upgrades.fuel*.25));
     if(fuel<=0)bikeEngineRunning=false;
     bikeCrashCooldown=Math.max(0,bikeCrashCooldown-dt);
     const moving=Math.abs(speed)>8;
@@ -1827,22 +1931,26 @@
     const wear=dt*(moving?.002+Math.min(1,Math.abs(speed)/150)*.002:.0001);
     const rates={motor:1,handlebar:.6,frontTire:1.2,rearTire:1.3};
     Object.keys(bikeParts).forEach(part=>damageBikePart(part,wear*rates[part]));
-    bikeLife=Math.max(0,bikeLife-wear*.5);
+    bikeLife=Math.max(0,bikeLife-wear*.5/(1+upgrades.armor*.3));
   }
-  function applyBikeImpact(speed,label='IMPACTO') {
+  function bikeImpactDamage(speed,clearance=0){
+    const ratio=Math.min(1.5,Math.abs(speed)/180),proximity=1-Math.min(1,Math.max(0,clearance)/80);
+    return (2+28*ratio*ratio)*(.65+.35*proximity);
+  }
+  function applyBikeImpact(speed,label='IMPACTO',clearance=0) {
     if(bikeCrashCooldown>0||Math.abs(speed)<12)return false;
     const parts=Object.keys(bikeParts).filter(part=>bikeParts[part]>0);
     if(!parts.length)return false;
     const part=parts[Math.floor(Math.random()*parts.length)],before=bikeParts[part];
-    const amount=.6+Math.min(1,Math.abs(speed)/150)*2.4;
+    const amount=bikeImpactDamage(speed,clearance);
     damageBikePart(part,amount,true);
-    bikeLife=Math.max(0,bikeLife-amount*.25);bikeCrashCooldown=1.5;
+    bikeLife=Math.max(0,bikeLife-amount*.8/(1+upgrades.armor*.3));bikeCrashCooldown=1.2;
     const loss=before-bikeParts[part];
     setToast(label+' · '+bikePartNames[part]+' −'+loss.toFixed(1)+'% · inspecione com E');
     return true;
   }
-  function applyMountedImpact(speed,label){
-    const impacted=applyBikeImpact(speed,label);
+  function applyMountedImpact(speed,label,clearance=0){
+    const impacted=applyBikeImpact(speed,label,clearance);
     if(impacted&&mounted&&Math.abs(speed)>45)woundCharacter('impact',Math.min(1.8,.65+Math.abs(speed)/150));
     return impacted;
   }
@@ -1863,7 +1971,7 @@
       const part=parts[Math.floor(Math.random()*parts.length)];
       damageBikePart(part,profile.bikeDamage,true);label=bikePartNames[part];
     }
-    bikeLife=Math.max(0,bikeLife-profile.bikeDamage*.6);
+    bikeLife=Math.max(0,bikeLife-profile.bikeDamage*.6/(1+upgrades.armor*.3));
     creatureBikeCooldown=1.2;
     if(bikeLife<=0){bikeEngineRunning=false;bikeRpm=0;bike.speed=0;}
     return label;
@@ -1899,10 +2007,9 @@
       if(creatureHitCooldown<=0&&creatureCanHit(creature,actor,inRoom,mounted?8:4)){
         const wasMounted=mounted&&!inRoom;
         const hit=MossCreatures.attackOutcome(creature.kind,{mounted:wasMounted,speed:bike.speed});
-        const part=profile.targets[Math.floor(Math.random()*profile.targets.length)];
-        characterHealth.injure(part,profile.wound,hit.severity);
-        creature.attackCooldown=profile.attackInterval;creatureHitCooldown=2.5;flash=.28;
-        let message=profile.name.toUpperCase()+' ATACOU — '+CharacterHealth.WOUNDS[profile.wound].name.toUpperCase();
+        characterHealth.damage(hit.damage);
+        creature.attackCooldown=profile.attackInterval;creatureHitCooldown=1.5;flash=.28;
+        let message=profile.name.toUpperCase()+' ATACOU — -'+hit.damage+' VIDA';
         if(wasMounted){
           const damaged=creatureBikeCooldown<=0?damageBikeByCreature(profile):'MOTO';
           if(hit.knockedOff||bikeLife<=0){
@@ -1968,11 +2075,11 @@
     if (!s || s.phase !== 'play') return;
     if (!s.practice) {
       if (repairKits <= 0) { s.message = 'Sem kit disponível.'; return; }
-      repairKits--; bikeFaults[s.part][s.index] = 100;
+      s.toolCost=spendTools(); bikeFaults[s.part][s.index] = 100;
       bikeParts[s.part] = bikeFaults[s.part].reduce((a,b)=>a+b,0)/4;
       bikeLife = Math.min(100,bikeLife+15);
     }
-    s.phase = 'done'; s.message = s.practice ? 'TREINO CONCLUÍDO · nenhum kit consumido' : 'REPARO CONCLUÍDO · 1 kit usado · saúde +15%';
+    s.phase = 'done'; s.message = s.practice ? 'TREINO CONCLUIDO - sem desgaste' : 'REPARO CONCLUIDO - ferramentas -'+s.toolCost+'% - caixa '+(toolboxes[0]||0)+'%';
     setToast(s.message);
   }
   function bikeServiceMiss(message) {
@@ -2976,7 +3083,7 @@
     ctx.strokeStyle='#dac5e7';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(22,19);ctx.lineTo(27,24);ctx.moveTo(27,19);ctx.lineTo(22,24);ctx.stroke();
     label('GARAGEM',40,24,8,'#f1e4fa',true);label('/  2 CLIQUES: AMPLIAR / REDUZIR',91,24,5.5,'#a491b4');
     drawBikeMenuIcon('kit',374,21,'#d9b683',.55);
-    label(String(repairKits).padStart(2,'0')+' KITS',383,24,6,'#ead0a7',true);ctx.fillStyle=hot(432,15,26,14)?'#68447d':'#392847';ctx.beginPath();ctx.roundRect(432,15,26,14,3);ctx.fill();
+    label(repairKits+' CX '+(toolboxes[0]||0)+'%',368,24,5,'#ead0a7',true);ctx.fillStyle=hot(432,15,26,14)?'#68447d':'#392847';ctx.beginPath();ctx.roundRect(432,15,26,14,3);ctx.fill();
     ctx.strokeStyle='#e0c7f0';ctx.lineWidth=.8;
     if(bikeWorkshopWindow.full){
       ctx.strokeRect(443,18,8,6);ctx.fillStyle='#392847';ctx.fillRect(439,21,8,6);ctx.strokeRect(439,21,8,6);
@@ -3360,9 +3467,9 @@
     drawCompass(hudDetails?193:101,25,mounted?bike.angle:player.angle);
     if(!hudDetails){
       const source=mounted?bike:player;
-      const shelter=buildings.reduce((best,_,i)=>{if(!isShelter(i))return best;const d=distance(source,buildingDoor(i));return d<best.distance?{index:i,distance:d}:best;},{index:-1,distance:Infinity});
+      const target=active();const shelter={index:target?activeTower:-1,distance:target?distance(source,target):Infinity};
       const signal=shelter.index>=0?Math.max(0,4-Math.floor(shelter.distance/420)):0;
-      ctx.save();ctx.textAlign='left';ctx.font='6px monospace';ctx.fillStyle='#a4b9ad';ctx.fillText('ABRIGO',14,22);
+      ctx.save();ctx.textAlign='left';ctx.font='6px monospace';ctx.fillStyle='#a4b9ad';ctx.fillText('REDE',14,22);
       for(let i=0;i<4;i++){ctx.fillStyle=i<signal?'#83d8bd':'#33413f';ctx.fillRect(43+i*7,24-i*3,4,5+i*3);}
       ctx.restore();
     }
@@ -3371,20 +3478,22 @@
       drawSurvivalHud();
       if(shelterView==='observe')return;
       if(playerKnockdown>0)hint('LEVANTANDO...',W/2,25,time);
+      else if(!mounted&&active()&&distance(player,active())<65)hint('E ACESSAR COMPUTADOR',W/2,25,time);
       else if(!mounted&&nearbyEntrance(player.x,player.y)>=0)hint('E ENTRAR',W/2,25,time);
-      else if(!mounted&&distance(player,bike)<43)hint('F MONTAR · E INSPECIONAR',W/2,25,time);
+      else if(bikeDragging)hint('ARRASTANDO · WASD MOVE · SOLTE G PARA LARGAR',W/2,25,time);
+      else if(!mounted&&distance(player,bike)<43)hint('F MONTAR · E OFICINA · SEGURE G PARA ARRASTAR',W/2,25,time);
       if(bikeInspectOpen&&!mounted)drawBikeInspectMenu();
       return;
     }
     panel(11, 10, 157, 43, '#101a1ddd', '#617369');
     const source = mounted ? bike : player;
-    const shelter=buildings.reduce((best,_,i)=>{if(!isShelter(i))return best;const d=distance(source,buildingDoor(i));return d<best.distance?{index:i,distance:d}:best;},{index:-1,distance:Infinity});
+    const target=active();const shelter={index:target?activeTower:-1,distance:target?distance(source,target):Infinity};
     const signal=shelter.index>=0?Math.max(0,4-Math.floor(shelter.distance/420)):0;
     ctx.fillStyle = '#93a49a'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.fillText('NOITE · MANTIQUEIRA', 19, 21);
-    ctx.fillStyle = '#81928c'; ctx.fillText('ABRIGO', 19, 36);
+    ctx.fillStyle = '#81928c'; ctx.fillText('REDE', 19, 36);
     for (let i = 0; i < 4; i++) { ctx.fillStyle = i < signal ? '#83d8bd' : '#33413f'; ctx.fillRect(52 + i * 8, 30 - i * 2, 5, 6 + i * 2); }
     if (shelter.index>=0) {
-      const door=buildingDoor(shelter.index);
+      const door=active();
       const angle = Math.atan2(door.x - source.x, -(door.y - source.y)) - (mounted ? bike.angle : player.angle);
       ctx.fillStyle = '#81928c'; ctx.fillText('DIREÇÃO', 93, 36);
       ctx.save(); ctx.translate(145, 32); ctx.rotate(angle); ctx.fillStyle = '#e2c17c'; ctx.beginPath(); ctx.moveTo(0,-8); ctx.lineTo(5,5); ctx.lineTo(0,2); ctx.lineTo(-5,5); ctx.closePath(); ctx.fill(); ctx.restore();
@@ -3394,8 +3503,9 @@
     }
     drawSurvivalHud();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? `W ACELERA · S FREIA/RÉ · A/D VIRA · Q REDUZ · E SOBE · C FAROL · R ${bikeEngineRunning?'DESLIGA':'LIGA'} · F DESCE` : 'W A S D MOVER  ·  E INTERAGIR  ·  F MONTAR', W - 12, H - 7);
+    ctx.fillText(mounted ? `W ACELERA · S FREIA/RÉ · A/D VIRA · Q REDUZ · E SOBE MARCHA · F DESCE` : 'W A S D MOVER  ·  E INTERAGIR  ·  F MONTAR', W - 12, H - 7);
     if(playerKnockdown>0)hint('DERRUBADO — LEVANTANDO...',W/2,31,time);
+    else if (!mounted && active() && distance(player,active())<65) hint('E ACESSAR COMPUTADOR',W/2,31,time);
     else if (!mounted && nearbyEntrance(player.x, player.y) >= 0) hint('E  ENTRAR PELA PORTA', W / 2, 31, time);
     else if (!mounted && distance(player,bike)<43 && (bikeLife<75 || Object.values(bikeParts).some(value=>value<70))) hint(repairKits>0?'E  REPARAR MOTO · F  MONTAR':'E  INSPECIONAR · PROCURE UM KIT',W/2,31,time);
     else if (!mounted && distance(player, bike) < 55) hint('F  MONTAR NA MOTO', W / 2, 31, time);
@@ -3522,11 +3632,10 @@
       drawExploreSupply(supply.type, sx, sy, time);
       if (!checkpointReturn&&Math.hypot(explorer.x - sx, explorer.y - sy) < 20) {
         supply.found = true;
-        shelterLife.materials.scrap+=2;shelterLife.materials.cloth+=supply.type==='medical'?3:1;
         if (supply.type === 'fuel') { fuel = Math.min(100, fuel + 34); setToast('ACHOU COMBUSTÍVEL — +34%'); }
         else if (supply.type === 'ration') { hunger = Math.min(100, hunger + 42); setToast('RAÇÃO MILITAR — FOME REDUZIDA'); }
         else if (supply.type === 'water') { thirst = Math.min(100, thirst + 38); setToast('GARRAFA ENCONTRADA — SEDE REDUZIDA'); }
-        else if (supply.type === 'toolkit') { repairKits++; setToast(`KIT DE FERRAMENTAS — REPAROS DISPONÍVEIS: ${repairKits}`); }
+        else if (supply.type === 'toolkit') { addToolbox(); setToast('CAIXA DE FERRAMENTAS: 100% - '+repairKits+' CAIXAS'); }
         else if (supply.type === 'medical') {characterHealth.restock();survivalItems.flare++;survivalItems.bait+=2;setToast('PRIMEIROS SOCORROS + 1 SINALIZADOR + 2 ISCAS');}
         else { hunger = Math.min(100, hunger + 21); setToast('ENLATADO ENCONTRADO — FOME REDUZIDA'); }
       }
@@ -3666,7 +3775,7 @@
     }
     ctx.fillStyle='#b3d2d9';ctx.fillText('F',x+89,y+56);
     ctx.textAlign='right';ctx.fillStyle=low?'#ff9a70':'#c5e5e9';ctx.fillText(Math.round(level)+'%',x+119,y+56);
-    for(const [bx,label] of [[x+7,'Q  -'],[x+75,'R  +']]){
+    for(const [bx,label] of [[x+7,'Q  -'],[x+75,'E  +']]){
       ctx.fillStyle='#19151e';ctx.strokeStyle='#685174';ctx.beginPath();ctx.roundRect(bx,y+61,48,12,5);ctx.fill();ctx.stroke();
       ctx.textAlign='center';ctx.font='5px monospace';ctx.fillStyle='#c5dbe3';ctx.fillText(label,bx+24,y+69);
     }
@@ -3684,7 +3793,8 @@
       ctx.textAlign='right';ctx.fillStyle='#cedbce';ctx.fillText(String(Math.round(value)),x+w-5,y);
     });
     const status=characterHealth.status();
-    if(status.health<75||status.bleeding>0){ctx.textAlign='left';ctx.fillStyle='#efb28b';ctx.fillText(`SAÚDE ${Math.round(status.health)}%${status.bleeding>0?' · SANGRANDO · J / H':''}`,12,H-67);}
+    ctx.textAlign='left';ctx.font='6px monospace';ctx.fillStyle='#dbe6dc';ctx.fillText('VIDA '+Math.ceil(status.health)+' / '+status.maxHealth,12,H-77);
+    ctx.fillStyle='#25322f';ctx.fillRect(12,H-72,110,7);ctx.fillStyle=status.health<status.maxHealth*.3?'#ee806e':'#83d8a5';ctx.fillRect(13,H-71,108*status.health/status.maxHealth,5);
     ctx.restore();
   }
   function drawAtmosphere(time, view) {
@@ -3715,11 +3825,13 @@
     if (lightning > .22) { ctx.fillStyle = `rgba(177, 199, 201, ${lightning * .13})`; ctx.fillRect(0, 0, W, H); }
     ctx.strokeStyle = 'rgba(174, 193, 196, .17)'; ctx.lineWidth = .55;
     const rainCount=view==='climb'?20:74;
+    ctx.beginPath();
     for (let i = 0; i < rainCount; i++) {
       const x = (i * 67 + Math.sin(time * .8 + i) * 9) % W;
       const y = (i * 43 + time * (82 + i % 4 * 12)) % H;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 2.2, y + 5 + i % 3); ctx.stroke();
+      ctx.moveTo(x, y); ctx.lineTo(x - 2.2, y + 5 + i % 3);
     }
+    ctx.stroke();
     const dustCount=view==='climb'?5:18;
     for (let i = 0; i < dustCount; i++) {
       const x = (i * 109 + Math.sin(time * .25 + i * 3) * 23 + W) % W;
@@ -3739,7 +3851,7 @@
     chaseProgress = 0; chaseSpeed = entrySpeed; chaseLag = 90; chaseElapsed = 0; chaseLives = 3; chaseInvulnerable = 0; hookReady = false; grappleAvailable = false;
     chaser.x = 240; chaser.feet = CHASE_BIKE_Y; chaser.vy = 0; chaser.grounded = true; chaser.duck = 0; chaser.steer = 0;
     chaseObstacles.forEach(o => o.cleared = false);
-    keys.clear(); setToast('SOB A MÁQUINA — W ACELERA · E SOBE MARCHA · Q REDUZ · A/D DESVIA', 2.8); updateObjective();
+    keys.clear(); setToast('W ACELERA · Q REDUZ · E SOBE MARCHA · A/D VIRA', 2.8); updateObjective();
   }
   function chaseMachinePose(time, tower) {
     const phase = time * (1.5 + tower.design * .22) + tower.phase;
@@ -3773,7 +3885,7 @@
     const limit=bikeGearSpeedLimit();
     const targetSpeed=fuel<=0||bikeLife<=0?0:keys.has('w')?limit:keys.has('s')?Math.min(38,limit):Math.min(100,limit);
     chaseSpeed += (targetSpeed - chaseSpeed) * Math.min(1, dt * 2.8 * condition);
-    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.08);
+    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.08/(1+upgrades.fuel*.25));
     chaseProgress += chaseSpeed * dt;
     chaseElapsed += dt;
     const tower = active(), machineSpeed = [151,159,167,188,126][tower.design]*.8;
@@ -4002,7 +4114,7 @@
     ctx.fillStyle = Math.sin(time * 6) > 0 ? '#efbd73' : '#7d534b'; ctx.fillRect(x - 2, y + 5, 4, 3);
   }
   function drawClimber(time, dt) {
-    if(state==='hack'){drawHack(time);return;}
+    if(state==='hack'){drawWorld(time,dt);drawHack(time);return;}
     ctx.fillStyle = '#0e181a'; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.translate(32, -10); ctx.transform(1, .10, -.12, .90, 0, 0);
     const shakePhase=climbTime%10,shaking=shakePhase>6.2&&shakePhase<8.1;
@@ -4051,18 +4163,19 @@
     ctx.fillStyle = '#071012ce'; ctx.fillRect(0, 0, W, H);
     panel(67, 43, 346, 205, '#142324', '#81d4b1');
     ctx.textAlign = 'center'; ctx.fillStyle = '#9ddfc1'; ctx.font = '8px monospace';
-    if (hackMode === 'question') {
-      const question = networkQuestions[activeTower][hackStep];
-      ctx.fillText('DIAGNÓSTICO · CONEXÃO DE REDES', W / 2, 62);
-      ctx.fillStyle = '#82968b'; ctx.font = '6px monospace'; ctx.fillText(`PERGUNTA ${hackStep + 1} / ${networkQuestions[activeTower].length}`, W / 2, 76);
+    if (hackMode === 'question'||hackMode==='upgrade') {
+      const reward=hackMode==='upgrade';
+      const question=reward?{q:'Escolha uma melhoria para continuar',a:upgradeOptions}:networkQuestions[activeTower][hackStep];
+      ctx.fillText(reward?'COMPUTADOR CONCLUIDO - MELHORIA':'DIAGNOSTICO - REDES', W / 2, 62);
+      ctx.fillStyle = '#82968b'; ctx.font = '6px monospace'; ctx.fillText(reward?`MELHORIAS ACUMULAM - COMPUTADOR ${network+1}/5`:`PERGUNTA ${hackStep + 1} / 3`, W / 2, 76);
       ctx.fillStyle = '#e3e9db'; ctx.font = '7px monospace'; ctx.fillText(question.q, W / 2, 96);
       question.a.forEach((answer, i) => {
-        const x = 107, y = 108 + i * 32;
-        ctx.fillStyle = '#202f2e'; ctx.fillRect(x, y, 266, 26); ctx.strokeStyle = '#536d62'; ctx.strokeRect(x + .5, y + .5, 265, 25);
+        const x = 107, y = 108 + i * 27;
+        ctx.fillStyle = '#202f2e'; ctx.fillRect(x, y, 266, 24); ctx.strokeStyle = '#536d62'; ctx.strokeRect(x + .5, y + .5, 265, 23);
         ctx.fillStyle = '#d5b576'; ctx.font = '7px monospace'; ctx.textAlign = 'left'; ctx.fillText(`${i + 1}.`, x + 10, y + 16);
-        ctx.fillStyle = '#dce5d8'; ctx.fillText(answer, x + 29, y + 16);
+        ctx.fillStyle = '#dce5d8'; ctx.font = reward?'6px monospace':'7px monospace';ctx.fillText(answer, x + 29, y + 16);
       });
-      ctx.fillStyle = '#8fa59b'; ctx.font = '6px monospace'; ctx.textAlign = 'center'; ctx.fillText('RESPONDA COM 1, 2, 3 OU TOQUE NA OPÇÃO', W / 2, 216);
+      ctx.fillStyle = '#8fa59b'; ctx.font = '6px monospace'; ctx.textAlign = 'center'; ctx.fillText('ESCOLHA COM 1, 2, 3, 4 OU TOQUE', W / 2, 216);
     } else if (hackMode === 'connect') {
       const ys = [124,159,194], sourceNames = ['UPLINK','WAN','LAN'], portNames = ['BACKBONE','INTERNET','REDE LOCAL'];
       ctx.fillText('LIGUE OS CABOS ÀS PORTAS DA REDE', W / 2, 62);
@@ -4129,8 +4242,9 @@
     climbTime += dt; hazardCooldown = Math.max(0, hazardCooldown - dt); climber.invulnerable = Math.max(0, climber.invulnerable - dt);
     if (state === 'hack') {
       if(climber.gait)updateFootGait(climber.gait,0,climber.spriteAngle,82,dt,spriteAtlas.survivor.walk);
+      if(hackMode==='upgrade')return;
       hackTime -= dt/characterHealth.status().focus; pulseClock += dt;
-      if (hackTime <= 0) { state = 'climb'; hackStep = 0; hackTime = 36; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
+      if (hackTime <= 0) { state = 'drive'; keys.clear(); hackStep = 0; hackTime = 90; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
       return;
     }
     const left = keys.has('a') || keys.has('arrowleft'); const right = keys.has('d') || keys.has('arrowright');
@@ -4350,7 +4464,7 @@
       // Engine braking brings a downshift into its new range without teleporting speed.
       if(bike.speed>maxForward)bike.speed=Math.max(maxForward,bike.speed-dt*260);
       bike.speed=Math.max(-48,bike.speed);
-      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt*(reverse?.045:.11)*(1+(100-bikeParts.motor)/38));
+      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.25)*(reverse?.045:.11)*(1+(100-bikeParts.motor)/38));
       const travelSpeed=(previousSpeed+bike.speed)/2;
       const steeringDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt)*characterHealth.status().handling;
       const turnDelta=bikeWorldTurnDelta(bike.angle,steeringDelta);
@@ -4358,12 +4472,15 @@
       bike.angle+=turnDelta;
       const previousX=bike.x,previousY=bike.y,impactSpeed=travelSpeed;
       const rideX=Math.sin(travelAngle)*travelSpeed*dt,rideY=-Math.cos(travelAngle)*travelSpeed*dt;
-      moveWorldEntity(bike,rideX,rideY,12*ACTOR_VISUAL_SCALE);
+      const collisionRadius=12*ACTOR_VISUAL_SCALE;
+      const clearance=obstacleClearance(bike.x,bike.y,collisionRadius);
+      // Short steps keep fast motorcycles from crossing thin fences.
+      const rideSteps=Math.max(1,Math.ceil(Math.hypot(rideX,rideY)/3));
+      for(let step=0;step<rideSteps;step++)moveWorldEntity(bike,rideX/rideSteps,rideY/rideSteps,collisionRadius);
       const blockedFraction=Math.min(1,Math.hypot(rideX-(bike.x-previousX),rideY-(bike.y-previousY))/Math.max(.001,Math.hypot(rideX,rideY)));
       const tower = active();
-      if (tower && bikeEngineRunning && distance(bike, tower) < 155) { bike.speed *= .25; startChase(); }
-      else if (blockedFraction>.15) {
-        applyMountedImpact(impactSpeed*blockedFraction);
+      if (blockedFraction>.15) {
+        applyMountedImpact(impactSpeed*Math.sqrt(blockedFraction),'IMPACTO NO OBSTACULO',clearance);
         bike.speed *= blockedFraction>.85?.38:.8;
       }
       if (bikeLife <= 0) { bike.speed=0; if (mounted) { mounted=false; player.x=bike.x+Math.cos(bike.angle)*18; player.y=bike.y+Math.sin(bike.angle)*18; setToast('MOTO QUEBROU — USE E AO LADO DELA COM UM KIT.'); } }

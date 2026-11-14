@@ -13,44 +13,26 @@ function runMossCreatureTests(api){
   check(api.TYPES.length===3&&new Set(api.TYPES.map(t=>t.id)).size===3,'three distinct creatures');
   check(api.SUN_RUNNER_CHANCE===.05,'sun exception is exactly five percent');
   const normal=create(()=>.5);normal.reset(day,target);
-  check(normal.entities.length===3,'day population is reduced to three');
-  check(normal.entities.filter(e=>e.indoors).length>=2,'most daytime creatures shelter inside buildings');
-  for(let i=0;i<120;i++){
-    const previous=normal.entities.map(e=>({x:e.x,y:e.y}));
-    normal.update(1/30,{light:day,target});
-    normal.entities.forEach((e,index)=>{
-      check(e.indoors||normal.isShaded(e.x,e.y),'ordinary daytime creature stays out of sunlight');
-      if(!e.indoors)check(Math.hypot(e.x-previous[index].x,e.y-previous[index].y)<=api.TYPES[e.kind].daySpeed/30+1e-8,'day movement remains slow');
-    });
-  }
-  const below=create(()=>.049999);below.reset(day,target);
-  const boundary=create(()=>.05);boundary.reset(day,target);
-  check(below.entities.every(e=>e.sunRunner),'roll below .05 ignores daylight rules');
-  check(boundary.entities.every(e=>!e.sunRunner),'roll at .05 obeys daylight rules');
-  const anomaly=below.entities[0];Object.assign(anomaly,{x:750,y:650,indoors:false});
-  const before=anomaly.x;
-  below.update(.05,{light:day,target});
-  check(anomaly.x>before&&anomaly.speed>api.TYPES[anomaly.kind].daySpeed,'rare creature runs in open sun');
-  check(below.glitch>0,'nearby daytime anomaly produces glitches');
-  const flags=below.entities.map(e=>e.sunRunner);
-  for(let i=0;i<60;i++)below.update(1/60,{light:day,target});
-  check(below.entities.every((e,i)=>e.sunRunner===flags[i]),'exception is not rerolled each frame');
+  check(normal.entities.length===1,'day starts with a sparse outdoor population');
+  const walker=normal.entities[0];Object.assign(walker,{x:500,y:650,destination:{x:450,y:650},retarget:100});
+  normal.update(.1,{light:day,target});
+  check(!walker.indoors&&walker.x<500,'ordinary creatures walk in open daylight without sheltering');
+  for(let i=0;i<298;i++)normal.update(.1,{light:day,target});
+  check(normal.entities.length===1,'day spawning waits thirty seconds');
+  normal.update(.1,{light:day,target});
+  check(normal.entities.length===2,'day replenishes the outdoor population');
+  for(let i=0;i<600;i++)normal.update(.1,{light:day,target});
+  check(normal.entities.length===3&&normal.entities.every(e=>!e.indoors),'day stays capped at three outdoor creatures');
+  check(normal.entities.includes(walker)&&walker.sunAge===null,'day creatures survive sunlight');
   const dark=create(()=>.5);dark.reset(night,target);
-  check(dark.entities.length===3,'starting at night also builds the population gradually');
-  check(dark.entities.every(e=>!e.indoors),'night creatures roam outdoors');
-  const hunter=dark.entities[0];Object.assign(hunter,{x:750,y:650});
-  dark.update(.05,{light:night,target});
-  check(hunter.x>750&&hunter.speed>api.TYPES[hunter.kind].daySpeed,'night creatures move freely across sunlight-only ground');
-  check(dark.glitch===0,'nighttime activity does not trigger the daytime anomaly glitch');
-  for(let i=0;i<3600;i++)normal.update(.1,{light:night,target});
-  check(normal.entities.length===67,'night population grows gradually to sixty-seven');
-  normal.update(.05,{light:day,target});
-  check(normal.entities.length===3,'extra ordinary creatures retreat at dawn');
-  check(normal.entities.every(e=>e.indoors||normal.isShaded(e.x,e.y)),'dawn restores shelter rules');
-  const indoor=create(()=>.5);indoor.reset(day,target);
-  const resident=indoor.entities.find(e=>e.indoors),roomBefore={x:resident.roomX,y:resident.roomY};
-  indoor.update(.1,{light:day,target,room:resident.home,roomTarget:{x:400,y:270},moveRoom:(p,dx,dy)=>{p.x+=dx;p.y+=dy;}});
-  check(Math.hypot(resident.roomX-roomBefore.x,resident.roomY-roomBefore.y)>0,'sheltered residents move inside the explored room');
+  check(dark.entities.length===3,'night population starts gradually');
+  for(let i=0;i<3600;i++)dark.update(.1,{light:night,target});
+  check(dark.entities.length===67,'night population grows to sixty-seven');
+  dark.update(.1,{light:day,target});
+  check(dark.entities.length===3&&dark.entities.every(e=>!e.indoors),'dawn reduces numbers while allowing outdoor movement');
+  normal.entities.splice(1);
+  for(let i=0;i<600;i++)normal.update(.1,{light:day,target});
+  check(normal.entities.length===3,'day respawns missing creatures up to the cap');
   const atRate=hz=>{
     const model=create(()=>.5);model.reset(night,target);const creature=model.entities[0];Object.assign(creature,{x:720,y:650});
     for(let i=0;i<hz;i++)model.update(1/hz,{light:night,target});
@@ -58,41 +40,6 @@ function runMossCreatureTests(api){
   };
   const at30=atRate(30),at144=atRate(144);
   check(Math.hypot(at30.x-at144.x,at30.y-at144.y)<1e-6,'motion is consistent across frame rates');
-  check(api.SUN_LIFETIME===17,'day hunters last no more than seventeen seconds');
-  for(const hz of [30,60,144]){
-    const model=create(()=>.01);model.reset(day,target);
-    const runner=model.entities[0];Object.assign(runner,{x:750,y:650,indoors:false});
-    for(let i=0;i<17*hz-1;i++)model.update(1/hz,{light:day,target});
-    check(model.entities.includes(runner)&&runner.sunAge>16,'day hunter gradually ages before the deadline at '+hz+' Hz');
-    model.update(1/hz,{light:day,target});
-    check(!model.entities.includes(runner),'day hunter is removed at seventeen seconds at '+hz+' Hz');
-    for(let i=0;i<hz;i++)model.update(1/hz,{light:day,target});
-    check(!model.entities.includes(runner)&&model.entities.length>0,'the expired hunter is removed while untriggered creatures remain alive');
-  }
-  const sheltered=create(()=>.01);sheltered.reset(day,target);
-  const exposed=sheltered.entities[0];
-  Object.assign(exposed,{x:750,y:650,indoors:false});
-  sheltered.update(.1,{light:day,target});
-  exposed.indoors=true;
-  for(let i=0;i<170;i++)sheltered.update(.1,{light:day,target});
-  check(!sheltered.entities.includes(exposed),'hiding cannot reset a started dissolution');
-  const sunset=create(()=>.01);sunset.reset(day,target);const fading=sunset.entities[0];
-  Object.assign(fading,{x:750,y:650,indoors:false});
-  sunset.update(.1,{light:day,target});
-  for(let i=0;i<170;i++)sunset.update(.1,{light:night,target});
-  check(!sunset.entities.includes(fading),'nightfall cannot extend the life of an exposed hunter');
-  const ordinary=create(()=>.5);ordinary.reset(day,target);
-  for(let i=0;i<200;i++)ordinary.update(.1,{light:day,target,room:100+i});
-  check(ordinary.entities.length===3&&ordinary.entities.every(e=>e.sunAge===null),'ordinary sheltered creatures do not dissolve and room visits respect the population cap');
-  const nocturnal=create(()=>.01);nocturnal.reset(night,target);const unexposed=nocturnal.entities[0];
-  for(let i=0;i<180;i++)nocturnal.update(.1,{light:night,target});
-  check(nocturnal.entities.includes(unexposed)&&unexposed.sunAge===null,'night-only activity does not trigger the daylight countdown');
-  let shadowBuilds=0;
-  const efficient=api.createEcology({random:()=>.5,getBuildings:()=>buildings,getSize:()=>({w:1600,h:1200}),isBlocked:blocked,getShadows:()=>{shadowBuilds++;return shadows;}});
-  efficient.reset(night,target);for(let i=0;i<100;i++)efficient.update(.1,{light:night,target});
-  check(shadowBuilds===0,'night simulation skips unused shadow calculations');
-  efficient.update(.1,{light:day,target});
-  check(shadowBuilds===1,'daybreak refreshes shadow shelter before moving creatures');
   check(api.playerNoise({x:0,y:0,speed:0})===null,'standing still emits no footsteps');
   check(api.playerNoise({x:0,y:0,vehicle:true,engineRunning:false})===null,'parked engine-off motorcycle is silent');
   const steps=api.playerNoise({x:800,y:650,speed:25});
@@ -131,14 +78,14 @@ function runMossCreatureTests(api){
   const competing=listener();competing.model.update(.1,{light:night,target:{x:1200,y:1000},sounds:[{x:600,y:650,radius:100},{x:850,y:650,radius:650}]});
   check(competing.hunter.heard?.x===850,'the strongest audible source wins over weaker competing sounds');
   const indoorSound=create(()=>.5);indoorSound.reset(day,target);
-  const indoorListener=indoorSound.entities.find(e=>e.indoors),indoorSource={x:400,y:270};
-  Object.assign(indoorListener,{roomX:360,roomY:250});
+  const indoorListener=indoorSound.entities[0],indoorSource={x:400,y:270};
+  Object.assign(indoorListener,{indoors:true,roomX:360,roomY:250});
   indoorSound.update(.1,{light:day,target,room:indoorListener.home,roomTarget:indoorSource,
     sounds:[api.playerNoise({...indoorSource,speed:45,running:true,room:indoorListener.home})],moveRoom:(p,dx,dy)=>{p.x+=dx;p.y+=dy;}});
   check(indoorListener.behavior==='investigate'&&indoorListener.heard.x===400,'sheltered creatures investigate footsteps in the same room');
   const dusk=create(()=>.5);dusk.reset(day,target);
   dusk.update(.1,{light:{daylight:.27},target});
-  check(dusk.entities.length===3,'crossing into dusk does not spawn a wave immediately');
+  check(dusk.entities.length===1,'crossing into dusk does not spawn a wave immediately');
   for(let i=0;i<1800;i++)dusk.update(.1,{light:{daylight:.27},target});
   const twilightCount=dusk.entities.length;
   check(twilightCount>3&&twilightCount<67&&twilightCount===api.populationForLight({daylight:.27}),'twilight has a smaller population than full darkness');
@@ -173,34 +120,6 @@ function runMossCreatureTests(api){
   check(!!far,'distant parts of the map retain their own creatures');
   const farBefore={x:far.x,y:far.y};spread.update(.1,{light:night,target});
   check(Math.hypot(far.x-farBefore.x,far.y-farBefore.y)<=api.TYPES[far.kind].nightSpeed*.1+1e-6,'distant creatures do not teleport toward the player');
-  function speedAtExposure(age){
-    const model=create(()=>.01);model.reset(day,target);const creature=model.entities[0];
-    Object.assign(creature,{x:750,y:650,indoors:false,sunAge:age});
-    model.update(.05,{light:day,target:{x:1450,y:650},sounds:[{x:1450,y:650,radius:2000,player:true}]});
-    return creature.speed;
-  }
-  const fresh=speedAtExposure(0),half=speedAtExposure(8.5),late=speedAtExposure(16.5);
-  check(fresh>half&&half>late&&late>0,'dissolving hunters progressively slow down instead of stopping abruptly');
-  check(half/fresh>.55&&half/fresh<.6&&late/fresh<.2,'half dissolution keeps roughly 57 percent speed and final moments fall below 20 percent');
-  const sunTravel=hz=>{
-    const model=create(()=>.01);model.reset(day,target);const creature=model.entities[0];Object.assign(creature,{x:750,y:650,indoors:false});
-    for(let i=0;i<hz*5;i++)model.update(1/hz,{light:day,target:{x:1450,y:650},sounds:[{x:1450,y:650,radius:2000,player:true}]});
-    return creature.x;
-  };
-  check(Math.abs(sunTravel(30)-sunTravel(144))<1e-6,'sunlight slowdown produces consistent travel across frame rates');
-  const idle=create(()=>.01);idle.reset(day,target);const wanderer=idle.entities[0];
-  Object.assign(wanderer,{x:600,y:650,indoors:false,destination:{x:400,y:650},retarget:100});
-  for(let i=0;i<300;i++)idle.update(.1,{light:day,target});
-  check(idle.entities.includes(wanderer)&&wanderer.sunAge===null,'daytime wandering lasts beyond seventeen seconds without dissolving');
-  check(wanderer.speed<=api.TYPES[wanderer.kind].daySpeed+1e-6,'an idle daytime hunter wanders slowly');
-  Object.assign(wanderer,{x:600,y:650,destination:{x:400,y:650},retarget:100});
-  idle.update(.1,{light:day,target,sounds:[{...target,radius:600,kind:'motor',player:false}]});
-  check(wanderer.sunAge===null&&wanderer.speed<=api.TYPES[wanderer.kind].daySpeed+1e-6,'investigating an unattended motorcycle does not start a daytime pursuit or dissolution');
-  Object.assign(wanderer,{x:730,y:650});
-  idle.update(.1,{light:day,target,sounds:[api.playerNoise({...target,speed:50,running:true})]});
-  check(wanderer.sunAge>0&&wanderer.pursuingPlayer&&wanderer.speed>api.TYPES[wanderer.kind].daySpeed,'hearing a running player starts the fast daytime pursuit and countdown together');
-  const startedAge=wanderer.sunAge;idle.update(.1,{light:day,target:{x:1500,y:1100}});
-  check(wanderer.sunAge>startedAge,'once started, losing sight does not reset dissolution');
   const local=api.createEcology({random:rng(54),getBuildings:()=>buildings,getSize:()=>({w:5600,h:3600}),isBlocked:()=>false,getShadows:()=>[]});
   local.reset(night,target);let nearSpawn=0,farSpawn=0,known=3;
   for(let i=0;i<1600;i++){
