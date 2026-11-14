@@ -9,6 +9,8 @@ const {pathToFileURL} = require('node:url');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const smokeOnly=process.argv.includes('--smoke');
+const cityOnly=process.argv.includes('--city');
+const motorOnly=process.argv.includes('--motor');
 const creatureOnly=process.argv.includes('--creatures');
 const dragOnly=process.argv.includes('--drag');
 const occlusionOnly=process.argv.includes('--occlusion');
@@ -27,7 +29,8 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
   try {
     let data = fs.readFileSync(file);
-    if((dragOnly||occlusionOnly||combatOnly)&&file===path.join(root,'src/game.js')){
+    if((motorOnly||cityOnly)&&path.extname(file)==='.css')data=data.toString().replace(/@import[^;]+;/g,'');
+    if((cityOnly||motorOnly||dragOnly||occlusionOnly||combatOnly)&&file===path.join(root,'src/game.js')){
       // Test-only access to the closure; local files keep the shipped game intact.
       data=data.toString().replace(/\}\)\(\);\s*$/, 'window.__gameEval=code=>eval(code);})();');
     }
@@ -116,6 +119,7 @@ async function main() {
     window.requestAnimationFrame = callback => originalRAF.call(window, time => { window.__frames++; callback(time); });
   `});
   for (const url of ['http://127.0.0.1:' + server.address().port + '/', pathToFileURL(path.join(root, 'index.html')).href]) {
+    if(cityOnly&&url.startsWith('file:'))continue;
     await call('Page.navigate', {url});
     await evaluate(`new Promise((resolve,reject)=>{let tries=0;const poll=()=>{
       if(document.readyState==='complete'&&window.__frames>2)resolve(true);
@@ -135,6 +139,73 @@ async function main() {
     await call('Input.dispatchKeyEvent', {type:'keyDown', key:'w', code:'KeyW', windowsVirtualKeyCode:87});
     await evaluate(`new Promise(resolve=>setTimeout(resolve,350))`);
     await call('Input.dispatchKeyEvent', {type:'keyUp', key:'w', code:'KeyW', windowsVirtualKeyCode:87});
+    if(cityOnly){
+      if(url.startsWith('file:'))continue;
+      const stats=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+        keys.clear();const oldRandom=Math.random;let value=20261114;
+        Math.random=()=>{value=(Math.imul(value,1664525)+1013904223)>>>0;return value/4294967296;};
+        generateMapLayout();Math.random=oldRandom;
+        let overlaps=0;for(let i=0;i<buildings.length;i++)for(let j=0;j<i;j++){
+          const [x,y,w,h]=buildings[i],[a,b,c,d]=buildings[j];
+          if(x<a+c*1.65&&x+w*1.65>a&&y<b+d*1.65&&y+h*1.65>b)overlaps++;
+        }
+        const centers=buildings.map(([x,y,w,h])=>({x:x+w*.825,y:y+h*.825}));
+        centers.sort((a,b)=>centers.filter(p=>Math.hypot(p.x-b.x,p.y-b.y)<650).length-centers.filter(p=>Math.hypot(p.x-a.x,p.y-a.y)<650).length);
+        let rasterizations=0;const original=UrbanStructures.draw;
+        UrbanStructures.draw=(...args)=>{rasterizations++;return original(...args);};
+        urbanSpriteCache.clear();urbanSpriteBytes=0;
+        const focus=centers[0];camera.x=focus.x;camera.y=focus.y;
+        const begin=performance.now();drawIsoDepthObjects(10,false);const cold=performance.now()-begin;
+        // Warm the full camera path before checking for redundant rebuilding.
+        for(let i=0;i<60;i++){camera.x=focus.x+i*.25;drawIsoDepthObjects(10,false);}
+        camera.x=focus.x;
+        const first=rasterizations,times=[];
+        for(let i=0;i<60;i++){camera.x+=.25;const start=performance.now();drawIsoDepthObjects(10+i/60,false);times.push(performance.now()-start);}
+        UrbanStructures.draw=original;times.sort((a,b)=>a-b);
+        return {buildings:buildings.length,overlaps,coldMs:cold,p95Ms:times[56],firstRasters:first,repeatedRasters:rasterizations-first,cacheMB:urbanSpriteBytes/1024/1024};
+      })()`)} )`);
+      console.log('City rendering: '+JSON.stringify(stats));
+      assert.equal(stats.overlaps,0,'Generated buildings must not overlap');
+      assert.equal(stats.repeatedRasters,0,'Moving through a block reuses cached building artwork');
+      assert.deepEqual(errors,[],'City rendering must not throw');
+      continue;
+    }
+    if(motorOnly){
+      if(url.startsWith('file:'))continue;
+      await evaluate(`__gameEval("keys.clear();mossEcology.entities.length=0;bikeEngineRunning=false;mounted=false;bike.speed=0;fuel=68;bikeLife=100;player.x=bike.x;player.y=bike.y;mount();")`);
+      assert(await evaluate(`__gameEval('mounted&&ignition.active&&!bikeEngineRunning')`),'Mounting a stopped bike opens the key minigame');
+      const points=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+        const bounds=canvas.getBoundingClientRect(),view=ignition.viewport;
+        const point=(x,y)=>({x:bounds.left+(view.x+x*view.scale)/DISPLAY_W*bounds.width,
+          y:bounds.top+(view.y+y*view.scale)/DISPLAY_H*bounds.height});
+        return {home:point(214,156),lock:point(318,131)};
+      })()` )})`);
+      await call('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...points.home});
+      await call('Input.dispatchMouseEvent',{type:'mouseMoved',button:'left',buttons:1,...points.lock});
+      await call('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...points.lock});
+      const startedOnExit=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+        ignition.key({key:'Enter',repeat:false,preventDefault(){}});
+        if(ignition.snapshot.phase!=='success')throw Error('Healthy engine must start');
+        keyDown({key:'f',repeat:false,preventDefault(){}});
+        return bikeEngineRunning&&!mounted&&!ignition.active;
+      })()` )})`);
+      assert(startedOnExit,'Dismounting during the success animation preserves the successful start');
+      await evaluate(`new Promise(resolve=>setTimeout(resolve,1200))`);
+      assert(await evaluate(`__gameEval('bikeEngineRunning&&!mounted&&bikeRpm>=999')`),'Engine idles after dismounting through actual keyboard input');
+      assert(await evaluate(`!document.querySelector('.bike-power-controls')`),'Engine power popup is absent');
+      await call('Input.dispatchKeyEvent',{type:'keyDown',key:'f',code:'KeyF',windowsVirtualKeyCode:70});
+      await call('Input.dispatchKeyEvent',{type:'keyUp',key:'f',code:'KeyF',windowsVirtualKeyCode:70});
+      assert(await evaluate(`__gameEval('mounted&&bikeEngineRunning&&!ignition.active')`),'Remounting does not require restarting');
+      await call('Input.dispatchKeyEvent',{type:'keyDown',key:'r',code:'KeyR',windowsVirtualKeyCode:82});
+      await call('Input.dispatchKeyEvent',{type:'keyUp',key:'r',code:'KeyR',windowsVirtualKeyCode:82});
+      assert(await evaluate(`__gameEval('!bikeEngineRunning')`),'R switches engine off');
+      await call('Input.dispatchKeyEvent',{type:'keyDown',key:'r',code:'KeyR',windowsVirtualKeyCode:82});
+      await call('Input.dispatchKeyEvent',{type:'keyUp',key:'r',code:'KeyR',windowsVirtualKeyCode:82});
+      assert(await evaluate(`__gameEval('ignition.active')`),'R opens ignition to start engine');
+      assert.deepEqual(errors,[],'Motor controls must not throw');
+      console.log('HTTP: dismount, idle, remount and keyboard power controls passed');
+      continue;
+    }
     if(smokeOnly){
       assert.deepEqual(errors, [], 'Game and keyboard input must not throw');
       assert.deepEqual(missing, [], 'All game resources must load');
@@ -313,9 +384,9 @@ async function main() {
       continue;
     }
     await evaluate(`new Promise(resolve=>setTimeout(resolve,500))`);
-    await call('Input.dispatchKeyEvent', {type:'keyDown', key:'h', code:'KeyH', windowsVirtualKeyCode:72});
+    await call('Input.dispatchKeyEvent', {type:'keyDown', key:'j', code:'KeyJ', windowsVirtualKeyCode:74});
     await call('Input.dispatchKeyEvent', {type:'keyUp', key:'h', code:'KeyH', windowsVirtualKeyCode:72});
-    assert(await evaluate(`!document.querySelector('#character-health-panel').hidden`), 'H opens the care menu');
+    assert(await evaluate(`!document.querySelector('#character-health-panel').hidden`), 'J opens the care menu');
     assert(await evaluate(`document.querySelector('[data-effects]').textContent.includes('Nenhuma penalidade')`), 'Healthy menu explains there are no penalties');
     await evaluate(`__healthModel.injure('leftLeg','fracture',1.5);__healthModel.injure('rightArm','cut');__healthModel.injure('chest','bruise');__healthModel.injure('head','bruise');__healthModel.injure('abdomen','cut');document.querySelector('[data-part="leftLeg"]').click()`);
     assert.equal(await evaluate(`document.querySelector('[data-part-title]').textContent`), 'Perna esquerda');

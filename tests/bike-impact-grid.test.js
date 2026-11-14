@@ -4,7 +4,7 @@ const collision=source.slice(source.indexOf('  function nearbyCollisionCells('),
 const damage=source.slice(source.indexOf('  function bikeImpactDamage('),source.indexOf('  function applyBikeImpact('));
 const buildings=Array.from({length:100},(_,i)=>[50+i%10*450,50+Math.floor(i/10)*350,70,60]);
 const fences=[[250,220,0,0,80,3,Math.PI/4],[800,400,-12,3,60,2,-Math.PI/3]];
-const model=new Function('buildings','fenceHitboxes',`let collisionGrid=null;${collision}${damage};return {worldBlocked,obstacleClearance,bikeImpactDamage,nearbyCollisionCells,invalidate(){collisionGrid=null;}};`)(buildings,fences);
+const model=new Function('buildings','fenceHitboxes',`const streetHitboxes=[];let collisionGrid=null;${collision}${damage};return {worldBlocked,obstacleClearance,bikeImpactDamage,nearbyCollisionCells,invalidate(){collisionGrid=null;}};`)(buildings,fences);
 function reference(x,y,r){
   for(const [bx,by,w,h] of buildings){
     const nx=Math.max(bx,Math.min(x,bx+w*1.65)),ny=Math.max(by,Math.min(y,by+h*1.65));

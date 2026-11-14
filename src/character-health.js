@@ -54,7 +54,7 @@
       if(pain>0)effects.push({id:'pain',label:'Dor',detail:'Reduz a velocidade de movimento. Analgésicos aliviam esse efeito temporariamente.'});
       if(wounds.some(w=>w.infected))effects.push({id:'infection',label:'Infecção',detail:'Perda gradual de condição e cicatrização mais lenta. Retire o curativo e desinfete.'});
       if(weakness>0)effects.push({id:'weakness',label:'Fraqueza',detail:'Pouco sangue: movimento e corrida prejudicados.'});
-      return {health,blood,pain,bleeding,wounds:wounds.length,infected:wounds.some(w=>w.infected),
+      return {health,maxHealth:100,blood,pain,bleeding,wounds:wounds.length,infected:wounds.some(w=>w.infected),
         movement:clamp(1-legs-pain*.002-weakness,.35,1),sprint:clamp(1-chest-weakness,.45,1),
         handling:clamp(1-arms,.5,1),dexterity:clamp(1-arms,.45,1),focus:clamp(1-head,.5,1),
         metabolism:1+Math.min(1.2,abdomen),effects,critical:health<=12||blood<=18,
@@ -142,7 +142,7 @@
           // Slow recovery continues under strain; adequate food, water and rest
           // restore wounds much faster without making treatment mandatory.
           const nourished=hunger>30&&thirst>30;
-          const rate=(nourished?(moving ? .045 : .16):.01)*(wound.type==='fracture'&&!wound.splint ? .55 : 1)*(wound.infected ? .5 : 1);
+          const rate=(nourished?(moving ? .045 : .16):.003)*(wound.type==='fracture'&&!wound.splint ? .55 : 1)*(wound.infected ? .5 : 1);
           wound.remaining=Math.max(0,wound.remaining-rate*step);
           if(wound.remaining===0){part.wound=null;onNotice('Ferimento recuperado.');}
           if(running&&wound.type==='fracture'&&!wound.splint)wound.remaining=Math.min(wound.total,wound.remaining+step*.025);
@@ -171,6 +171,8 @@
     }
     reset();
     return {reset,status,injure,start,cancel,eligibility,update,restock,stabilize,quickBandage,
+      damage(amount){vitality=clamp(vitality-amount,0,100);},
+      boost(){vitality=clamp(vitality+25,0,100);},
       get parts(){return parts;},get items(){return items;},get action(){return action;},get clock(){return clock;}};
   }
   const api={PARTS,WOUNDS,ACTIONS,create};

@@ -27,6 +27,9 @@
     }
     function close(started) {
       if(!session)return;
+      // Once the key has successfully turned, leaving the animation cannot
+      // cancel the engine start (including dismounting with F).
+      started=started||session.phase==='success';
       const drag=session.drag;session=null;
       if(drag&&canvas.hasPointerCapture(drag.id))canvas.releasePointerCapture(drag.id);
       canvas.style.touchAction='';canvas.style.cursor='';

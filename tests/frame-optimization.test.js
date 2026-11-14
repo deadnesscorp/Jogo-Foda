@@ -37,7 +37,8 @@ let commands = 0;
 const ctx = new Proxy({}, {get: () => () => { commands++; }, set: () => true});
 const terminals = [{x:2000,y:2000,disabled:false,design:0,name:'OFFSCREEN'}];
 const draw = new Function('ctx', 'towers', `
-  const cityProps=[],buildings=[],bike={x:0,y:0},player=bike,mounted=true,W=640,H=360;
+  const fenceSegments=[],RENDER_SCALE=2,StreetStructures={draw(){ctx.fillRect(0,0,1,1);}},cityProps=[],buildings=[],bike={x:0,y:0},player=bike,mounted=true,W=640,H=360;
+  const visibleUrbanSprites=new Set(),trimUrbanSpriteCache=()=>{};
   const projectPoint=(x,y)=>({x,y});
   ${depthSource}
   return ()=>drawIsoDepthObjects(0,false);

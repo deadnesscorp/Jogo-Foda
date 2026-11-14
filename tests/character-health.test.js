@@ -18,7 +18,7 @@ function runCharacterHealthTests(api){
   check(!model.start('bandage','leftLeg'),'bandages cannot be stacked');
   const healthAfter=model.status().health;model.update(30);
   check(model.status().health>healthAfter&&model.status().health>=injuredHealth-1,'recovery is gradual');
-  model.update(235);
+  model.update(235,{hunger:0,thirst:0});
   check(model.parts.leftLeg.wound.bandage.dirty,'bandages become dirty over time');
   check(model.parts.leftLeg.wound.infected,'neglected dirty dressing can cause local infection');
   check(!model.start('clean','leftLeg'),'dressing must be removed before cleaning');

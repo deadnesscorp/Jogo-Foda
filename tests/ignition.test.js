@@ -29,6 +29,14 @@ function runIgnitionTests(factory,source) {
     check(h.game.snapshot.keychain.every(p=>[p.angle,p.velocity,p.tilt].every(Number.isFinite)&&Math.abs(p.angle)<=1.48&&Math.abs(p.tilt)<=.7),'large mouse movements keep chain physics finite and bounded');
     h.game.draw(2);
   }
+  for(const exit of ['close','Escape']) {
+    const h=create();h.game.open();h.down(214,156);h.up(318,131);h.key('Enter');
+    check(h.game.snapshot.phase==='success','key turn succeeds before leaving the animation');
+    if(exit==='close')h.game.close(false);else h.key(exit);
+    check(h.started===1&&h.cancelled===0&&!h.game.active,'leaving success animation preserves the engine start');
+    h.game.update(1);h.game.close(false);
+    check(h.started===1,'leaving success animation starts engine exactly once');
+  }
   for(const scale of [1,2,.75]) {
     const h=create(scale);h.game.open();h.game.draw(0);const home=h.game.snapshot,view=h.game.viewport;
     check(Math.abs(view.x+318*view.scale-240)<1e-9&&Math.abs(view.y+131*view.scale-135)<1e-9,'lock is centered exactly on the canvas');
@@ -108,7 +116,7 @@ function runIgnitionTests(factory,source) {
     const h=new Function(`
       let state='drive',mounted=false,bikeEngineRunning=false,approachedByBike=false,bikeRpm=0,opened=0;
       const bike={x:0,y:0,angle:0,speed:0,steering:0},player={x:0,y:0,angle:0},keys=new Set(),activeTower=0;
-      let toastTimer=0;
+      let toastTimer=0,playerKnockdown=0;
       const toast={classList:{remove(){}}},ignition={open(){opened++;}},setToast=()=>{},setObjective=()=>{},updateObjective=()=>{};
       const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
       ${lifecycle}
@@ -118,7 +126,9 @@ function runIgnitionTests(factory,source) {
     h.mount();check(h.mounted&&h.opened===1,'mounting stopped engine opens ignition');
     h.start();h.dismount();check(h.running&&!h.mounted,'dismount preserves running engine');
     h.mount();check(h.mounted&&h.opened===1,'remounting running engine skips ignition');
-    h.bike.speed=30;h.off();check(h.running,'cannot switch off moving motorcycle');
+    h.bike.speed=30;h.off();check(!h.running&&h.bike.speed===30,'switching off moving motorcycle preserves momentum');
+    h.off();check(!h.running&&h.opened===1,'moving motorcycle cannot reopen ignition');
+    h.start();
     h.bike.speed=0;h.off();check(!h.running,'stationary motorcycle can be switched off');
     h.off();check(h.mounted&&h.opened===2,'stationary rider can reopen ignition without dismounting');
     h.dismount();h.mount();check(h.opened===3,'mounting after switching off reopens ignition');

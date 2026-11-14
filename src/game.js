@@ -10,7 +10,7 @@
   const ignition=createBikeIgnition({canvas,ctx,width:W,height:H,
     getCondition:()=>bikeParts.motor*.7+bikeLife*.3,
     onStart:()=>{keys.clear();if(fuel<=0||bikeLife<=0){dismount();setToast('VERIFIQUE O COMBUSTÍVEL E O ESTADO DA MOTO.');return;}bikeEngineRunning=true;bikeRpm=1000;setToast('MOTO LIGADA — BOA VIAGEM!');updateObjective();},
-    onCancel:()=>{keys.clear();setToast('PARTIDA CANCELADA — E PARA TENTAR NOVAMENTE.');updateObjective();},
+    onCancel:()=>{keys.clear();setToast('PARTIDA CANCELADA — USE O BOTÃO LIGAR MOTO OU R PARA TENTAR NOVAMENTE.');updateObjective();},
     onFail:()=>setToast('O MOTOR NÃO PEGOU — GIRE A CHAVE NOVAMENTE.')
   });
   ctx.scale(RENDER_SCALE, RENDER_SCALE);
@@ -43,7 +43,7 @@
   let bikeBlendStamp='';
   function bikeMotion(speed,time,riding,phase=0,angle=0) {
     const travel=Math.min(1,Math.abs(speed)/110);
-    const idle=riding&&bikeEngineRunning ? .08 : 0;
+    const idle=bikeEngineRunning ? .08 : 0;
     return {compression:1-(Math.sin(phase)*.008*travel+Math.sin(time*32)*idle*.012),
       lean:Math.max(-.16,Math.min(.16,-(bike.bank||0)*Math.sign(speed)*Math.cos(angle)*.16))*travel};
   }
@@ -371,19 +371,12 @@
   const objectiveIndex = document.querySelector('#objective-index');
   const keys = new Set();
   const upgrades={fuel:0,armor:0,health:0,kick:0};
-  const characterHealth=(()=>{
-    let hp=100;const items={bandages:6};
-    const max=()=>100+upgrades.health*25;
-    return {items,reset(){hp=100;items.bandages=6;},
-      status(){return {health:hp,maxHealth:max(),critical:hp<=0,bleeding:0,movement:1,sprint:1,handling:1,dexterity:1,focus:1,metabolism:1};},
-      damage(amount){hp=Math.max(0,hp-amount);},
-      injure(part,type,severity=1){hp=Math.max(0,hp-({fracture:20,deep:18,cut:12,bruise:9,scratch:6}[type]||10)*severity);},
-      update(dt,{hunger,thirst}){if(hunger<=0||thirst<=0)hp=Math.max(0,hp-dt*.8);},
-      stabilize(){hp=max()*.6;},restock(){items.bandages+=3;hp=Math.min(max(),hp+35);},
-      quickBandage(){if(items.bandages>0&&hp<max()){items.bandages--;hp=Math.min(max(),hp+30);}},
-      boost(){hp=Math.min(max(),hp+25);}
-    };
-  })();
+  const characterHealth=CharacterHealth.create({onNotice:message=>setToast(message)});
+  const healthPanel=createCharacterHealthPanel({container:canvas.parentElement,model:characterHealth,onOpen:()=>{keys.clear();stopBikeDrag();}});
+  function healthCareContext(){
+    return {available:['drive','explore'].includes(state)&&!mounted&&!ignition.active&&!bikeInspectOpen&&!checkpointReturn&&playerKnockdown<=0,
+      moving:['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(key=>keys.has(key)),running:keys.has('shift'),hunger,thirst};
+  }
   let creatureHitCooldown=0,creatureBikeCooldown=0,playerKnockdown=0,knockdownAngle=0;
   function woundCharacter(source,severity=1){
     const pick=list=>list[Math.floor(Math.random()*list.length)];
@@ -396,8 +389,9 @@
     creatureHitCooldown=Math.max(0,creatureHitCooldown-dt);
     creatureBikeCooldown=Math.max(0,creatureBikeCooldown-dt);
     playerKnockdown=Math.max(0,playerKnockdown-dt);
+    healthPanel.update(dt,healthCareContext());
     if(active){
-      characterHealth.update(dt,{hunger,thirst});
+      characterHealth.update(dt,healthCareContext());
       const condition=characterHealth.status();
       player.hp=explorer.hp=condition.critical?0:Math.max(1,Math.ceil(condition.health/34));
       if(condition.critical){
@@ -432,6 +426,7 @@
     [390, 1480, 68, 54], [730, 1250, 76, 62], [1530, 1560, 90, 73], [2170, 180, 72, 58]
   ];
   const fenceHitboxes = [];
+  const streetHitboxes = [];
   let collisionGrid=null;
   let fenceSegments = [[60, 635, 130, 0], [1030, 360, 100, Math.PI / 2], [1390, 900, 160, 0]];
   function rebuildFenceHitboxes() {
@@ -439,15 +434,7 @@
     fenceHitboxes.length = 0;
     fenceSegments.forEach(([fx, fy, length, angle]) => {
     const addRect = (x,y,w,h) => fenceHitboxes.push([fx,fy,x,y,w,h,angle]);
-    for (let i = 0; i < length; i += 14) {
-      if ((i / 14) % 4 === 2) continue;
-      addRect(i,0,3,15);
-    }
-    for (let i = 0; i < length; i += 28) {
-      if ((i / 28) % 3 === 1) continue;
-      const span = (i / 28) % 2 ? 17 : 24;
-      addRect(i,3,span,2); addRect(i+3,11,span-4,2);
-    }
+    for(const part of StreetStructures.fenceParts(length))addRect(part.x,part.y,part.w,part.d);
     });
   }
   rebuildFenceHitboxes();
@@ -618,7 +605,7 @@
     const actor=survivalActor(),room=state==='explore'?exploreBuilding:-1;
     if(key==='j'){
       if(mounted){setToast('DESÇA DA MOTO PARA APLICAR O CURATIVO.');return;}
-      characterHealth.quickBandage();return;
+      healthPanel.update(0,healthCareContext());healthPanel.setOpen(!healthPanel.open);return;
     }
     if(key!=='b')return;
     const kind='bait';
@@ -768,6 +755,12 @@
   ];
   const rubble = [];
   const cityProps=[];
+  function rebuildStreetHitboxes(includeTerminals=false){
+    streetHitboxes.length=0;
+    for(const prop of cityProps)streetHitboxes.push(StreetStructures.footprint(prop));
+    if(includeTerminals)for(const terminal of towers)streetHitboxes.push(StreetStructures.footprint({...terminal,kind:4}));
+    collisionGrid=null;
+  }
   let seed = 98201;
   function random() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
   for (let i = 0; i < 390; i++) {
@@ -786,6 +779,9 @@
     return [roads,...branchRoads].some(path=>path.some((p,i)=>i>0&&pointSegmentDistance(x,y,path[i-1][0],path[i-1][1],p[0],p[1])<limit));
   }
   function generateMapLayout() {
+    urbanSpriteCache.clear();urbanSpriteBytes=0;
+    buildingGeometryCache.clear();buildingOpacities.clear();collisionGrid=null;
+    cityProps.length=0;streetHitboxes.length=0;
     roads = [[180, 3300]];
     let roadY = 3300;
     const intervals = 36, span = world.w - 360;
@@ -808,8 +804,14 @@
     buildings = [];
     for (let i = 0; i < 160; i++) {
       const gasStation = i === 10;
-      const w = gasStation ? 100 : 42 + Math.random() * 78;
-      const h = gasStation ? 78 : 36 + Math.random() * 68;
+      const w = gasStation ? 100 : Math.round(42 + Math.random() * 78);
+      const h = gasStation ? 78 : Math.round(36 + Math.random() * 68);
+      const canPlace=(x,y)=>{
+        if(x<70||y<70||x+w*1.65>world.w-70||y+h*1.65>world.h-70)return false;
+        const cx=x+w*.825,cy=y+h*.825;
+        if(nearAnyRoad(cx,cy,64+Math.hypot(w,h)*.825)||Math.hypot(cx-bike.x,cy-bike.y)<260)return false;
+        return !buildings.some(([ox,oy,ow,oh])=>x<ox+ow*1.65+48&&x+w*1.65+48>ox&&y<oy+oh*1.65+48&&y+h*1.65+48>oy);
+      };
       let building = null;
       for (let attempt = 0; attempt < 100 && !building; attempt++) {
         const segment = 1 + Math.floor(Math.random() * (roads.length - 2));
@@ -818,13 +820,13 @@
         const length = Math.hypot(dx, dy) || 1, offset = (Math.random() < .5 ? -1 : 1) * (190 + Math.random() * 330);
         const cx = ax + dx * ratio - dy / length * offset, cy = ay + dy * ratio + dx / length * offset;
         const x = Math.round(cx - w * .825), y = Math.round(cy - h * .825);
-        if (x < 70 || y < 70 || x + w * 1.65 > world.w - 70 || y + h * 1.65 > world.h - 70) continue;
-        const onBranch = branchRoads.some(path => path.some((point,j)=>j>0&&pointSegmentDistance(cx,cy,path[j-1][0],path[j-1][1],point[0],point[1])<150));
-        if (pointSegmentDistance(cx, cy, ax, ay, bx, by) < 150 || onBranch || Math.hypot(cx - bike.x, cy - bike.y) < 260) continue;
-        const overlaps = buildings.some(([ox, oy, ow, oh]) => x < ox + ow * 1.65 + 48 && x + w * 1.65 + 48 > ox && y < oy + oh * 1.65 + 48 && y + h * 1.65 + 48 > oy);
-        if (!overlaps) building = [x, y, Math.round(w), Math.round(h)];
+        if(canPlace(x,y))building=[x,y,w,h];
       }
-      if (!building) building = [220 + i * 91 % (world.w - 420), 180 + i * 137 % (world.h - 360), Math.round(w), Math.round(h)];
+      // Failed roadside attempts must still respect spacing and road clearance.
+      for(let y=70;y<world.h-70&&!building;y+=96)for(let x=70;x<world.w-70&&!building;x+=96){
+        if(canPlace(x,y))building=[x,y,w,h];
+      }
+      if(!building)throw Error('Sem espaço livre para gerar os prédios.');
       buildings.push(building);
     }
     supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : Math.random() < .3 ? 'toolkit' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .9 : Math.random() < .85 }));
@@ -849,9 +851,14 @@
       const [ax,ay]=roads[segment],[bx,by]=roads[segment+1],t=Math.random(),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1;
       const side=i%2?1:-1,offset=side*(95+Math.random()*45);
       const x=ax+dx*t-dy/len*offset,y=ay+dy*t+dx/len*offset;
-      if(x<40||y<40||x>world.w-40||y>world.h-40||worldBlocked(x,y,26))continue;
-      cityProps.push({x,y,kind:i%4,tint:i%3});
+      const kind=i%4,radius=StreetStructures.radius(kind);
+      if(x<40||y<40||x>world.w-40||y>world.h-40||worldBlocked(x,y,radius+8))continue;
+      if(cityProps.some(prop=>Math.hypot(x-prop.x,y-prop.y)<radius+StreetStructures.radius(prop.kind)+12))continue;
+      if(towers.some(terminal=>Math.hypot(x-terminal.x,y-terminal.y)<radius+85))continue;
+      const angle=Math.round(Math.atan2(dy,dx)/(Math.PI/4))*(Math.PI/4);
+      cityProps.push({x,y,kind,tint:i%3,angle});
     }
+    rebuildStreetHitboxes();
   }
 
   function active() { return towers.find(t => !t.disabled) || null; }
@@ -868,7 +875,7 @@
         }
       }
       for(const [x,y,w,h] of buildings)insert({x,y,left:0,top:0,right:w*1.65,bottom:h*1.65,c:1,s:0},x,y,x+w*1.65,y+h*1.65);
-      for(const [x,y,left,top,w,h,angle] of fenceHitboxes){
+      for(const [x,y,left,top,w,h,angle] of [...fenceHitboxes,...streetHitboxes]){
         const c=Math.cos(angle),s=Math.sin(angle),right=left+w,bottom=top+h;
         const points=[[left,top],[right,top],[right,bottom],[left,bottom]].map(([px,py])=>({x:x+px*c-py*s,y:y+px*s+py*c}));
         insert({x,y,left,top,right,bottom,c,s},Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y)));
@@ -1031,7 +1038,7 @@
     ignition.reset();
     state = 'drive'; gameTime = 0; lastTime = 0; activeTower = 0; network = 0;
     bike.x = 180; bike.y = 3300; bike.angle = .87; bike.speed = 0; bike.wheel = 0; bike.steering=0;bike.bank=0;
-    bikeGear=1;bikeShiftCooldown=0;bikeShiftFlash=0;bikeRpm=0;bikeEngineRunning=false;
+    bikeGear=1;bikeShiftCooldown=0;bikeShiftFlash=0;bikeRpm=0;bikeEngineRunning=false;bikeHeadlightOn=true;
     player.x = bike.x; player.y = bike.y; player.angle = bike.angle; player.hp = 3;
     mounted = false; approachedByBike = false; totalRide = 0; fuel = 68; hunger = 100; thirst = 100;
     bikeFuelStains.length=0;bikeFuelDripClock=0;
@@ -1045,22 +1052,23 @@
     supplies.forEach((s,i)=>{if(isShelter(i)){s.type='medical';s.available=true;}});
     towers.forEach(t => t.disabled = false);
     randomizeTowerSpawns();
+    rebuildStreetHitboxes(true);
     titleScreen.classList.add('dismissed'); keys.clear(); updateObjective();
     setToast('WASD MOVE - E INTERAGE - F MONTA - ESPACO CHUTA - J CURA');
   }
   document.querySelector('#start-game').addEventListener('click', startGame);
 
   function dismount() {
+    keys.clear();
     player.gait=null;
     bike.steering=0;bike.bank=0;
     mounted = false;
-    bikeEngineRunning=false;bikeRpm=0;
     approachedByBike = false;
     player.x = bike.x + Math.cos(bike.angle) * 19;
     player.y = bike.y + Math.sin(bike.angle) * 19;
     player.angle = bike.angle;
     bike.speed = 0;
-    setToast('A PÉ — A MOTO FICOU ESTACIONADA AQUI. F PARA VOLTAR'); updateObjective();
+    setToast(bikeEngineRunning?'MOTO CONTINUA LIGADA — R PARA DESLIGAR · F PARA VOLTAR':'MOTO DESLIGADA — F PARA MONTAR'); updateObjective();
   }
   function mount() {
     if(playerKnockdown>0){setToast('ESPERE O PERSONAGEM SE LEVANTAR.');return;}
@@ -1069,7 +1077,6 @@
     mounted = true; player.x = bike.x; player.y = bike.y; player.angle = bike.angle;
     player.gait=null;
     keys.clear();
-    bikeHeadlightOn=true;
     if(!bikeEngineRunning){
       ignition.open();
       setObjective('Arraste a chave até a fechadura e gire para a direita para ligar a moto.');
@@ -1079,6 +1086,7 @@
   function switchOffBike() {
     if(state!=='drive'||(!mounted&&distance(player,bike)>43))return;
     if(!bikeEngineRunning){
+      if(Math.abs(bike.speed)>2){setToast('PARE A MOTO PARA MEXER NA IGNIÇÃO.');return;}
       keys.clear();ignition.open();setObjective('Encaixe a chave e gire para ligar a moto.',activeTower);
       return;
     }
@@ -1224,6 +1232,7 @@
     if(ignition.active&&['e','f'].includes(e.key.toLowerCase())){e.preventDefault();if(!e.repeat){ignition.close(false);if(e.key.toLowerCase()==='f')dismount();}return;}
     if(ignition.active){ignition.key(e);return;}
     const key = e.key.toLowerCase();
+    if(healthPanel.key(key)){e.preventDefault();return;}
     if(key==='tab'&&state!=='title'){e.preventDefault();if(!e.repeat)hudDetails=!hudDetails;return;}
     if(!e.repeat&&shelterKey(key)){e.preventDefault();return;}
     if(balanceEvent&&key===' '){e.preventDefault();if(!e.repeat)attemptBalance();return;}
@@ -1252,6 +1261,8 @@
     if(key===' '&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();kickCreature();return;}
     if(key==='g'&&!e.repeat){e.preventDefault();startBikeDrag();return;}
     if(bikeControlsMounted()&&['q','e'].includes(key)){e.preventDefault();if(!e.repeat)shiftBikeGear(key==='e'?1:-1);return;}
+    if(key==='r'&&state==='drive'&&!e.repeat){e.preventDefault();switchOffBike();return;}
+    if(key==='h'&&state==='drive'&&!e.repeat&&(mounted||distance(player,bike)<=43)){e.preventDefault();bikeHeadlightOn=!bikeHeadlightOn;setToast(bikeHeadlightOn?'FAROL LIGADO':'FAROL DESLIGADO');return;}
     if(key==='f'&&state==='drive'&&!e.repeat){bikeInspectOpen=false;bikeService=null;if(mounted)dismount();else mount();return;}
     if (state === 'drive' && !mounted && key === 'e' && !e.repeat && (bikeInspectOpen || distance(player,bike)<=43) && !doorFacesPriority(player,nearbyEntrance(player.x,player.y),43)) {
       if (distance(player,bike) <= 43) { bikeInspectOpen = !bikeInspectOpen; keys.clear(); bikeInspectTab = 'Info'; bikeService = null; }
@@ -1315,16 +1326,9 @@
       ctx.strokeStyle = '#172021'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, 2); ctx.lineTo(1, -2); ctx.lineTo(5, -1); ctx.lineTo(10, -6); ctx.moveTo(-1, 0); ctx.lineTo(-7, -5); ctx.moveTo(4, -1); ctx.lineTo(7, 5); ctx.stroke();
       ctx.restore();
     }
-    fenceSegments.forEach(([x,y,length,angle]) => drawFence(x,y,length,angle));
   }
-  function drawFence(x, y, length, angle) {
-    ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
-    for (let i = 0; i < length; i += 14) { if ((i / 14) % 4 !== 2) { ctx.fillStyle = '#4d554d'; ctx.fillRect(i, 0, 3, 15); } }
-    for (let i = 0; i < length; i += 28) {
-      if ((i / 28) % 3 === 1) continue;
-      const span = (i / 28) % 2 ? 17 : 24; ctx.fillStyle = '#765b43'; ctx.fillRect(i, 3, span, 2); ctx.fillRect(i + 3, 11, span - 4, 2);
-    }
-    ctx.restore();
+  function drawFence(x,y,length,angle,part){
+    StreetStructures.drawFence(ctx,[x,y,length,angle],projectPoint,part);
   }
   function polygon(points, color) {
     ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
@@ -1355,8 +1359,18 @@
     );
   }
   const urbanSpriteCache=new Map();
+  const visibleUrbanSprites=new Set();
   let urbanSpriteBytes=0;
   const URBAN_SPRITE_BUDGET=24*1024*1024;
+  function trimUrbanSpriteCache(extraBytes=0){
+    for(const [key,sprite] of urbanSpriteCache){
+      if(urbanSpriteBytes+extraBytes<=URBAN_SPRITE_BUDGET)break;
+      // Keep the visible working set, even when a dense block exceeds the
+      // background cache budget, so buildings are not rasterized every frame.
+      if(visibleUrbanSprites.has(sprite.index))continue;
+      urbanSpriteBytes-=sprite.bytes;urbanSpriteCache.delete(key);
+    }
+  }
   function drawUrbanBuildingSprite(shape,index){
     const key=index+':'+shape.w+':'+shape.h+':'+shape.lift+':'+RENDER_SCALE;
     let sprite=urbanSpriteCache.get(key);
@@ -1371,10 +1385,8 @@
       const painter=layer.getContext('2d');painter.scale(RENDER_SCALE,RENDER_SCALE);painter.imageSmoothingEnabled=false;
       const local=p=>({x:p.x-origin.x-left,y:p.y-origin.y-top});
       UrbanStructures.draw(painter,{...shape,base:shape.base.map(local),roof:shape.roof.map(local)},index);
-      sprite={layer,left,top,width:layer.width/RENDER_SCALE,height:layer.height/RENDER_SCALE,bytes:layer.width*layer.height*4};
-      while(urbanSpriteCache.size&&urbanSpriteBytes+sprite.bytes>URBAN_SPRITE_BUDGET){
-        const oldest=urbanSpriteCache.keys().next().value;urbanSpriteBytes-=urbanSpriteCache.get(oldest).bytes;urbanSpriteCache.delete(oldest);
-      }
+      sprite={layer,left,top,index,width:layer.width/RENDER_SCALE,height:layer.height/RENDER_SCALE,bytes:layer.width*layer.height*4};
+      trimUrbanSpriteCache(sprite.bytes);
       urbanSpriteCache.set(key,sprite);urbanSpriteBytes+=sprite.bytes;
     }else{urbanSpriteCache.delete(key);urbanSpriteCache.set(key,sprite);}
     ctx.drawImage(sprite.layer,shape.base[0].x+sprite.left,shape.base[0].y+sprite.top,sprite.width,sprite.height);
@@ -1625,29 +1637,11 @@
     ctx.drawImage(layer,left,top);ctx.restore();
   }
   function drawCityProp(prop,p){
-    ctx.save();ctx.translate(p.x,p.y);
-    ctx.fillStyle='#080f1380';ctx.beginPath();ctx.ellipse(0,3,prop.kind===0?30:14,7,0,0,Math.PI*2);ctx.fill();
-    if(prop.kind===0){
-      // Abandoned car with broken windows and flat tires.
-      ctx.fillStyle='#101619';ctx.fillRect(-23,-1,10,7);ctx.fillRect(15,-1,10,7);
-      ctx.fillStyle=['#6c5148','#4d6260','#6c694f'][prop.tint];ctx.fillRect(-29,-13,58,15);ctx.fillRect(-15,-23,32,13);
-      ctx.fillStyle='#1b343c';ctx.fillRect(-12,-21,12,9);ctx.fillRect(3,-21,11,9);
-      ctx.strokeStyle='#90a09a';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-7,-21);ctx.lineTo(-3,-16);ctx.lineTo(-9,-13);ctx.stroke();
-      ctx.fillStyle='#c8ba81';ctx.fillRect(-28,-10,4,4);ctx.fillStyle='#443a35';ctx.fillRect(23,-11,5,7);
-    }else if(prop.kind===1){
-      ctx.fillStyle='#2d393b';ctx.fillRect(-2,-48,4,51);ctx.fillRect(-2,-48,17,3);
-      ctx.fillStyle='#b5ab82';ctx.fillRect(9,-45,10,4);ctx.fillStyle='#626d64';ctx.fillRect(-6,0,12,4);
-    }else if(prop.kind===2){
-      ctx.fillStyle='#333e3b';ctx.fillRect(-19,-1,4,7);ctx.fillRect(15,-1,4,7);
-      ctx.fillStyle='#77664c';ctx.fillRect(-22,-8,44,6);ctx.fillRect(-22,-18,44,4);ctx.fillRect(-20,-15,3,9);ctx.fillRect(17,-15,3,9);
-    }else{
-      ctx.fillStyle='#455a51';ctx.fillRect(-12,-18,24,22);ctx.fillStyle='#657367';ctx.fillRect(-14,-21,28,5);
-      ctx.fillStyle='#263d34';for(let i=0;i<4;i++)ctx.fillRect(-8+i*5,-14,2,14);
-    }
-    ctx.restore();
+    StreetStructures.draw(ctx,prop,p,RENDER_SCALE);
   }
   function drawIsoDepthObjects(time, includeActors) {
     const objects = [];
+    visibleUrbanSprites.clear();
     const actor=mounted?bike:player,actorPoint=projectPoint(actor.x,actor.y);
     const halfWidth=mounted?18:7;
     const actorRect={left:actorPoint.x-halfWidth,right:actorPoint.x+halfWidth,top:actorPoint.y-(mounted?30:22),bottom:actorPoint.y+6};
@@ -1657,11 +1651,22 @@
       if(p.x<-80||p.x>W+80||p.y<-40||p.y>H+100)continue;
       objects.push({depth:prop.x+prop.y,draw:()=>drawCityProp(prop,p)});
     }
+    for(const [x,y,length,angle] of fenceSegments){
+      const end={x:x+Math.cos(angle)*length,y:y+Math.sin(angle)*length};
+      const a=projectPoint(x,y),b=projectPoint(end.x,end.y);
+      if(Math.max(a.x,b.x)<-12||Math.min(a.x,b.x)>W+12||Math.max(a.y,b.y)<-12||Math.min(a.y,b.y)-34>H+12)continue;
+      for(const part of StreetStructures.fenceParts(length)){
+        const lx=part.x+part.w/2,ly=part.y+part.d/2;
+        const wx=x+lx*Math.cos(angle)-ly*Math.sin(angle),wy=y+lx*Math.sin(angle)+ly*Math.cos(angle);
+        objects.push({depth:wx+wy,draw:()=>drawFence(x,y,length,angle,part)});
+      }
+    }
     buildings.forEach(([x,y,w,h],i)=>{
       const corner=projectPoint(x,y),lift=i===10?100:UrbanStructures.TYPES[i%5].height;
       if(corner.x+w*1.65*ISO_X < -80||corner.x-h*1.65*ISO_X>W+80||corner.y-lift>H+128||corner.y+(w+h)*1.65*ISO_Y < -80)return;
       const geometry=isoBuildingGeometry(x,y,w,h,i);
       if(isoBuildingVisible(geometry)){
+        if(i!==10)visibleUrbanSprites.add(i);
         const depth=x+y+(w+h)*.82;
         const occluded=includeActors&&state==='drive'&&buildingOccludesActor(geometry,actorRect,depth,actor.x+actor.y);
         const opacity=buildingOpacity(i,occluded,time);
@@ -1672,21 +1677,10 @@
       const p=projectPoint(terminal.x,terminal.y);
       if(p.x+36<0||p.x-36>W||p.y+16<0||p.y-64>H)return;
       objects.push({depth:terminal.x+terminal.y,draw:()=>{
-      const color=terminal.disabled?'#72958b':'#83efc1';
-      ctx.save();ctx.translate(p.x,p.y);
-      ctx.fillStyle='#07111488';ctx.beginPath();ctx.ellipse(0,5,35,10,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#263c40';ctx.fillRect(-29,-14,58,17);ctx.fillStyle='#425a5b';ctx.fillRect(-29,-14,58,4);
-      ctx.fillStyle='#101c24';ctx.fillRect(18,-46,15,31);ctx.fillStyle='#547075';ctx.fillRect(18,-46,15,3);
-      ctx.fillStyle=color;ctx.fillRect(22,-39,3,3);ctx.fillRect(22,-33,7,1);
-      ctx.fillStyle='#071017';ctx.fillRect(-25,-49,40,32);ctx.strokeStyle='#69858a';ctx.strokeRect(-25.5,-49.5,41,33);
-      ctx.fillStyle=terminal.disabled?'#203d36':'#123e39';ctx.fillRect(-22,-46,34,25);
-      ctx.fillStyle=color;ctx.font='5px monospace';ctx.textAlign='left';
-      ctx.fillText(terminal.disabled?'REDE OK':'> REDE_0'+(terminal.design+1),-20,-39);
-      for(let line=0;line<3;line++){ctx.globalAlpha=.4+line*.15;ctx.fillRect(-20,-35+line*4,12+line*5,1);}ctx.globalAlpha=1;
-      ctx.fillStyle='#698285';ctx.fillRect(-9,-17,7,5);ctx.fillRect(-15,-12,20,2);
-      ctx.fillStyle='#7d8f89';ctx.fillRect(-23,-8,31,6);ctx.fillStyle='#253a3c';
-      for(let row=0;row<2;row++)for(let col=0;col<9;col++)ctx.fillRect(-21+col*3,-7+row*2,2,1);
-      ctx.fillStyle=color;ctx.textAlign='center';ctx.fillText(terminal.name,0,-57);ctx.restore();
+      StreetStructures.draw(ctx,{...terminal,kind:4,angle:0},p,RENDER_SCALE);
+      ctx.fillStyle=terminal.disabled?'#779889':'#8af1c4';ctx.textAlign='center';ctx.font='5px monospace';
+      ctx.fillText(terminal.name,p.x,p.y-61);
+
     }});
     });
     if (includeActors && mounted) objects.push({ depth: bike.x + bike.y, draw: () => {
@@ -1712,6 +1706,7 @@
         projectFacing(creature.angle),creature.phase,creature.sunRunner&&creature.pursuingPlayer)});
     }
     objects.sort((a, b) => a.depth - b.depth).forEach(o => o.draw());
+    trimUrbanSpriteCache();
   }
 
   function drawBikeExhaust(x,y,angle,speed,time,facing) {
@@ -1965,7 +1960,7 @@
   }
   function jobsForBikePart(part) { return bikeJobs[part.includes('Tire') ? 'tire' : part]; }
   function startBikeService(part, index) {
-    if(bikeEngineRunning){setToast('DESLIGUE O MOTOR ANTES DE CONSERTAR A MOTO. MONTE COM F E DESLIGUE COM E.');return;}
+    if(bikeEngineRunning){setToast('DESLIGUE O MOTOR ANTES DE CONSERTAR A MOTO. USE R PERTO DELA PARA DESLIGAR.');return;}
     if (!Object.hasOwn(bikeParts,part) || !Number.isInteger(index) || index<0 || index>3) return;
     const practice = bikeFaults[part][index] >= 99.5 && bikeLife >= 99.5;
     if (!practice && repairKits <= 0) { setToast('SEM KIT — PROCURE FERRAMENTAS. Peças íntegras permitem treino.'); return; }
@@ -3398,6 +3393,10 @@
     ctx.textAlign='left';ctx.fillStyle='#c7d8c9';ctx.fillText(label,25,0);ctx.restore();
   }
   function drawDriveHud(time) {
+    ctx.save();
+    ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
+    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · J CURATIVO · H CORPO` : 'E INTERAGIR  ·  F MONTAR  ·  J CURATIVO  ·  H CORPO', W - 12, H - 7);
+    ctx.restore();
     drawCompass(hudDetails?193:101,25,mounted?bike.angle:player.angle);
     if(!hudDetails){
       const source=mounted?bike:player;
@@ -3436,8 +3435,7 @@
       drawBikeDashboard(time);
     }
     drawSurvivalHud();
-    ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? `W ACELERA · S FREIA/RÉ · A/D VIRA · Q REDUZ · E SOBE MARCHA · F DESCE` : 'W A S D MOVER  ·  E INTERAGIR  ·  F MONTAR', W - 12, H - 7);
+
     if(playerKnockdown>0)hint('DERRUBADO — LEVANTANDO...',W/2,31,time);
     else if (!mounted && active() && distance(player,active())<65) hint('E ACESSAR COMPUTADOR',W/2,31,time);
     else if (!mounted && nearbyEntrance(player.x, player.y) >= 0) hint('E  ENTRAR PELA PORTA', W / 2, 31, time);
@@ -4383,6 +4381,7 @@
     if(canvas.width===resolution.width&&canvas.height===resolution.height)return;
     canvas.width=resolution.width;canvas.height=resolution.height;
     RENDER_SCALE=canvas.width/DISPLAY_W;
+    urbanSpriteCache.clear();urbanSpriteBytes=0;
     ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);ctx.imageSmoothingEnabled=false;
     bikeBlendLayer.width=Math.ceil(160*RENDER_SCALE);bikeBlendLayer.height=Math.ceil(160*RENDER_SCALE);
     bikeOcclusionLayer.width=bikeBlendLayer.width;bikeOcclusionLayer.height=bikeBlendLayer.height;

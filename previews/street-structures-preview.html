@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estruturas urbanas — visual e colisões</title>
+<style>
+body{margin:0;padding:24px;background:#101c18;color:#d5dfc6;font:15px system-ui}h1{font-size:22px;margin:0 0 8px}p{color:#9cab98}label{display:block;margin:18px 0}canvas{display:block;width:min(100%,1100px);height:auto;border:1px solid #415445;background:#263b30;border-radius:8px}input{accent-color:#a7dfa7}
+</style>
+<h1>Estruturas urbanas</h1>
+<p>Carros, postes, bancos, lixeiras e terminais. O contorno mostra a área de colisão no chão.</p>
+<label><input id="hitboxes" type="checkbox" checked> Mostrar hitboxes</label>
+<canvas id="preview" width="1100" height="690"></canvas>
+<script src="../src/street-structures.js"></script>
+<script>
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),toggle=document.querySelector('input');
+const K=Math.SQRT1_2,project=(x,y)=>({x:(x-y)*K,y:(x+y)*K*.5});
+function outline(prop){
+  const [x,y,l,t,w,d,a]=StreetStructures.footprint(prop),c=Math.cos(a),s=Math.sin(a);
+  const points=[[l,t],[l+w,t],[l+w,t+d],[l,t+d]].map(([u,v])=>project(x+u*c-v*s,y+u*s+v*c));
+  ctx.strokeStyle='#c3f586';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();ctx.setLineDash([]);
+}
+function render(){
+  ctx.clearRect(0,0,1100,690);ctx.fillStyle='#263b30';ctx.fillRect(0,0,1100,690);
+  for(let row=0;row<3;row++)for(let kind=0;kind<5;kind++){
+    ctx.save();ctx.translate(110+kind*220,125+row*165);
+    ctx.strokeStyle='#344c3b';ctx.lineWidth=1;
+    for(let g=-80;g<=80;g+=20){ctx.beginPath();const a=project(g,-60),b=project(g,60),c=project(-80,g),d=project(80,g);ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.moveTo(c.x,c.y);ctx.lineTo(d.x,d.y);ctx.stroke();}
+    const prop={x:0,y:0,kind,tint:row,angle:kind===4?0:row*Math.PI/2,disabled:row===2};
+    StreetStructures.draw(ctx,prop,{x:0,y:0},2);if(toggle.checked)outline(prop);
+    ctx.fillStyle='#d5dfc6';ctx.textAlign='center';ctx.font='12px system-ui';ctx.fillText(StreetStructures.TYPES[kind].name,0,56);ctx.restore();
+  }
+  ctx.save();ctx.translate(190,610);StreetStructures.drawFence(ctx,[0,0,180,0],project);
+  if(toggle.checked)for(const part of StreetStructures.fenceParts(180)){
+    const q=[project(part.x,part.y),project(part.x+part.w,part.y),project(part.x+part.w,part.y+part.d),project(part.x,part.y+part.d)];
+    ctx.strokeStyle='#c3f586';ctx.beginPath();q.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();
+  }
+  ctx.fillStyle='#d5dfc6';ctx.font='13px system-ui';ctx.fillText('Cerca: postes e travessas com vãos de passagem',200,0);ctx.restore();
+}
+toggle.addEventListener('change',render);render();
+</script>
+</html>
