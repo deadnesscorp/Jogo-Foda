@@ -4,11 +4,11 @@
 <p>Encoberto · Rastejante · Coroa — quatro direções e quatro poses de caminhada por criatura.</p>
 <canvas id="sprites" width="1000" height="300"></canvas>
 <h2>Jogo: noite e criaturas no mapa</h2><div id="game"></div>
-<script src="../assets/creatures/atlas.js"></script><script src="../moss-creatures.js"></script><script src="moss-creatures.test.js"></script>
+<script src="../assets/creatures/atlas.js"></script><script src="../src/moss-creatures.js"></script><script src="moss-creatures.test.js"></script>
 <script>
 (async()=>{try{
   const result=document.querySelector('#result'),reports=[runMossCreatureTests(MossCreatures)];
-  const source=await(await fetch('../game.js')).text();new Function(source);
+  const source=await(await fetch('../src/game.js')).text();new Function(source);
   const renderer=MossCreatures.createRenderer(MOSS_CREATURE_ATLAS,{assetRoot:'../assets/creatures/'});
   await Promise.all(renderer.sheets.map(image=>image.complete&&image.naturalWidth?Promise.resolve():new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('Image failed: '+image.src));})));
   const canvas=document.querySelector('#sprites'),ctx=canvas.getContext('2d');
@@ -41,7 +41,7 @@
   };`;
   const instrumented=source.replace(/\}\)\(\);\s*$/,debug+'})();');
   iframe.srcdoc=html.replace('<head>','<head><base href="../"><script>window.addEventListener("error",e=>parent.postMessage({mossError:e.message},"*"));<\/script>')
-    .replace(/<script src="game\.js[^\"]*"><\/script>/,()=>'<script>'+instrumented.replace(/<\/script/gi,'<\\/script')+'<\/script>');
+    .replace(/<script src="src\/game\.js[^\"]*"><\/script>/,()=>'<script>'+instrumented.replace(/<\/script/gi,'<\\/script')+'<\/script>');
   await new Promise(resolve=>iframe.onload=resolve);
   const game=iframe.contentWindow.__mossTest;if(!game)throw Error('Game failed to initialize: '+errors.join('; '));
   game.start(12);const daytime=game.snapshot();

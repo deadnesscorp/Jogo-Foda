@@ -1,13 +1,13 @@
 <!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Saúde do personagem — verificação</title>
 <style>body{margin:20px;background:#171e23;color:#e0e4db;font:15px system-ui}pre{white-space:pre-wrap}#game{max-width:1100px}</style>
 <h1>Saúde do personagem</h1><pre id="result">Executando…</pre><div id="game"></div>
-<script src="../character-health.js"></script><script src="character-health.test.js"></script>
+<script src="../src/character-health.js"></script><script src="character-health.test.js"></script>
 <script>
 (async()=>{try{
   const reports=[runCharacterHealthTests(CharacterHealth)];
-  const source=await(await fetch('../game.js')).text();new Function(source);
+  const source=await(await fetch('../src/game.js')).text();new Function(source);
   const html=await(await fetch('../index.html')).text(),frame=document.createElement('iframe');
-  const localStyles=(await(await fetch('../style.css')).text()).replace(/^@import[^\n]*\n/,'');
+  const localStyles=(await(await fetch('../styles/style.css')).text()).replace(/^@import[^\n]*\n/,'');
   frame.style.cssText='width:1100px;height:800px;border:1px solid #786188';
   document.querySelector('#game').attachShadow({mode:'open'}).appendChild(frame);
   const errors=[];window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data?.healthError)errors.push(event.data.healthError);});
@@ -22,8 +22,8 @@
   };`;
   const instrumented=source.replace(/\}\)\(\);\s*$/,debug+'})();');
   frame.srcdoc=html.replace('<head>','<head><base href="../"><script>window.addEventListener("error",e=>parent.postMessage({healthError:e.message},"*"));<\/script>')
-    .replace(/<link rel="stylesheet" href="style\.css[^\"]*">/,()=>'<style>'+localStyles+'<\/style>')
-    .replace(/<script src="game\.js[^\"]*"><\/script>/,()=>'<script>'+instrumented.replace(/<\/script/gi,'<\\/script')+'<\/script>');
+    .replace(/<link rel="stylesheet" href="styles\/style\.css[^\"]*">/,()=>'<style>'+localStyles+'<\/style>')
+    .replace(/<script src="src\/game\.js[^\"]*"><\/script>/,()=>'<script>'+instrumented.replace(/<\/script/gi,'<\\/script')+'<\/script>');
   await new Promise(resolve=>frame.onload=resolve);
   const game=frame.contentWindow.__healthTest;if(!game)throw Error(errors.join('; ')||'Game did not initialize');
   game.start();game.injury();

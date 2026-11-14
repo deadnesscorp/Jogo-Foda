@@ -43,5 +43,5 @@ function runBikeAnimationTests(source,mountedSource,art){
 }
 if(typeof module!=='undefined'&&typeof require==='function'){
   const fs=require('fs'),path=require('path'),root=path.join(__dirname,'..');
-  console.log(runBikeAnimationTests(fs.readFileSync(path.join(root,'game.js'),'utf8'),fs.readFileSync(path.join(root,'mounted-rider.js'),'utf8'),JSON.parse(fs.readFileSync(path.join(root,'assets/sprites-128/piloto-moto-unificado.json'),'utf8'))));
+  console.log(runBikeAnimationTests(fs.readFileSync(path.join(root,'src/game.js'),'utf8'),fs.readFileSync(path.join(root,'src/mounted-rider.js'),'utf8'),JSON.parse(fs.readFileSync(path.join(root,'assets/sprites-128/piloto-moto-unificado.json'),'utf8'))));
 }

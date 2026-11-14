@@ -134,5 +134,5 @@ function runMossCreatureTests(api){
   return checks+' moss-creature checks passed';
 }
 if(typeof module!=='undefined'&&module.exports){
-  console.log(runMossCreatureTests(require('../moss-creatures.js')));
+  console.log(runMossCreatureTests(require('../src/moss-creatures.js')));
 }

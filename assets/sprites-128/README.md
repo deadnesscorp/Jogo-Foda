@@ -21,13 +21,14 @@ as vistas traseiras repetidas compartilham a mesma direção.
 Não lê pixels no navegador, permitindo abrir `index.html` diretamente. As sombras
 usam os contatos dos pneus medidos na arte montada e acompanham sua escala reduzida.
 
-Os sprites separados `sobrevivente-piloto-sentado-128.png`,
-`sobrevivente-piloto-sentado-128.json`, `piloto-recortes.js` e
-`piloto-sentado-preview.html` estão preservados como material de origem e não são
-sobrepostos à moto durante o jogo.
+Os sprites antigos do piloto separado foram removidos. O jogo usa a arte
+unificada de `piloto-moto-angular.png`.
 
 ## Outros assets
 
+- `sobrevivente-caminhada-8-v4.png`: caminhada atual em oito direções.
+- `sobrevivente-caminhada-d-16.png`: ciclo atual de dezesseis poses na diagonal.
+- `caminhada-8-v2.js`: metadados dos dois ciclos atuais.
 - `moto-128.png`: moto estacionada, com 128 quadros físicos calibrados.
 - `sobrevivente-parado-128.png`: folha atual com 128 poses paradas, em 16 colunas e oito fileiras.
 - `atlas.js` e `atlas.json`: recortes e âncoras dos sprites a pé e da moto original.
@@ -73,3 +74,7 @@ O teste verifica as 128 orientações, os apoios dos pneus, os limites dos recor
 um único desenho por pose e o carregamento por HTTP e por arquivo local.
 `piloto-moto-preview.png` mostra 16 vistas; `piloto-moto-laterais.png` mostra
 seis vistas ampliadas para inspeção visual.
+
+Versões intermediárias sem uso e capturas avulsas foram removidas. Os arquivos
+de prompt dos sprites atuais preservam nomes de referências históricas; essas
+imagens antigas não fazem parte dos recursos necessários ao jogo.

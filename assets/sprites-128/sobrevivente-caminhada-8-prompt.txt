@@ -1,4 +1,0 @@
-Generated with built-in image_gen, using sobrevivente-parado-128.png as character and art style reference.
-Create a transparent square sprite sheet, exactly 8 columns and 8 rows: eight walk-cycle poses for each of eight directions. Preserve the survivor's weathered helmet with white cross, silver hair, gray mask, olive brown jacket, utility pouches, backpack and dark boots. Detailed painted chibi game sprite style.
-Rows: north, northeast, east, southeast, south, southwest, west, northwest. Columns: left contact, recoil, passing, high point, right contact, recoil, passing, high point. Alternate legs and counter-swing arms. Fixed facing per row, consistent scale, full body within each cell. No text, grid, ground or shadows. Transparent background.
-The 64 alpha bounds are precomputed in game.js, so loading also works directly from disk without canvas pixel reads. Playback follows distance travelled, using eight frames per complete stride.

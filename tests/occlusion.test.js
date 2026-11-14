@@ -1,6 +1,6 @@
 // Run with: node tests/occlusion.test.js
 const fs=require('node:fs'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../game.js'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../src/game.js'),'utf8');
 const helpers=source.slice(source.indexOf('  const buildingOpacities='),source.indexOf('  function drawIsoDepthObjects('));
 const api=new Function(helpers+';return {overlap:screenPolygonOverlapsRect,occludes:buildingOccludesActor,opacity:buildingOpacity};')();
 const shape={base:[{x:100,y:150},{x:200,y:150},{x:200,y:180},{x:100,y:180}],roof:[{x:100,y:50},{x:200,y:50},{x:200,y:80},{x:100,y:80}]};

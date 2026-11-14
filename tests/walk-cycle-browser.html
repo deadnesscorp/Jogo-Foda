@@ -5,7 +5,7 @@
 <script src="../assets/sprites-128/caminhada-8-v2.js"></script>
 <script>
 (async()=>{try{
-  const source=await(await fetch('../game.js')).text();new Function(source);
+  const source=await(await fetch('../src/game.js')).text();new Function(source);
   const idle=new Image(),walk=new Image(),right=new Image();
   const load=(image,url)=>new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error(url));image.src=url;});
   await Promise.all([load(idle,'../assets/sprites-128/'+SURVIVOR_ATLAS_128.survivor.file),load(walk,'../assets/sprites-128/'+SURVIVOR_WALK_V2.file),load(right,'../assets/sprites-128/'+SURVIVOR_WALK_D.file)]);

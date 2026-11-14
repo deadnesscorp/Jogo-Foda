@@ -15,3 +15,13 @@
 /* Quiet frame: keep the objective and let the game carry the scene. */
 .site-header{height:36px;margin-bottom:10px}.header-status,.edition,.brand small,.site-footer{display:none}.mission-bar{gap:16px;padding:10px 12px;background:#111b1d;border-color:#263633}.mission-objective small{display:none}.mission-objective strong{margin-top:0}.mission-controls{white-space:nowrap}.mission-progress{max-width:160px}.health-launcher{left:12px;bottom:10px;padding:5px 8px;background:#13201dcc;border-color:#52675d;font-size:9px}.fullscreen-toggle{opacity:.45}.fullscreen-toggle:hover,.fullscreen-toggle:focus-visible{opacity:1}.toast{max-width:85%;white-space:normal;text-align:center;line-height:1.5}@media(max-width:700px){.mission-controls span{display:inline}.mission-progress{max-width:none}.site-header{height:30px}.mission-bar{gap:9px}}
 .mission-bar{grid-template-columns:minmax(0,1fr) auto}
+
+/* Keep the longer control guide readable and scrollable inside the game frame. */
+.controls-panel{position:absolute;inset:16px 16px 16px auto;z-index:3;box-sizing:border-box;width:min(480px,calc(100% - 32px));max-height:none;margin:0;padding:18px 20px;overscroll-behavior:contain;scrollbar-gutter:stable}
+.controls-heading{position:sticky;top:-18px;z-index:1;margin:-1px 0 12px;padding:9px 0;background:#10191d;font-size:11px}
+.title-screen .controls-intro{max-width:none;margin:0 0 16px;font-size:12px;line-height:1.6;color:#b7c8bf}
+.controls-group{margin:20px 0 8px;color:#e1b579;font:500 11px 'DM Mono',monospace;letter-spacing:.06em}
+.control-row{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:12px 0;align-items:start;font-size:12px;line-height:1.5}
+.control-row kbd{font-size:10px}
+.control-row small{grid-column:1/-1;color:#b1c0b9;font-size:12px;line-height:1.6}
+@media(max-width:700px){.controls-panel{inset:8px 8px 8px auto;width:calc(100% - 16px);padding:12px 14px}.controls-heading{top:-12px}.controls-group{font-size:10px}.control-row{font-size:11px;padding:10px 0}.control-row small,.title-screen .controls-intro{font-size:11px}}

@@ -8,7 +8,7 @@
 (async()=>{
   const status=document.querySelector('pre');
   try{
-    const source=await(await fetch('../game.js')).text();new Function(source);
+    const source=await(await fetch('../src/game.js')).text();new Function(source);
     const results=[runSpriteAtlasTests(SURVIVOR_ATLAS_128,source)];
     const sprint=await(await fetch('sprint.test.js')).text();
     new Function('require','console','__dirname',sprint)(name=>name.includes('path')?{join:()=>''}:{readFileSync:()=>source},{log:line=>results.push(line)},'');

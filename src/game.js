@@ -116,7 +116,10 @@
   const headlightLayer = document.createElement('canvas');
   headlightLayer.width = W; headlightLayer.height = H;
   const headlightContext = headlightLayer.getContext('2d');
+  let lightingCache=null,lightingTime,lightingHour,lightingWidth,lightingHeight;
   function worldLighting(time) {
+    if(lightingCache&&time===lightingTime&&startHour===lightingHour&&W===lightingWidth&&H===lightingHeight)return lightingCache;
+    lightingTime=time;lightingHour=startHour;lightingWidth=W;lightingHeight=H;
     const totalHours = startHour + Math.max(0, time) * 24 / DAY_LENGTH_SECONDS;
     const hour = totalHours % 24;
     const solarAngle = (hour - 6) * Math.PI / 12;
@@ -137,7 +140,7 @@
     const solarColor = [255,244-82*warmth,221-126*warmth];
     const twilight = Math.max(0,Math.min(1,1+sunElevation/.22));
     const color = [144,173,237].map((value,i)=>Math.round(value*(1-twilight)+solarColor[i]*twilight));
-    return {hour, day: Math.floor(totalHours / 24) + 1, daylight, night, moon, elevation,
+    return lightingCache={hour, day: Math.floor(totalHours / 24) + 1, daylight, night, moon, elevation,
       sunWorldX: Math.cos(solarAngle), sunWorldY: -.35 * sunElevation,
       sourceWorldX, sourceWorldY, color,
       sourceX: W / 2 + sourceX / sourceDistance * W * .7,
@@ -381,14 +384,7 @@
       boost(){hp=Math.min(max(),hp+25);}
     };
   })();
-  const healthPanel={open:false,setOpen(){},key(){return false;},update(){}};
   let creatureHitCooldown=0,creatureBikeCooldown=0,playerKnockdown=0,knockdownAngle=0;
-  function characterMoving(){
-    if(state==='drive'&&mounted)return Math.abs(bike.speed)>2;
-    if(state==='climb')return !climber.grounded||['a','d','arrowleft','arrowright'].some(key=>keys.has(key));
-    const actor=state==='explore'?explorer:player;
-    return Math.hypot(actor.gait?.vx||0,actor.gait?.vy||0)>.5||['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(key=>keys.has(key));
-  }
   function woundCharacter(source,severity=1){
     const pick=list=>list[Math.floor(Math.random()*list.length)];
     const part=source==='fall'?pick(['leftLeg','rightLeg']):source==='ceiling'?pick(['head','chest']):pick(['leftArm','rightArm','chest','abdomen']);
@@ -401,12 +397,12 @@
     creatureBikeCooldown=Math.max(0,creatureBikeCooldown-dt);
     playerKnockdown=Math.max(0,playerKnockdown-dt);
     if(active){
-      characterHealth.update(dt,{moving:characterMoving(),running:keys.has('shift'),hunger,thirst});
+      characterHealth.update(dt,{hunger,thirst});
       const condition=characterHealth.status();
       player.hp=explorer.hp=condition.critical?0:Math.max(1,Math.ceil(condition.health/34));
       if(condition.critical){
         state='title';mounted=false;bike.speed=0;bikeEngineRunning=false;bikeRpm=0;
-        keys.clear();stopBikeDrag();ignition.reset();healthPanel.setOpen(false);
+        keys.clear();stopBikeDrag();ignition.reset();
         bikeInspectOpen=false;bikeService=null;shelterLife.cancel();shelterView=null;
         balanceEvent=null;checkpointReturn=null;playerKnockdown=0;flash=0;
         titleScreen.classList.remove('dismissed');
@@ -416,7 +412,6 @@
         return;
       }
     }
-    healthPanel.update(dt,{available:active&&['drive','explore','climb'].includes(state)&&!ignition.active,moving:active&&characterMoving()});
   }
   const world = { w: 12800, h: 4800 };
   const towers = Array.from({length:5},(_,i)=>({x:0,y:0,disabled:false,design:i,pace:0,phase:0,name:`COMPUTADOR 0${i+1}`}));
@@ -473,11 +468,7 @@
   let checkpointReturn = null;
   let hackStep = 0;
   let hackTime = 0;
-  let hackMode = 'question', connectSelected = -1, cableCutAnswer = 0, repairAnswer = 1, pulseTarget = 1, pulseClock = 0, sequenceIndex = 0;
-  const wireSequence = [0, 2, 1, 2];
-  const cableConnected = [false, false, false];
-  const cableMatch = [0, 1, 2];
-  const cableColors = ['#e3b64f', '#72b8ae', '#df7257'];
+  let hackMode = 'question';
   let chaseProgress = 0;
   let chaseSpeed = 105;
   let chaseLag = 90;
@@ -561,7 +552,7 @@
   let hudDetails=false;
   let kickCooldown=0,kickVisual=0;
   function kickCreature(){
-    if(!['drive','explore'].includes(state)||mounted||kickCooldown>0||checkpointReturn||playerKnockdown>0||healthPanel.open||bikeInspectOpen)return;
+    if(!['drive','explore'].includes(state)||mounted||kickCooldown>0||checkpointReturn||playerKnockdown>0||bikeInspectOpen)return;
     shelterLife.cancel();shelterView=null;stopBikeDrag();
     const actor=state==='explore'?explorer:player;
     const hit=mossEcology.kick({x:actor.x,y:actor.y,angle:actor.angle,room:state==='explore'?exploreBuilding:-1,range:34+upgrades.kick*12,stunScale:1+upgrades.kick*.5,
@@ -574,7 +565,7 @@
   let shelterView=null;
   const inSafeShelter=()=>state==='explore'&&isShelter(exploreBuilding);
   function shelterKey(key){
-    if(!inSafeShelter()||healthPanel.open||checkpointReturn)return false;
+    if(!inSafeShelter()||checkpointReturn)return false;
     if(['escape','w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','x'].includes(key)){
       shelterLife.cancel();shelterView=null;return key==='escape';
     }
@@ -623,7 +614,7 @@
   }
   function survivalActor(){return state==='explore'?explorer:mounted?bike:player;}
   function survivalUse(key){
-    if(!['drive','explore'].includes(state)||ignition.active||bikeInspectOpen||healthPanel.open||checkpointReturn||playerKnockdown>0)return;
+    if(!['drive','explore'].includes(state)||ignition.active||bikeInspectOpen||checkpointReturn||playerKnockdown>0)return;
     const actor=survivalActor(),room=state==='explore'?exploreBuilding:-1;
     if(key==='j'){
       if(mounted){setToast('DESÇA DA MOTO PARA APLICAR O CURATIVO.');return;}
@@ -681,7 +672,8 @@
       const actor=survivalActor(),pos=room<0?projectPoint(actor.x,actor.y):actor,angle=room<0?projectFacing(actor.angle):actor.angle;
       ctx.save();ctx.translate(pos.x,pos.y-3);ctx.rotate(angle);ctx.strokeStyle='#eed4a0';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,18+(1-kickVisual/.25)*10,-Math.PI*.8,-Math.PI*.2);ctx.stroke();ctx.restore();
     }
-    for(const p of survivalEffects.filter(p=>p.room===room)){
+    for(const p of survivalEffects){
+      if(p.room!==room)continue;
       const pos=room<0?projectPoint(p.x,p.y):p;
       ctx.fillStyle=p.kind==='flare'?'#ffaf58':'#8bdcdd';ctx.beginPath();ctx.arc(pos.x,pos.y,4+Math.sin(gameTime*12)*1.5,0,Math.PI*2);ctx.fill();
       if(p.kind==='flare'){
@@ -956,7 +948,7 @@
     bikeDragging=false;bikeDragSpeed=0;keys.delete('g');
   }
   function startBikeDrag(){
-    if(state!=='drive'||mounted||checkpointReturn||healthPanel.open||playerKnockdown>0)return false;
+    if(state!=='drive'||mounted||checkpointReturn||playerKnockdown>0)return false;
     if(distance(player,bike)>43){setToast('CHEGUE PERTO DA MOTO PARA ARRASTAR.');return false;}
     bikeInspectOpen=false;bikeService=null;
     bike.speed=0;bike.steering=0;bike.bank=0;
@@ -1053,7 +1045,7 @@
     survivalItems={flare:3,bait:4};survivalEffects=[];balanceEvent=null;escapeCooldown=0;
     stopBikeDrag();
     buildingOpacities.clear();
-    characterHealth.reset();healthPanel.setOpen(false);creatureHitCooldown=0;creatureBikeCooldown=0;playerKnockdown=0;
+    characterHealth.reset();creatureHitCooldown=0;creatureBikeCooldown=0;playerKnockdown=0;
     startHour = Math.floor(Math.random() * 1440) / 60;
     bikeVisualFacings.clear();
     player.gait=null;
@@ -1216,7 +1208,7 @@
       setToast('VOCÊ VOLTA À ESTRADA.');updateObjective();
     } else if (state === 'climb') {
       if (climber.feet < 108 && climber.x > 390) {
-        state = 'hack'; hackStep = 0; hackTime = 70; hackMode = 'question'; connectSelected = -1; cableConnected.fill(false); setToast('TERMINAL ENCONTRADO — DIAGNÓSTICO DE REDE');
+        state = 'hack'; hackStep = 0; hackTime = 70; hackMode = 'question'; setToast('TERMINAL ENCONTRADO — DIAGNÓSTICO DE REDE');
       } else setToast('O TERMINAL FICA NO TOPO DA MÁQUINA.');
     }
   }
@@ -1229,19 +1221,6 @@
     setToast(active() ? `${tower.name} CONCLUÍDO — SINAL RESTAURADO` : 'REDE RESTAURADA — A HUMANIDADE VOLTOU A OUVIR', 4);
     if (active()) updateObjective(); else setObjective('Rede restaurada. O mundo voltou a responder.', towers.length - 1);
   }
-  function beginCableChallenge() {
-    hackMode = ['connect','cut','repair','sequence','timing'][activeTower]; hackStep = 0; connectSelected = -1; cableConnected.fill(false); sequenceIndex = 0; pulseClock = 0; pulseTarget = Math.floor(Math.random() * 3);
-    cableCutAnswer = (activeTower + 1) % 3; repairAnswer = 1;
-    setToast(hackMode === 'connect' ? 'LIGUE WAN, LAN E BACKBONE ÀS PORTAS CORRETAS' : hackMode === 'cut' ? 'ISOLE O CURTO — CORTE SOMENTE O CABO INDICADO' : hackMode === 'repair' ? 'REPARE A LINHA COM UMA EMENDA CONDUTORA' : hackMode === 'sequence' ? 'REPRODUZA A ORDEM DOS RELÉS' : 'SINCRONIZE O PULSO DO NÓ');
-    updateObjective();
-  }
-  function resolveCablePair(port) {
-    if (connectSelected < 0) { setToast('SELECIONE UM CABO À ESQUERDA PRIMEIRO.'); return; }
-    if (port === cableMatch[connectSelected]) {
-      cableConnected[connectSelected] = true; connectSelected = -1;
-      if (cableConnected.every(Boolean)) completeHack(); else setToast('CABO CONECTADO — LIGUE OS OUTROS');
-    } else { connectSelected = -1; hackTime -= 3; setToast('PORTA ERRADA — CONFIRA WAN, LAN E BACKBONE'); }
-  }
   function hackInput(choice) {
     if (state !== 'hack' || choice < 0 || choice > 3) return;
     if(hackMode==='upgrade'){chooseUpgrade(choice);return;}
@@ -1252,23 +1231,6 @@
         if (hackStep >= networkQuestions[activeTower].length) {hackMode='upgrade';keys.clear();setToast('ESCOLHA UMA MELHORIA PERMANENTE');}
         else setToast('RESPOSTA CERTA — PRÓXIMA PERGUNTA');
       } else { hackTime -= 4; setToast('RESPOSTA INCORRETA — TENTE OUTRA OPÇÃO', 1.2); }
-    } else if (hackMode === 'connect') {
-      if (connectSelected < 0) {
-        if (cableConnected[choice]) { setToast('ESSE CABO JÁ ESTÁ CONECTADO.'); return; }
-        connectSelected = choice; setToast('CABO SELECIONADO — ESCOLHA A PORTA CORRESPONDENTE');
-      } else resolveCablePair(choice);
-    } else if (hackMode === 'cut') {
-      if (choice === cableCutAnswer) completeHack();
-      else { hackTime -= 8; setToast('ESSE CABO ESTÁ BOM — VERIFIQUE O DIAGNÓSTICO.'); }
-    } else if (hackMode === 'repair') {
-      if (choice === repairAnswer) completeHack();
-      else { hackTime -= 8; setToast('ESSE MATERIAL NÃO RESTABELECE A CONEXÃO.'); }
-    } else if (hackMode === 'sequence') {
-      if (choice === wireSequence[sequenceIndex]) { sequenceIndex++; if (sequenceIndex >= wireSequence.length) completeHack(); else setToast(`SINAL CORRETO — ${sequenceIndex}/${wireSequence.length}`); }
-      else { sequenceIndex = 0; hackTime -= 6; setToast('SEQUÊNCIA ERRADA — RECOMECE A COMBINAÇÃO.'); }
-    } else if (hackMode === 'timing') {
-      if (choice === pulseTarget && Math.abs(Math.sin(pulseClock * 7)) > .86) completeHack();
-      else { hackTime -= 3; setToast('PULSO PERDIDO — APERTE QUANDO O INDICADOR BRILHAR.'); }
     }
   }
   function handleHackPointer(event) {
@@ -1277,15 +1239,6 @@
     if (hackMode === 'question'||hackMode==='upgrade') {
       const choice = Math.floor((y - 108) / 27);
       if (x >= 107 && x <= 373 && y<213 && choice >= 0 && choice < 4) hackInput(choice);
-    } else if (hackMode === 'connect') {
-      const row = Math.round((y - 125) / 35);
-      if (row < 0 || row > 2) return;
-      if (x < 230) {
-        if (!cableConnected[row]) { connectSelected = row; setToast('CABO SELECIONADO — TOQUE NA PORTA À DIREITA'); }
-      } else if (x > 250) resolveCablePair(row);
-    } else {
-      const row = Math.floor((x - 103) / 91);
-      if (y >= 134 && y <= 208 && row >= 0 && row < 3) hackInput(row);
     }
   }
 
@@ -1298,7 +1251,6 @@
     if(balanceEvent&&key===' '){e.preventDefault();if(!e.repeat)attemptBalance();return;}
     if(['v','b','j','x'].includes(key)&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();survivalUse(key);return;}
     if(bikeDragging&&['e','f','h','r','escape'].includes(key))stopBikeDrag();
-    if(healthPanel.key(key)){e.preventDefault();return;}
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
     if (bikeInspectOpen && key !== 'f' && key !== 'g' && (key !== 'e' || bikeService)) {
       e.preventDefault();
@@ -1377,13 +1329,14 @@
     ctx.setLineDash([9, 13]); ctx.lineWidth = 1; ctx.strokeStyle = '#a1805a40'; ctx.stroke(); ctx.setLineDash([]);
     branchRoads.forEach(path=>{ctx.beginPath();path.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.setLineDash([9,13]);ctx.lineWidth=1;ctx.strokeStyle='#a1805a40';ctx.stroke();ctx.setLineDash([]);});
     // Buckled asphalt, potholes and long cracks scar the old transit routes.
-    roads.slice(2).filter((_,i) => i % 3 === 0).forEach(([x,y], i) => {
+    for(let roadIndex=2;roadIndex<roads.length;roadIndex+=3) {
+      const [x,y]=roads[roadIndex],i=(roadIndex-2)/3;
       const [px,py] = roads[Math.min(roads.length-1, i*3+1)], a = Math.atan2(y-py,x-px);
       ctx.save(); ctx.translate(x, y); ctx.rotate(a);
       ctx.fillStyle = '#151e20'; ctx.beginPath(); ctx.ellipse(0, 0, 11 + i % 3 * 3, 4 + i % 2, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#172021'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, 2); ctx.lineTo(1, -2); ctx.lineTo(5, -1); ctx.lineTo(10, -6); ctx.moveTo(-1, 0); ctx.lineTo(-7, -5); ctx.moveTo(4, -1); ctx.lineTo(7, 5); ctx.stroke();
       ctx.restore();
-    });
+    }
     fenceSegments.forEach(([x,y,length,angle]) => drawFence(x,y,length,angle));
   }
   function drawFence(x, y, length, angle) {
@@ -1737,8 +1690,11 @@
         objects.push({depth,draw:()=>drawBuildingWithReveal(alpha=>drawIsoBuilding(x,y,w,h,i,time,geometry,alpha),opacity,revealCircle)});
       }
     });
-    towers.forEach(terminal=>objects.push({depth:terminal.x+terminal.y,draw:()=>{
-      const p=projectPoint(terminal.x,terminal.y),color=terminal.disabled?'#72958b':'#83efc1';
+    towers.forEach(terminal=>{
+      const p=projectPoint(terminal.x,terminal.y);
+      if(p.x+36<0||p.x-36>W||p.y+16<0||p.y-64>H)return;
+      objects.push({depth:terminal.x+terminal.y,draw:()=>{
+      const color=terminal.disabled?'#72958b':'#83efc1';
       ctx.save();ctx.translate(p.x,p.y);
       ctx.fillStyle='#07111488';ctx.beginPath();ctx.ellipse(0,5,35,10,0,0,Math.PI*2);ctx.fill();
       ctx.fillStyle='#263c40';ctx.fillRect(-29,-14,58,17);ctx.fillStyle='#425a5b';ctx.fillRect(-29,-14,58,4);
@@ -1753,7 +1709,8 @@
       ctx.fillStyle='#7d8f89';ctx.fillRect(-23,-8,31,6);ctx.fillStyle='#253a3c';
       for(let row=0;row<2;row++)for(let col=0;col<9;col++)ctx.fillRect(-21+col*3,-7+row*2,2,1);
       ctx.fillStyle=color;ctx.textAlign='center';ctx.fillText(terminal.name,0,-57);ctx.restore();
-    }}));
+    }});
+    });
     if (includeActors && mounted) objects.push({ depth: bike.x + bike.y, draw: () => {
       const p = projectPoint(bike.x, bike.y);
       const rider = drawBike(p.x, p.y, projectFacing(bike.angle), bike.speed, time);
@@ -1980,7 +1937,7 @@
     mounted=false;bike.speed=0;bike.steering=0;bike.bank=0;
     stopBikeDrag();bikeInspectOpen=false;bikeService=null;
     if(ignition.active)ignition.close(false);
-    healthPanel.setOpen(false);keys.clear();player.gait=null;
+    keys.clear();player.gait=null;
     const away=Math.atan2(bike.y-creature.y,bike.x-creature.x);
     let landing={x:bike.x,y:bike.y};
     search:for(const radius of [24,32,40])candidateSearch:for(const turn of [0,.5,-.5,1,-1,2,-2,Math.PI]){
@@ -4176,65 +4133,6 @@
         ctx.fillStyle = '#dce5d8'; ctx.font = reward?'6px monospace':'7px monospace';ctx.fillText(answer, x + 29, y + 16);
       });
       ctx.fillStyle = '#8fa59b'; ctx.font = '6px monospace'; ctx.textAlign = 'center'; ctx.fillText('ESCOLHA COM 1, 2, 3, 4 OU TOQUE', W / 2, 216);
-    } else if (hackMode === 'connect') {
-      const ys = [124,159,194], sourceNames = ['UPLINK','WAN','LAN'], portNames = ['BACKBONE','INTERNET','REDE LOCAL'];
-      ctx.fillText('LIGUE OS CABOS ÀS PORTAS DA REDE', W / 2, 62);
-      ctx.fillStyle = '#87998f'; ctx.font = '6px monospace'; ctx.fillText('SELECIONE O CABO À ESQUERDA E A PORTA À DIREITA', W / 2, 78);
-      for (let i = 0; i < 3; i++) {
-        const y = ys[i];
-        ctx.fillStyle = cableConnected[i] ? '#264b3d' : connectSelected === i ? '#594b2d' : '#202c2c'; ctx.fillRect(89,y-12,118,24);
-        ctx.fillStyle = '#151d1e'; ctx.fillRect(273,y-12,118,24);
-        ctx.strokeStyle = cableConnected[i] ? '#86d5a9' : '#52645b'; ctx.strokeRect(89.5,y-11.5,117,23); ctx.strokeRect(273.5,y-11.5,117,23);
-        ctx.fillStyle = cableColors[i]; ctx.fillRect(98,y-2,20,4); ctx.fillStyle = '#dce5d8'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.fillText(sourceNames[i],124,y+2);
-        ctx.fillStyle = '#dce5d8'; ctx.textAlign = 'center'; ctx.fillText(portNames[i],332,y+2);
-        if (cableConnected[i]) {
-          ctx.strokeStyle = cableColors[i]; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(207,y); ctx.lineTo(235,y); ctx.lineTo(250,ys[cableMatch[i]]); ctx.lineTo(273,ys[cableMatch[i]]); ctx.stroke();
-          ctx.fillStyle = '#a4e4b6'; ctx.fillText('✓',247,ys[cableMatch[i]]-6);
-        } else {
-          ctx.strokeStyle = cableColors[i]; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(208,y); ctx.lineTo(230,y); ctx.moveTo(251,y); ctx.lineTo(272,y); ctx.stroke();
-        }
-      }
-      ctx.fillStyle = '#8fa59b'; ctx.font = '6px monospace'; ctx.textAlign = 'center'; ctx.fillText('TOQUE CABO E PORTA · TECLADO: NÚMERO DO CABO, DEPOIS DA PORTA', W / 2, 216);
-    } else if (hackMode === 'cut') {
-      const names = ['AMARELO','AZUL','VERMELHO'];
-      ctx.fillText('ISOLAR CURTO-CIRCUITO', W / 2, 62);
-      ctx.fillStyle = '#e2d5b4'; ctx.font = '7px monospace'; ctx.fillText(`SENSOR: CURTO NA LINHA ${cableCutAnswer + 1} · ${names[cableCutAnswer]}`, W / 2, 86);
-      ctx.fillStyle = '#899b91'; ctx.font = '6px monospace'; ctx.fillText('CORTE APENAS O CABO DANIFICADO', W / 2, 103);
-      for (let i=0;i<3;i++) {
-        const x=103+i*91, y=136;
-        ctx.fillStyle='#1c2928'; ctx.fillRect(x,y,80,58); ctx.strokeStyle='#536b61'; ctx.strokeRect(x+.5,y+.5,79,57);
-        ctx.fillStyle=cableColors[i]; ctx.fillRect(x+12,y+25,56,7); ctx.fillStyle='#171e1e'; ctx.fillRect(x+33,y+23,14,11);
-        ctx.fillStyle='#dce5d8'; ctx.font='6px monospace'; ctx.textAlign='center'; ctx.fillText(`${i+1} · ${names[i]}`,x+40,y+50);
-        if(i===cableCutAnswer){ ctx.fillStyle='#f4c477'; ctx.fillRect(x+37,y+19,6,3); }
-      }
-      ctx.fillStyle='#8fa59b'; ctx.font='6px monospace'; ctx.fillText('TOQUE NO CABO OU PRESSIONE 1, 2 OU 3', W/2,216);
-    } else if (hackMode === 'repair') {
-      ctx.fillText('EMENDAR CABO ROMPIDO', W / 2, 62);
-      ctx.fillStyle='#e2d5b4'; ctx.font='6px monospace'; ctx.fillText('A LINHA DE DADOS PRECISA DE UM CONDUTOR E ISOLAÇÃO', W/2,82);
-      ctx.strokeStyle='#74b7ad'; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(112,119); ctx.lineTo(213,119); ctx.moveTo(268,119); ctx.lineTo(369,119); ctx.stroke();
-      ctx.fillStyle='#df7257'; ctx.fillRect(211,112,5,14); ctx.fillRect(265,112,5,14);
-      for(let i=0;i<3;i++){
-        const x=103+i*91,y=143; ctx.fillStyle='#1c2928'; ctx.fillRect(x,y,80,52); ctx.strokeStyle='#536b61'; ctx.strokeRect(x+.5,y+.5,79,51);
-        if(i===0){ctx.fillStyle='#242b29';ctx.fillRect(x+15,y+22,50,8);ctx.fillStyle='#85877d';ctx.fillRect(x+19,y+24,42,4);}
-        else if(i===1){ctx.fillStyle='#a86f48';ctx.fillRect(x+14,y+21,52,10);ctx.fillStyle='#e0b570';ctx.fillRect(x+19,y+18,4,16);ctx.fillRect(x+57,y+18,4,16);ctx.fillStyle='#d6c08d';ctx.fillRect(x+24,y+24,32,4);}
-        else{ctx.fillStyle='#277e88';ctx.fillRect(x+14,y+20,52,12);ctx.fillStyle='#7bc5bc';for(let k=0;k<5;k++)ctx.fillRect(x+20+k*9,y+23,4,6);}
-        ctx.fillStyle='#dce5d8';ctx.font='5px monospace';ctx.textAlign='center';ctx.fillText(['FITA','EMENDA DE COBRE','PONTE ÓPTICA'][i],x+40,y+45);
-      }
-      ctx.fillStyle='#8fa59b';ctx.font='6px monospace';ctx.fillText('ESCOLHA A PEÇA E TOQUE PARA REPARAR',W/2,216);
-    } else if (hackMode === 'sequence') {
-      ctx.fillText('SEQUÊNCIA DE RELÉS',W/2,62);
-      ctx.fillStyle='#d5ded2';ctx.font='6px monospace';ctx.fillText('REPRODUZA A ORDEM DE PULSOS ANOTADA NO PAINEL',W/2,83);
-      ctx.fillStyle='#e3b64f';ctx.fillRect(111,111,258,31);
-      ctx.fillStyle='#202a28';ctx.font='9px monospace';ctx.fillText('1  →  3  →  2  →  3',W/2,131);
-      for(let i=0;i<3;i++){const x=124+i*91;ctx.fillStyle=i===sequenceIndex%3?'#263f37':'#1c2928';ctx.fillRect(x,163,68,41);ctx.strokeStyle=i===sequenceIndex%3?'#a9e2b7':'#536b61';ctx.strokeRect(x+.5,163.5,67,40);ctx.fillStyle=cableColors[i];ctx.fillRect(x+28,174,12,12);ctx.fillStyle='#e8e4d5';ctx.font='7px monospace';ctx.fillText(`${i+1}`,x+34,198);}
-      ctx.fillStyle='#8fa59b';ctx.font='6px monospace';ctx.fillText(`ENTRADAS CORRETAS ${sequenceIndex}/4 · ERRO REINICIA`,W/2,216);
-    } else {
-      ctx.fillText('SINCRONIZAR PULSO DE REDE',W/2,62);
-      ctx.fillStyle='#d5ded2';ctx.font='6px monospace';ctx.fillText(`ALVO DO SENSOR: RELÉ ${pulseTarget+1} · APERTE NA JANELA VERDE`,W/2,84);
-      ctx.fillStyle='#1c2928';ctx.fillRect(108,113,264,24);ctx.fillStyle='#a4bf75';ctx.fillRect(219,113,42,24);
-      const needle=110+((pulseClock*105)%260);ctx.fillStyle='#e37558';ctx.fillRect(needle,107,4,36);
-      for(let i=0;i<3;i++){const x=124+i*91;ctx.fillStyle=i===pulseTarget?'#3b4831':'#1c2928';ctx.fillRect(x,163,68,41);ctx.strokeStyle=i===pulseTarget?'#c8d995':'#536b61';ctx.strokeRect(x+.5,163.5,67,40);ctx.fillStyle=cableColors[i];ctx.fillRect(x+28,174,12,12);ctx.fillStyle='#e8e4d5';ctx.font='7px monospace';ctx.fillText(`${i+1}`,x+34,198);}
-      ctx.fillStyle='#8fa59b';ctx.font='6px monospace';ctx.fillText('APERTE O NÚMERO DO RELÉ ALVO QUANDO A BARRA CRUZAR A ZONA VERDE',W/2,216);
     }
     ctx.fillStyle = '#e2a070'; ctx.fillText(`TEMPO  ${Math.max(0, hackTime).toFixed(1)}s`, W / 2, 238);
   }
@@ -4243,7 +4141,7 @@
     if (state === 'hack') {
       if(climber.gait)updateFootGait(climber.gait,0,climber.spriteAngle,82,dt,spriteAtlas.survivor.walk);
       if(hackMode==='upgrade')return;
-      hackTime -= dt/characterHealth.status().focus; pulseClock += dt;
+      hackTime -= dt/characterHealth.status().focus;
       if (hackTime <= 0) { state = 'drive'; keys.clear(); hackStep = 0; hackTime = 90; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
       return;
     }
@@ -4389,7 +4287,12 @@
     else if (state === 'ending') drawEnding(time);
     drawSurvival();
     drawShelter();
-    if(state==='drive'||state==='explore')mossRenderer.drawGlitch(ctx,W,H,time,mossEcology.glitch);
+    if(state==='drive'||state==='explore'){
+      ctx.save();
+      ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);
+      mossRenderer.drawGlitch(ctx,DISPLAY_W,DISPLAY_H,time,mossEcology.glitch);
+      ctx.restore();
+    }
     if(state==='chase'||state==='grapple'){drawSurvivalHud();drawBikeDashboard(time);}
     if (flash > 0) { ctx.fillStyle = `rgba(203,255,224,${Math.min(.55, flash * .45)})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt * 1.4); }
     if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) toast.classList.remove('visible'); }
@@ -4419,7 +4322,7 @@
     updateSurvival(dt);
     updateShelter(dt);
     updateCharacterCare(dt);
-    if(bikeDragging&&(!keys.has('g')||state!=='drive'||mounted||healthPanel.open||bikeInspectOpen||ignition.active||checkpointReturn||distance(player,bike)>44))stopBikeDrag();
+    if(bikeDragging&&(!keys.has('g')||state!=='drive'||mounted||bikeInspectOpen||ignition.active||checkpointReturn||distance(player,bike)>44))stopBikeDrag();
     if(fuel<=0||bikeLife<=0)bikeEngineRunning=false;
     if(ignition.active)ignition.update(dt);
     updateBikeGearbox(dt,state==='chase'||state==='grapple'?chaseSpeed:bike.speed,bikeControlsMounted()&&keys.has('w'));
@@ -4444,7 +4347,6 @@
       const beforeX=bike.x,beforeY=bike.y;
       if(playerKnockdown<=0)updateFootMovement(player,dt,bikeDragging?moveDraggedBike:moveWorldEntity,projectFacing,bikeDragging ? .75*characterHealth.status().dexterity : 1);
       bikeDragSpeed=dt>0?Math.hypot(bike.x-beforeX,bike.y-beforeY)/dt:0;
-      if (active() && Math.hypot(player.x - active().x, player.y - active().y) > 205 && !mounted) { /* the machine remains safely out of reach on foot */ }
       updateObjective();
     } else if (state === 'drive' && mounted) {
       const throttle = keys.has('w') || keys.has('arrowup');

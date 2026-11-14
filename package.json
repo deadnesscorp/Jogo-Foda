@@ -1,0 +1,12 @@
+{
+  "name": "outline-alem-do-silencio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jogo de sobrevivência 2D para navegador, sem dependências de instalação.",
+  "scripts": {
+    "test": "node tools/run-tests.js",
+    "test:browser": "node tests/start-browser.test.js",
+    "test:smoke": "node tests/start-browser.test.js --smoke",
+    "test:animation": "node tests/animation-browser.test.js"
+  }
+}

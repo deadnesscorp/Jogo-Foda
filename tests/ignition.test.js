@@ -150,6 +150,6 @@ function runIgnitionTests(factory,source) {
   return assertions+' ignition checks passed';
 }
 if(typeof module!=='undefined'&&typeof require==='function') {
-  const source=process.argv.includes('--module-only')?undefined:require('fs').readFileSync(require('path').join(__dirname,'../game.js'),'utf8');
-  console.log(runIgnitionTests(require('../ignition.js'),source));
+  const source=process.argv.includes('--module-only')?undefined:require('fs').readFileSync(require('path').join(__dirname,'../src/game.js'),'utf8');
+  console.log(runIgnitionTests(require('../src/ignition.js'),source));
 }

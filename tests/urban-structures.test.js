@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const {TYPES,draw}=require('../urban-structures.js');
+const {TYPES,draw}=require('../src/urban-structures.js');
 assert.equal(TYPES.length,5);
 assert.equal(new Set(TYPES.map(t=>t.name)).size,5);
 for(const [index,type] of TYPES.entries()){

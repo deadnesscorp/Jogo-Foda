@@ -1,7 +1,7 @@
 // Run with: node tests/creature-combat.test.js
 const fs=require('node:fs'),path=require('node:path');
-const api=require('../moss-creatures.js'),healthAPI=require('../character-health.js');
-const source=fs.readFileSync(path.join(__dirname,'../game.js'),'utf8');
+const api=require('../src/moss-creatures.js'),healthAPI=require('../src/character-health.js');
+const source=fs.readFileSync(path.join(__dirname,'../src/game.js'),'utf8');
 const combat=source.slice(source.indexOf('  function creatureCanHit('),source.indexOf('  function selectedBikePart('));
 const damage=source.slice(source.indexOf('  function damageBikePart('),source.indexOf('  function updateBikeCondition('));
 function create({riding=true,roll=0,blocked=()=>false,room=false,engine=true}={}){

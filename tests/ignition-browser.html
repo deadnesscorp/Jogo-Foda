@@ -3,7 +3,7 @@
 <h1>Chaveiro da moto</h1><p>Yuuri, Chito e Nuko · pingentes de acrílico e corrente metálica</p>
 <button id="reset">Reiniciar prévia</button><canvas width="1280" height="720"></canvas><pre>Carregando testes…</pre>
 <img hidden src="../assets/keychain/yuuri.png" alt=""><img hidden src="../assets/keychain/chito.png" alt=""><img hidden src="../assets/keychain/nuko.webp" alt="">
-<script src="../ignition.js"></script><script src="ignition.test.js"></script>
+<script src="../src/ignition.js"></script><script src="ignition.test.js"></script>
 <script>
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');ctx.scale(2,2);
 const ignition=createBikeIgnition({canvas,ctx,width:640,height:360,random:()=>1,onStart(){ignition.open();},onCancel(){}});
@@ -15,5 +15,5 @@ canvas.addEventListener('pointercancel',event=>ignition.up(event));
 document.addEventListener('keydown',event=>ignition.key(event));
 document.querySelector('button').onclick=()=>ignition.open();
 function render(time){ctx.clearRect(0,0,640,360);ignition.update(Math.min(.05,(time-last)/1000));last=time;ignition.draw(time/1000);requestAnimationFrame(render);}requestAnimationFrame(render);
-fetch('../game.js').then(r=>r.text()).then(source=>{document.querySelector('pre').textContent='PASSOU\n'+runIgnitionTests(createBikeIgnition,source);document.body.dataset.result='passed';}).catch(error=>{document.querySelector('pre').textContent='ERRO: '+error.stack;document.body.dataset.result='failed';});
+fetch('../src/game.js').then(r=>r.text()).then(source=>{document.querySelector('pre').textContent='PASSOU\n'+runIgnitionTests(createBikeIgnition,source);document.body.dataset.result='passed';}).catch(error=>{document.querySelector('pre').textContent='ERRO: '+error.stack;document.body.dataset.result='failed';});
 </script></html>

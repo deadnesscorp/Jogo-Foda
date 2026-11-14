@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111b20">
   <meta name="description" content="Um jogo de aventura em pixel art sobre reconectar a humanidade." />
   <title>OUTLINE — Além do Silêncio</title>
-  <link rel="stylesheet" href="style.css?v=20261113-clean-hud">
+  <link rel="stylesheet" href="styles/style.css?v=20261113-clean-hud">
 </head>
 <body>
   <main class="game-shell">
@@ -25,17 +25,37 @@
         <p>Siga o sinal até os 5 computadores e acerte as perguntas.<br>Cada computador libera uma melhoria. Se a vida zerar, a partida acaba.</p>
         <div class="title-actions"><button id="start-game" class="start-button" type="button"><span>▶</span> INICIAR MISSÃO</button><button id="show-controls" class="menu-button" type="button" aria-expanded="false" aria-controls="controls-panel">VER CONTROLES</button></div>
         <section id="controls-panel" class="controls-panel" hidden aria-label="Controles do jogo">
-          <div class="controls-heading"><strong>CONTROLES</strong><button id="close-controls" type="button" aria-label="Fechar controles">×</button></div>
-          <div class="control-row"><span>Andar</span><kbd>W A S D</kbd><small>W sobe, S desce, A esquerda, D direita. Segure Shift para correr.</small></div>
-          <div class="control-row"><span>Usar / abrir</span><kbd>E</kbd><small>Chegue perto: abre portas, acessa computadores, dorme na cama ou abre a oficina junto da moto.</small></div>
-          <div class="control-row"><span>Montar / descer</span><kbd>F</kbd><small>F monta e abre o minigame: arraste a chave até a fechadura e gire para a direita. F desce e desliga. Farol automático.</small></div>
-          <div class="control-row"><span>Dirigir</span><kbd>W A S D</kbd><small>W acelera, S freia ou dá ré, A/D viram.</small></div>
-          <div class="control-row"><span>Marchas manuais</span><kbd>Q / E</kbd><small>Na moto, Q reduz e E aumenta a marcha, da 1ª à 4ª. Também pode clicar nos botões − e + do painel.</small></div>
-          <div class="control-row"><span>Arrastar a moto</span><kbd>G + WASD</kbd><small>A pé e perto da moto, segure G e mova com WASD. Solte G para largar. Funciona sem gasolina e com a moto quebrada.</small></div>
-          <div class="control-row"><span>Chutar / equilíbrio</span><kbd>ESPAÇO</kbd><small>A pé: chute na direção em que olha. Na moto: aperte na faixa verde quando aparecer o aviso de equilíbrio.</small></div>
-          <div class="control-row"><span>Curar</span><kbd>J</kbd><small>A pé, usa um curativo e recupera 30 de vida. Precisa ter curativos.</small></div>
-          <div class="control-row"><span>Responder / melhorar</span><kbd>1 / 2 / 3 / 4</kbd><small>Escolha uma das 4 opções ou clique nela. Acerte as 3 perguntas para escolher uma melhoria.</small></div>
-          <div class="control-row"><span>Nova partida</span><kbd>ENTER</kbd><small>No menu, inicia uma partida com vida e recursos restaurados.</small></div>
+          <div class="controls-heading"><strong>COMO JOGAR</strong><button id="close-controls" type="button" aria-label="Fechar controles">×</button></div>
+          <p class="controls-intro">A função de algumas teclas muda quando você está a pé ou na moto. Aperte uma vez para usar uma ação; segure as teclas de movimento para continuar andando ou dirigindo.</p>
+          <h2 class="controls-group">A pé e nas construções</h2>
+          <div class="control-row"><span>Andar</span><kbd>W A S D</kbd><small>Segure W para subir, S para descer, A para ir à esquerda e D para ir à direita. As setas do teclado também funcionam.</small></div>
+          <div class="control-row"><span>Correr</span><kbd>SHIFT + WASD</kbd><small>Segure Shift junto de uma direção. Você corre mais rápido, faz mais barulho e se cansa mais.</small></div>
+          <div class="control-row"><span>Entrar e sair</span><kbd>E</kbd><small>A pé, aproxime-se da porta e aperte E para entrar. Lá dentro, volte até a porta e aperte E para sair.</small></div>
+          <div class="control-row"><span>Coletar recursos</span><kbd>APROXIMAR-SE</kbd><small>Dentro de uma construção, caminhe até os suprimentos sobre a mesa. A coleta é automática quando você chega perto; não precisa apertar E.</small></div>
+          <div class="control-row"><span>Chutar uma criatura</span><kbd>ESPAÇO</kbd><small>A pé, fique perto da criatura e aperte Espaço. O chute sai na direção para a qual o personagem está olhando.</small></div>
+          <div class="control-row"><span>Usar curativo</span><kbd>J</kbd><small>Desça da moto e aperte J. Consome 1 curativo e recupera até 30 de vida, sem ultrapassar a vida máxima.</small></div>
+          <div class="control-row"><span>Usar sinalizador</span><kbd>V</kbd><small>Coloca um sinalizador na sua posição para afastar criaturas próximas por 12 segundos. Consome 1 sinalizador.</small></div>
+          <div class="control-row"><span>Lançar isca sonora</span><kbd>B</kbd><small>Lança uma isca na direção em que você olha. Ela faz barulho para atrair criaturas por 9 segundos: aproveite para se afastar. Consome 1 isca.</small></div>
+          <div class="control-row"><span>Escapar pela janela</span><kbd>X</kbd><small>Dentro da construção, vá até a janela marcada no canto superior direito e aperte X. Se a saída estiver bloqueada, use a porta.</small></div>
+          <h2 class="controls-group">Moto e oficina</h2>
+          <div class="control-row"><span>Montar ou descer</span><kbd>F</kbd><small>A pé, chegue perto da moto e aperte F para montar. Já montado, aperte F para descer; o motor desliga e a moto fica estacionada ali.</small></div>
+          <div class="control-row"><span>Ligar o motor</span><kbd>MOUSE</kbd><small>Ao montar com o motor desligado, aparece a chave. Clique e arraste a chave até a fechadura; depois gire para a direita. E cancela a partida; F cancela e desce da moto.</small></div>
+          <div class="control-row"><span>Acelerar e frear</span><kbd>W / S</kbd><small>Com o motor ligado, segure W para acelerar. Segure S para frear; depois que a moto parar, continue segurando S para dar ré.</small></div>
+          <div class="control-row"><span>Virar a moto</span><kbd>A / D</kbd><small>Enquanto a moto se move, segure A para virar à esquerda ou D para virar à direita. As setas também funcionam para dirigir.</small></div>
+          <div class="control-row"><span>Trocar de marcha</span><kbd>Q / E</kbd><small>Montado, aperte Q para reduzir ou E para subir a marcha, da 1ª à 4ª. Também dá para clicar em − e + no painel. Na moto, E troca a marcha; desça para interagir com portas e computadores.</small></div>
+          <div class="control-row"><span>Arrastar a moto</span><kbd>G + WASD</kbd><small>A pé e ao lado da moto, segure G e uma direção para empurrá-la. Solte G para largar. Funciona mesmo sem gasolina ou com a moto quebrada.</small></div>
+          <div class="control-row"><span>Abrir a oficina</span><kbd>E</kbd><small>Desça, fique perto da moto e aperte E. Escolha a peça e o reparo com o mouse; siga a instrução exibida para clicar, arrastar ou girar a ferramenta.</small></div>
+          <div class="control-row"><span>Voltar ou fechar oficina</span><kbd>ESC</kbd><small>Durante um reparo, Esc volta à oficina. Aperte de novo para fechar o painel e voltar ao jogo.</small></div>
+          <div class="control-row"><span>Recuperar o equilíbrio</span><kbd>ESPAÇO</kbd><small>Se aparecer um aviso de desequilíbrio na moto, espere o indicador chegar à faixa verde e aperte Espaço ou clique para tentar evitar a queda.</small></div>
+          <h2 class="controls-group">Abrigos e computadores</h2>
+          <div class="control-row"><span>Dormir no abrigo</span><kbd>Z</kbd><small>Dentro de um abrigo seguro, aperte Z para descansar e reduzir o cansaço. Mova-se para acordar. Você também pode apertar E perto da cama.</small></div>
+          <div class="control-row"><span>Observar lá fora</span><kbd>O</kbd><small>Dentro de um abrigo seguro, aperte a letra O para observar o exterior. Aperte O de novo, mova-se ou use Esc para voltar ao interior.</small></div>
+          <div class="control-row"><span>Acessar o computador</span><kbd>E</kbd><small>Desça da moto, chegue perto do computador indicado pelo objetivo e aperte E para começar as perguntas.</small></div>
+          <div class="control-row"><span>Responder e escolher melhoria</span><kbd>1 / 2 / 3 / 4</kbd><small>Aperte o número da opção ou clique nela. Cada erro tira 4 segundos do tempo. Acerte as 3 perguntas e escolha uma melhoria para concluir o computador.</small></div>
+          <h2 class="controls-group">Tela e partida</h2>
+          <div class="control-row"><span>Mostrar detalhes</span><kbd>TAB</kbd><small>Durante a partida, aperte Tab para mostrar ou esconder informações extras, como recursos e cansaço.</small></div>
+          <div class="control-row"><span>Tela cheia</span><kbd>P</kbd><small>Aperte P para entrar ou sair da tela cheia. Esc também permite sair da tela cheia.</small></div>
+          <div class="control-row"><span>Iniciar ou jogar novamente</span><kbd>ENTER</kbd><small>Na tela inicial ou após morrer, aperte Enter para começar uma nova partida, com vida e recursos restaurados.</small></div>
         </section>
         <div class="title-controls">W A S D <span>—</span> MOVER <i>·</i> SHIFT <span>—</span> CORRER <i>·</i> E <span>—</span> INTERAGIR</div>
       </div>
@@ -50,23 +70,16 @@
     <footer class="site-footer"><span>✦ <b>UMA NOITE DE CADA VEZ</b></span><span>FEITO PARA JOGAR NO NAVEGADOR <i>·</i> SEM INSTALAÇÃO</span></footer>
   </main>
   <script src="assets/sprites-128/atlas.js?v=20261111-measured-forearms"></script>
-  <script src="ignition.js?v=20261113-reliable-healthy-engine"></script>
-  <script src="display.js?v=20261108-fullscreen-p"></script>
+  <script src="src/ignition.js?v=20261113-reliable-healthy-engine"></script>
+  <script src="src/display.js?v=20261108-fullscreen-p"></script>
   <script src="assets/sprites-128/piloto-moto-unificado.js?v=20261110-angular-grounded"></script>
-  <script src="mounted-rider.js?v=20261111-bike-grounded"></script>
+  <script src="src/mounted-rider.js?v=20261111-bike-grounded"></script>
   <script src="assets/sprites-128/caminhada-8-v2.js?v=20261112-d-sixteen-poses"></script>
   <script src="assets/creatures/atlas.js?v=20261112-moss"></script>
-  <script src="moss-creatures.js?v=20261113-lazy-shadows"></script>
-  <script src="shelter-survival.js?v=20261113-shelter-activities"></script>
-  <script src="urban-structures.js?v=20261113-performance2"></script>
-  <script src="game.js?v=20261113-building-sprite-cache"></script>
-  <script>
-    const controlsPanel=document.querySelector('#controls-panel');
-    const controlsButton=document.querySelector('#show-controls');
-    function setControlsOpen(open){controlsPanel.hidden=!open;controlsButton.setAttribute('aria-expanded',String(open));}
-    controlsButton.addEventListener('click',()=>setControlsOpen(controlsPanel.hidden));
-    document.querySelector('#close-controls').addEventListener('click',()=>{setControlsOpen(false);controlsButton.focus();});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!controlsPanel.hidden)setControlsOpen(false);});
-  </script>
+  <script src="src/moss-creatures.js?v=20261113-lazy-shadows"></script>
+  <script src="src/shelter-survival.js?v=20261113-shelter-activities"></script>
+  <script src="src/urban-structures.js?v=20261113-performance2"></script>
+  <script src="src/game.js?v=20261113-building-sprite-cache"></script>
+  <script src="src/controls.js"></script>
 </body>
 </html>

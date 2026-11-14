@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=fs.readFileSync(path.join(__dirname,'../game.js'),'utf8');
-const urban=require('../urban-structures.js');
+const source=fs.readFileSync(path.join(__dirname,'../src/game.js'),'utf8');
+const urban=require('../src/urban-structures.js');
 const cache=source.slice(source.indexOf('  const urbanSpriteCache='),source.indexOf('  function drawIsoBuilding('));
 let detailedDraws=0,commands=0,blits=0;
 const context=()=>new Proxy({}, {get:(obj,key)=>obj[key]??(()=>{commands++;}),set:(obj,key,value)=>(obj[key]=value,true)});
@@ -18,7 +18,7 @@ assert(model.bytes<=24*1024*1024,'cache stays within 24 MB');assert(model.count<
 let baselineCommands=0;const baseline=new Proxy({}, {get:(o,k)=>o[k]??(()=>baselineCommands++),set:(o,k,v)=>(o[k]=v,true)});
 for(let i=0;i<120;i++)urban.draw(baseline,shape(i*.5,i*.25),0);
 console.log(`Building rendering: ${baselineCommands} detailed canvas calls -> 120 cached image draws across 120 moving-camera frames`);
-const ecologySource=fs.readFileSync(path.join(__dirname,'../moss-creatures.js'),'utf8');
+const ecologySource=fs.readFileSync(path.join(__dirname,'../src/moss-creatures.js'),'utf8');
 const old=ecologySource.replace('night=light.daylight<.28;regions=[];shadeLight=light;initialized=true;','night=light.daylight<.28;regions=night?[]:getShadows(light);shadeLight=light;initialized=true;')
   .replace('// Creatures no longer flee sunlight; shadow polygons are built on demand.','if(!night&&shadeClock<=0){regions=getShadows(light);shadeClock=.35;}');
 function run(code){

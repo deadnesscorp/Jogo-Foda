@@ -98,5 +98,5 @@ function runRenderCacheTests(source) {
   return assertions+' render cache checks passed';
 }
 if(typeof module!=='undefined'&&typeof require==='function') {
-  console.log(runRenderCacheTests(require('fs').readFileSync(require('path').join(__dirname,'../game.js'),'utf8')));
+  console.log(runRenderCacheTests(require('fs').readFileSync(require('path').join(__dirname,'../src/game.js'),'utf8')));
 }

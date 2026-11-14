@@ -1,20 +1,20 @@
 // Run with: node tests/bike-drag.test.js
-const fs=require('node:fs'),path=require('node:path'),healthAPI=require('../character-health.js');
-const source=fs.readFileSync(path.join(__dirname,'../game.js'),'utf8');
+const fs=require('node:fs'),path=require('node:path'),healthAPI=require('../src/character-health.js');
+const source=fs.readFileSync(path.join(__dirname,'../src/game.js'),'utf8');
 const dragging=source.slice(source.indexOf('  function stopBikeDrag()'),source.indexOf('  function randomizeTowerSpawns()'));
 const walking=source.slice(source.indexOf('  const FOOT_WALK_KMH='),source.indexOf('  function drawSurvivorSprite('));
 function create({blocked=()=>false,health=healthAPI.create(),fuel=68,life=100,engineRunning=true}={}){
   return new Function('worldBlocked','characterHealth','fuel','bikeLife','engineRunning',`
     let state='drive',mounted=false,checkpointReturn=null,bikeInspectOpen=false,bikeService=null,playerKnockdown=0;
     let bikeDragging=false,bikeDragSpeed=0,bikeEngineRunning=engineRunning,bikeRpm=engineRunning?1000:0;
-    const healthPanel={open:false},keys=new Set(),world={w:500,h:500},shelterLife={speed:1};
+    const keys=new Set(),world={w:500,h:500},shelterLife={speed:1};
     const ACTOR_VISUAL_SCALE=.6,BIKE_SPEED_TO_KMH=.52,hunger=100,thirst=100;
     const bike={x:100,y:100,angle:0,wheel:0,speed:0,steering:0,bank:0};
     const player={x:100,y:119,angle:0,gait:null},spriteAtlas={survivor:{walk:{directions:8,frameCount:8,fps:10}}};
     const setToast=()=>{},distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
     ${dragging}
     ${walking}
-    return {bike,player,keys,healthPanel,start:startBikeDrag,stop:stopBikeDrag,move:moveDraggedBike,
+    return {bike,player,keys,start:startBikeDrag,stop:stopBikeDrag,move:moveDraggedBike,
       get dragging(){return bikeDragging;},get engine(){return bikeEngineRunning;},get fuel(){return fuel;},
       mount(){mounted=true;},state(value){state=value;},
       tick(dt,held=['d']){
@@ -42,7 +42,6 @@ const distant=create();distant.player.x=200;
 check(!distant.start()&&distant.engine,'cannot remotely grab a bike or change its engine');
 const mounted=create();mounted.mount();check(!mounted.start(),'cannot drag while riding');
 const indoor=create();indoor.state('explore');check(!indoor.start(),'cannot drag the road bike from indoors');
-const caring=create();caring.healthPanel.open=true;check(!caring.start(),'care menu does not allow grabbing');
 const wall=create({blocked:(x,y,r)=>x+r>120&&x-r<125&&y+r>90&&y-r<108});wall.start();
 for(let i=0;i<180;i++)wall.tick(1/60);
 check(wall.bike.x<=112.8+1e-6,'bike collision blocks movement even when the player clears the wall');

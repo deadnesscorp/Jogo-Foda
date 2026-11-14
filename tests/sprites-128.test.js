@@ -105,5 +105,5 @@ function runSpriteAtlasTests(atlas,source) {
 if(typeof module!=='undefined'&&typeof require==='function') {
   const fs=require('fs'),path=require('path');
   const atlas=JSON.parse(fs.readFileSync(path.join(__dirname,'../assets/sprites-128/atlas.json'),'utf8'));
-  console.log(runSpriteAtlasTests(atlas,fs.readFileSync(path.join(__dirname,'../game.js'),'utf8')));
+  console.log(runSpriteAtlasTests(atlas,fs.readFileSync(path.join(__dirname,'../src/game.js'),'utf8')));
 }

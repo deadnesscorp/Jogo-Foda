@@ -1,4 +1,4 @@
-const assert=require('node:assert/strict'),api=require('../moss-creatures.js');
+const assert=require('node:assert/strict'),api=require('../src/moss-creatures.js');
 function model(kind,blocked=()=>false){
   const m=api.createEcology({random:()=>.5,getBuildings:()=>[[10,10,30,30]],getSize:()=>({w:1200,h:1200}),isBlocked:blocked,getShadows:()=>[]});
   m.reset({daylight:0},{x:600,y:600});m.entities.splice(1);

@@ -1,5 +1,5 @@
 const fs=require('node:fs'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../game.js'),'utf8');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../src/game.js'),'utf8');
 const collision=source.slice(source.indexOf('  function nearbyCollisionCells('),source.indexOf('  function nearbyBuilding('));
 const damage=source.slice(source.indexOf('  function bikeImpactDamage('),source.indexOf('  function applyBikeImpact('));
 const buildings=Array.from({length:100},(_,i)=>[50+i%10*450,50+Math.floor(i/10)*350,70,60]);

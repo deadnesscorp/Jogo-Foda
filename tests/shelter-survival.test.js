@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const api=require('../shelter-survival.js');
+const api=require('../src/shelter-survival.js');
 const life=api.create();
 life.update(100,{running:true});
 assert.equal(life.fatigue,65);

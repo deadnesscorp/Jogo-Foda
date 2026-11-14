@@ -3,7 +3,7 @@
   const keychainPortraits={};
   if(typeof root.Image==='function'){
     const scriptUrl=typeof document!=='undefined'?document.currentScript?.src:null;
-    const base=scriptUrl?new URL('assets/keychain/',scriptUrl).href:'assets/keychain/';
+    const base=scriptUrl?new URL('../assets/keychain/',scriptUrl).href:'assets/keychain/';
     for(const kind of ['yuuri','chito','nuko']){
       const image=new root.Image();image.src=base+kind+(kind==='nuko'?'.webp':'.png');
       keychainPortraits[kind]=image;

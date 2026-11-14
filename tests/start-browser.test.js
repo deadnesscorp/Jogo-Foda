@@ -8,6 +8,7 @@ const {spawn} = require('node:child_process');
 const {pathToFileURL} = require('node:url');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
+const smokeOnly=process.argv.includes('--smoke');
 const creatureOnly=process.argv.includes('--creatures');
 const dragOnly=process.argv.includes('--drag');
 const occlusionOnly=process.argv.includes('--occlusion');
@@ -26,7 +27,7 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
   try {
     let data = fs.readFileSync(file);
-    if((dragOnly||occlusionOnly||combatOnly)&&file===path.join(root,'game.js')){
+    if((dragOnly||occlusionOnly||combatOnly)&&file===path.join(root,'src/game.js')){
       // Test-only access to the closure; local files keep the shipped game intact.
       data=data.toString().replace(/\}\)\(\);\s*$/, 'window.__gameEval=code=>eval(code);})();');
     }
@@ -134,6 +135,12 @@ async function main() {
     await call('Input.dispatchKeyEvent', {type:'keyDown', key:'w', code:'KeyW', windowsVirtualKeyCode:87});
     await evaluate(`new Promise(resolve=>setTimeout(resolve,350))`);
     await call('Input.dispatchKeyEvent', {type:'keyUp', key:'w', code:'KeyW', windowsVirtualKeyCode:87});
+    if(smokeOnly){
+      assert.deepEqual(errors, [], 'Game and keyboard input must not throw');
+      assert.deepEqual(missing, [], 'All game resources must load');
+      console.log((url.startsWith('file:')?'Local index.html':'HTTP')+': start, rendering, keyboard and resources passed');
+      continue;
+    }
     if(combatOnly){
       assert(await evaluate('MossCreatures.TYPES[1].nightSpeed>MossCreatures.TYPES[0].nightSpeed&&MossCreatures.TYPES[0].damage<MossCreatures.TYPES[2].damage'),'Browser loads distinct combat profiles');
       if(url.startsWith('http:')){

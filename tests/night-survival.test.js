@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');
-const healthAPI=require('../character-health.js');
-const ecologyAPI=require('../moss-creatures.js');
+const healthAPI=require('../src/character-health.js');
+const ecologyAPI=require('../src/moss-creatures.js');
 const health=healthAPI.create();
 assert.equal(health.quickBandage(),false);
 assert.equal(health.items.bandages,6);

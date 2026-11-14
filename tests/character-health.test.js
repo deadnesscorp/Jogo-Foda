@@ -91,4 +91,4 @@ function runCharacterHealthTests(api){
   check(loss.status().effects.some(effect=>effect.id==='infection'),'infection penalty is explained');
   return checks+' character-health checks passed';
 }
-if(typeof module!=='undefined'&&module.exports)console.log(runCharacterHealthTests(require('../character-health.js')));
+if(typeof module!=='undefined'&&module.exports)console.log(runCharacterHealthTests(require('../src/character-health.js')));

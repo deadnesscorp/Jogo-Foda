@@ -377,13 +377,15 @@
     }
     function drawGlitch(ctx,width,height,time,strength){
       if(strength<.03)return;
-      // Short low-opacity scanline displacement, never full-screen flashing.
+      // Brief, low-opacity interference across the entire display.
       const pulse=Math.floor(time*13);if(pulse%5>1)return;
-      ctx.save();ctx.globalAlpha=.38*strength;
+      ctx.save();ctx.globalAlpha=.035*strength;
+      ctx.fillStyle='#552b9e';ctx.fillRect(0,0,width,height);
+      ctx.globalAlpha=.38*strength;
       for(let i=0;i<7;i++){
-        const sy=((pulse*29+i*47)%Math.max(1,height-8)),sh=2+(i%3)*3,shift=Math.sin(pulse*3+i)*14*strength;
+        const sy=((pulse*29+i*47)%Math.max(1,height-8)),sh=2+(i%3)*3;
         ctx.fillStyle=i%2?'#552b9e':'#174b73';
-        ctx.fillRect(shift,sy,width*.76,sh);
+        ctx.fillRect(0,sy,width,sh);
       }
       ctx.restore();
     }

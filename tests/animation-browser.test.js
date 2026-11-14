@@ -16,7 +16,7 @@ const server=http.createServer((req,res)=>{
   if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
   try{
     let data=fs.readFileSync(file);
-    if(file===path.join(root,'game.js')){
+    if(file===path.join(root,'src/game.js')){
       // Test-only access to the closure; the shipped game has no debug API.
       data=data.toString().replaceAll('requestAnimationFrame(frame);','')
         .replace(/\}\)\(\);\s*$/, 'window.__gameEval=code=>eval(code);})();');

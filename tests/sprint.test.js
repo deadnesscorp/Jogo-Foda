@@ -1,6 +1,6 @@
 // Run with: node tests/sprint.test.js
 const fs=require('node:fs');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../game.js'),'utf8');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../src/game.js'),'utf8');
 const helper=source.slice(source.indexOf('  const FOOT_WALK_KMH='),source.indexOf('  function drawSurvivorSprite('));
 const createWorld=new Function('position','characterHealth',`
   let state='explore',mounted=false;
@@ -19,7 +19,7 @@ const rightWalk=createWorld(start).rightWalkFrame;
 const rightFrames=Array.from({length:61},(_,step)=>rightWalk((step+.01)/16*Math.PI*2,16));
 check(rightFrames.slice(0,31).join(',')===[...Array.from({length:16},(_,i)=>i),...Array.from({length:15},(_,i)=>14-i)].join(','),'D plays the full reach and returns through every pose');
 check(rightFrames.every((frame,i)=>!i||Math.abs(frame-rightFrames[i-1])===1),'D never jumps or repeats an endpoint across consecutive cycles');
-const healthAPI=require('../character-health.js');
+const healthAPI=require('../src/character-health.js');
 const legHealth=healthAPI.create();legHealth.injure('leftLeg','fracture',1.8);
 const slowWalker=createWorld({x:83,y:198},legHealth),normalWalker=createWorld({x:83,y:198});
 for(let i=0;i<30;i++){slowWalker.tick(1/60,['d']);normalWalker.tick(1/60,['d']);}
