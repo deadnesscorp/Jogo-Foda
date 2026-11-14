@@ -2,7 +2,6 @@
 (() => {
   'use strict';
   const recipes={
-    flare:{label:'Sinalizador',scrap:3,cloth:1,duration:5},
     bait:{label:'Isca sonora',scrap:2,cloth:0,duration:3},
     bandage:{label:'Bandagem',scrap:0,cloth:2,duration:3}
   };

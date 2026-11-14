@@ -14,8 +14,6 @@ assert.ok((model.entities[1].y-600)*(model.entities[2].y-600)<0,'flankers split 
 const bait=setup();bait.entities.forEach(e=>{e.heardPlayer=false;});
 bait.update(.1,{...options,sounds:[{x:600,y:600,radius:900,player:false}]});
 assert.ok(bait.entities.every(e=>e.behavior!=='encircle'),'bait does not reveal the player');
-const flare=setup();flare.update(.1,{...options,repellents:[{x:480,y:600,radius:150,room:-1}]});
-assert.ok(flare.entities.every(e=>e.behavior==='flee'),'flares override the pack');
 const blocked=setup((x,y)=>y!==600);blocked.update(.1,options);
 assert.ok(blocked.entities.every(e=>e.y===600),'flankers respect blocked terrain');
 const close=setup();Object.assign(close.entities[1],{x:575,y:600});close.update(.1,options);

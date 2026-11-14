@@ -548,7 +548,7 @@
     sounds.push(...survivalEffects.filter(p=>p.kind==='bait').map(p=>({...p,radius:240,player:false})));
     return sounds;
   }
-  let survivalItems={flare:3,bait:4},survivalEffects=[],balanceEvent=null,escapeCooldown=0;
+  let survivalItems={bait:4},survivalEffects=[],balanceEvent=null;
   let hudDetails=false;
   let kickCooldown=0,kickVisual=0;
   function kickCreature(){
@@ -566,7 +566,7 @@
   const inSafeShelter=()=>state==='explore'&&isShelter(exploreBuilding);
   function shelterKey(key){
     if(!inSafeShelter()||checkpointReturn)return false;
-    if(['escape','w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','x'].includes(key)){
+    if(['escape','w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e'].includes(key)){
       shelterLife.cancel();shelterView=null;return key==='escape';
     }
     if(!['z','o'].includes(key))return false;
@@ -620,22 +620,9 @@
       if(mounted){setToast('DESÇA DA MOTO PARA APLICAR O CURATIVO.');return;}
       characterHealth.quickBandage();return;
     }
-    if(key==='x'){
-      if(state!=='explore'||escapeCooldown>0)return;
-      if(Math.hypot(explorer.x-394,explorer.y-112)>48){setToast('CHEGUE À JANELA MARCADA NO CANTO SUPERIOR DIREITO.');return;}
-      const [x,y,w,h]=buildings[exploreBuilding];
-      let landing=null;
-      for(const offset of [24,40,64]){
-        const p={x:x+w*1.65+offset,y:y+h*.5};
-        if(p.x<world.w-20&&!worldBlocked(p.x,p.y,10)){landing=p;break;}
-      }
-      if(!landing){setToast('SAÍDA OBSTRUÍDA — USE A PORTA.');return;}
-      state='drive';mounted=false;keys.clear();player.gait=null;Object.assign(player,landing);camera.x=player.x;camera.y=player.y;
-      setToast('VOCÊ ESCAPOU PELA JANELA.');updateObjective();
-      escapeCooldown=3;return;
-    }
-    const kind=key==='v'?'flare':'bait';
-    if(survivalItems[kind]<=0){setToast(kind==='flare'?'SEM SINALIZADORES.':'SEM ISCAS SONORAS.');return;}
+    if(key!=='b')return;
+    const kind='bait';
+    if(survivalItems.bait<=0){setToast('SEM ISCAS SONORAS.');return;}
     let p={x:actor.x,y:actor.y};
     if(kind==='bait'){
       const angle=state==='explore'?explorer.angle:mounted?bike.angle:player.angle;
@@ -645,8 +632,8 @@
         p=next;
       }
     }
-    survivalItems[kind]--;survivalEffects.push({...p,room,kind,radius:150,ttl:kind==='flare'?12:9});
-    setToast(kind==='flare'?'SINALIZADOR — 12 SEGUNDOS PARA FUGIR!':'ISCA LANÇADA — AFASTE-SE DO BARULHO!');
+    survivalItems[kind]--;survivalEffects.push({...p,room,kind,radius:150,ttl:9});
+    setToast('ISCA LAN\u00c7ADA \u2014 AFASTE-SE DO BARULHO!');
   }
   function attemptBalance(){
     if(!balanceEvent)return;
@@ -657,7 +644,6 @@
   function updateSurvival(dt){
     kickCooldown=Math.max(0,kickCooldown-dt);kickVisual=Math.max(0,kickVisual-dt);
     if(!['drive','explore'].includes(state)){balanceEvent=null;return;}
-    escapeCooldown=Math.max(0,escapeCooldown-dt);
     survivalEffects.forEach(p=>p.ttl-=dt);survivalEffects=survivalEffects.filter(p=>p.ttl>0);
     if(balanceEvent){
       if(!mounted||state!=='drive')balanceEvent=null;
@@ -675,22 +661,14 @@
     for(const p of survivalEffects){
       if(p.room!==room)continue;
       const pos=room<0?projectPoint(p.x,p.y):p;
-      ctx.fillStyle=p.kind==='flare'?'#ffaf58':'#8bdcdd';ctx.beginPath();ctx.arc(pos.x,pos.y,4+Math.sin(gameTime*12)*1.5,0,Math.PI*2);ctx.fill();
-      if(p.kind==='flare'){
-        const glow=ctx.createRadialGradient(pos.x,pos.y,2,pos.x,pos.y,65);glow.addColorStop(0,'#ff9b4860');glow.addColorStop(1,'#ff9b4800');ctx.fillStyle=glow;ctx.fillRect(pos.x-65,pos.y-65,130,130);
-      }
+      ctx.fillStyle='#8bdcdd';ctx.beginPath();ctx.arc(pos.x,pos.y,4+Math.sin(gameTime*12)*1.5,0,Math.PI*2);ctx.fill();
     }
     if(hudDetails){
       ctx.fillStyle='#0b171ee6';ctx.fillRect(8,H-24,Math.min(W-16,460),18);ctx.fillStyle='#e1e6d0';
-      ctx.fillText(`V SINAL ${survivalItems.flare} · B ISCA ${survivalItems.bait} · J CURATIVO ${characterHealth.items.bandages}${room>=0?' · X JANELA':''}`,13,H-13);
+      ctx.fillText(`B ISCA ${survivalItems.bait} \u00b7 J CURATIVO ${characterHealth.items.bandages}`,13,H-13);
     }
     if(room<0){
       buildings.forEach((b,i)=>{if(isShelter(i)){const door=buildingDoor(i);if(!hudDetails&&distance(survivalActor(),door)>250)return;const p=projectPoint(door.x,door.y);ctx.fillStyle='#73ffc0';ctx.fillRect(p.x-2,p.y-25,4,15);ctx.fillRect(p.x-7,p.y-20,14,4);if(hudDetails)ctx.fillText('ABRIGO',p.x-12,p.y-29);}});
-    }else{
-      if(shelterView!=='observe'){
-        ctx.strokeStyle='#73ffc0';ctx.lineWidth=2;ctx.strokeRect(383,98,23,25);ctx.fillStyle='#73ffc0';
-        if(hudDetails||Math.hypot(explorer.x-394,explorer.y-112)<48)ctx.fillText('X SAIR',379,93);
-      }
     }
     if(balanceEvent){
       const x=W/2-90,y=H/2-28;
@@ -1042,7 +1020,7 @@
     kickCooldown=0;kickVisual=0;
     hudDetails=false;
     shelterLife.reset();shelterView=null;
-    survivalItems={flare:3,bait:4};survivalEffects=[];balanceEvent=null;escapeCooldown=0;
+    survivalItems={bait:4};survivalEffects=[];balanceEvent=null;
     stopBikeDrag();
     buildingOpacities.clear();
     characterHealth.reset();creatureHitCooldown=0;creatureBikeCooldown=0;playerKnockdown=0;
@@ -1249,7 +1227,7 @@
     if(key==='tab'&&state!=='title'){e.preventDefault();if(!e.repeat)hudDetails=!hudDetails;return;}
     if(!e.repeat&&shelterKey(key)){e.preventDefault();return;}
     if(balanceEvent&&key===' '){e.preventDefault();if(!e.repeat)attemptBalance();return;}
-    if(['v','b','j','x'].includes(key)&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();survivalUse(key);return;}
+    if(['b','j'].includes(key)&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();survivalUse(key);return;}
     if(bikeDragging&&['e','f','h','r','escape'].includes(key))stopBikeDrag();
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
     if (bikeInspectOpen && key !== 'f' && key !== 'g' && (key !== 'e' || bikeService)) {
@@ -1959,7 +1937,6 @@
       if((creature.attackCooldown||0)>0||creature.retired)continue;
       if(creature.kickStun>0)continue;
       if(inRoom?(!creature.indoors||creature.home!==exploreBuilding):creature.indoors)continue;
-      if(survivalEffects.some(p=>p.kind==='flare'&&p.room===(inRoom?exploreBuilding:-1)&&Math.hypot((inRoom?creature.roomX:creature.x)-p.x,(inRoom?creature.roomY:creature.y)-p.y)<p.radius))continue;
       const profile=MossCreatures.TYPES[creature.kind];
       if(creatureHitCooldown<=0&&creatureCanHit(creature,actor,inRoom,mounted?8:4)){
         const wasMounted=mounted&&!inRoom;
@@ -3593,7 +3570,7 @@
         else if (supply.type === 'ration') { hunger = Math.min(100, hunger + 42); setToast('RAÇÃO MILITAR — FOME REDUZIDA'); }
         else if (supply.type === 'water') { thirst = Math.min(100, thirst + 38); setToast('GARRAFA ENCONTRADA — SEDE REDUZIDA'); }
         else if (supply.type === 'toolkit') { addToolbox(); setToast('CAIXA DE FERRAMENTAS: 100% - '+repairKits+' CAIXAS'); }
-        else if (supply.type === 'medical') {characterHealth.restock();survivalItems.flare++;survivalItems.bait+=2;setToast('PRIMEIROS SOCORROS + 1 SINALIZADOR + 2 ISCAS');}
+        else if (supply.type === 'medical') {characterHealth.restock();survivalItems.bait+=2;setToast('PRIMEIROS SOCORROS + 2 ISCAS');}
         else { hunger = Math.min(100, hunger + 21); setToast('ENLATADO ENCONTRADO — FOME REDUZIDA'); }
       }
     }
@@ -4394,7 +4371,7 @@
     else if (state === 'climb' || state === 'hack') updateClimb(dt);
     if(state==='drive'||state==='explore')mossEcology.update(dt,{
       light:worldLighting(gameTime),target:state==='explore'?worldReturn:player,
-      room:state==='explore'?exploreBuilding:-1,roomTarget:state==='explore'&&!isShelter(exploreBuilding)?explorer:null,moveRoom:moveExplorer,sounds:creatureSounds(),repellents:survivalEffects.filter(p=>p.kind==='flare')
+      room:state==='explore'?exploreBuilding:-1,roomTarget:state==='explore'&&!isShelter(exploreBuilding)?explorer:null,moveRoom:moveExplorer,sounds:creatureSounds()
     });
     updateCreatureCombat();
     finishFrame(gameTime, dt);

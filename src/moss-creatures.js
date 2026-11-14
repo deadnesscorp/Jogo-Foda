@@ -218,7 +218,7 @@
       for(let step=1;step<=8;step++)if(room<0&&isBlocked(origin.x+(p.x-origin.x)*step/8,origin.y+(p.y-origin.y)*step/8,5))return null;
       entity.behavior='herd';return p;
     }
-    function update(dt,{light,target,room=-1,roomTarget=null,moveRoom=null,sounds=[],repellents=[]}){
+    function update(dt,{light,target,room=-1,roomTarget=null,moveRoom=null,sounds=[]}){
       if(!initialized)reset(light,target);
       if(!Number.isFinite(dt)||dt<=0)return;
       dt=Math.min(.1,dt);shadeClock-=dt;shadeLight=light;
@@ -298,12 +298,6 @@
             entity.roomX=local.x;entity.roomY=local.y;
           }
           continue;
-        }
-        const flare=repellents.find(p=>(p.room??-1)===-1&&distance(entity,p)<p.radius);
-        if(flare){
-          const dx=entity.x-flare.x,dy=entity.y-flare.y,len=Math.hypot(dx,dy)||1;
-          move(entity,(dx||1)/len*type.runSpeed*dt,dy/len*type.runSpeed*dt,restricted);
-          entity.heard=null;entity.pursuingPlayer=false;entity.behavior='flee';continue;
         }
         if(restricted&&!shaded(entity.x,entity.y)){
           const refuge=shadePoint(entity.home);
