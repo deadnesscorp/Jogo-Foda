@@ -1,61 +1,14 @@
-# Jogo-Foda
-Um jogo que deve rodar no navegador
+## Jogo-Foda — Descrição do Projeto
 
-## Criaturas de musgo preto
+**Jogo-Foda** é um jogo de sobrevivência pós-apocalíptico em 2D, com perspectiva isométrica, desenvolvido para rodar diretamente no navegador. Inspirado na atmosfera de *Girls' Last Tour*, o jogo apresenta um mundo devastado, onde o jogador precisa explorar construções abandonadas, coletar recursos, cuidar da própria saúde e realizar a manutenção de sua motocicleta.
 
-Encoberto, Rastejante e Coroa têm sprites próprios com quatro direções e quatro poses por direção. De dia a população inicial é de seis criaturas: a maioria se abriga nos prédios, e as demais andam devagar dentro das sombras projetadas pelas construções. A sombra usada pela IA vem da mesma geometria usada pelo desenho do mapa.
+O jogo possui ciclo de dia e noite, criaturas hostis com inteligência artificial, sistema de combate e ferimentos, gerenciamento de fome, sede e cansaço, além de mecânicas interativas de reparo e sobrevivência.
 
-A chance de ignorar o sol é de 5% por criatura, sorteada uma vez ao nascer. Essa exceção corre durante o dia e produz glitches discretos quando está próxima. À noite a população chega a 42 criaturas, com movimento livre; ao amanhecer as criaturas comuns retornam aos abrigos. Moradores de construções também aparecem nos interiores exploráveis. Contatos próximos a pé podem causar ferimentos, com intervalo de proteção entre ataques.
+### Tecnologias utilizadas
 
-Prévia: `creatures-preview.html`. Testes de comportamento e integração: `tests/moss-creatures-browser.html` (Chrome com acesso a arquivos locais ou servidor HTTP). Testes de lógica em Node: `node tests/moss-creatures.test.js`. Prompts das três folhas: `assets/creatures/prompts.json`. Reconstrução dos recortes: `powershell -File tools/build-moss-metadata.ps1`.
+O projeto foi desenvolvido com o auxílio de duas ferramentas de inteligência artificial:
 
-## Saúde do personagem
+- **ChatGPT (OpenAI):** utilizado no planejamento do jogo, criação de conceitos, desenvolvimento de ideias, elaboração de mecânicas e auxílio na criação de recursos visuais.
+- **Codex (OpenAI):** utilizado na implementação do código, desenvolvimento dos sistemas, integração das mecânicas, correção de erros e realização de testes.
 
-Pressione **H** ou clique em **Saúde** para abrir o painel de primeiros socorros. Ele usa o estilo da oficina da moto e permite selecionar cabeça, tórax, abdômen, braços e pernas. Os ferimentos persistem entre o mapa e os interiores; o tempo continua passando com o painel aberto.
-
-Arranhões, cortes e feridas profundas podem sangrar. Desinfete e aplique uma bandagem para controlar o sangramento; retire e troque curativos sujos para evitar infecção local. Fraturas precisam de tala e contusões melhoram com repouso. Analgésicos aliviam a dor temporariamente. Dor e ferimentos nas pernas reduzem a locomoção. A recuperação é gradual e depende também de fome e sede.
-
-Cada tratamento leva alguns segundos. Mover, fechar o painel ou cancelar interrompe o cuidado sem consumir materiais; os itens são gastos somente ao concluir. O personagem começa com seis bandagens, três doses de antisséptico, uma tala e dois analgésicos. Maletas nas construções repõem os suprimentos. Criaturas, quedas e impactos fortes da moto podem causar ferimentos. Ao ficar em estado crítico, o personagem recua à moto estabilizado, ainda ferido, preservando a lógica de retorno do jogo.
-
-**Esc** cancela o cuidado atual ou fecha o painel; **1–7** selecionam regiões. A janela pode ser arrastada pelo cabeçalho. Testes: `node tests/character-health.test.js`, `tests/character-health-browser.html`, `node tests/bike-maintenance.test.js` e `node tests/sprint.test.js`.
-
-Pressione **P** ou clique no botão **Tela cheia** para alternar a exibição. **Esc** também sai da tela cheia. O jogo abre dentro da página e só expande quando solicitado.
-
-Segure **Shift** junto com WASD ou as setas para correr a pé, tanto no mapa quanto dentro dos prédios. A caminhada chega a **16 km/h** e a corrida a **35 km/h**, usando a mesma conversão do painel da moto. A condição do personagem pode reduzir essas velocidades. Soltar Shift volta à caminhada. A diagonal mantém a mesma velocidade, e as colisões continuam ativas.
-
-## Manutenção da moto
-
-Desmonte da moto, aproxime-se e pressione F. As abas Motor, Pneus e Guidão mantêm os diagnósticos existentes. Clique em um serviço para reparar.
-
-- Reparos: ignição por sincronização, folga de válvulas, vedação de furo no motor, mistura, remendos com secagem da cola, calibragem, fixações, limpeza com escova (clique ou arraste), alinhamento, cabos, torque e rolamentos.
-- Controles: clique nos componentes, 1–4 para pontos de trabalho, 5–8 para conectores, setas ou −/+ para ajustes e E para confirmar. Esc cancela.
-- Um reparo concluído consome um kit existente. Treinos em peças e moto íntegras não consomem kits. Falhas e cancelamentos não alteram a peça nem gastam recursos.
-
-Verificação da lógica: `node tests/bike-maintenance.test.js`.
-Os reparos também aceitam gestos com o mouse: gire a chave ao redor da fixação, mova a bomba para baixo e para cima, esfregue a lixa e a escova, arraste cabos até os conectores e mantenha o remendo pressionado por 0,8 segundo depois de a cola secar. Arraste a lâmina e o guidão para ajustar folga e alinhamento. O cursor mostra uma mão com a ferramenta da etapa atual e volta ao normal ao terminar, cancelar ou fechar a inspeção.
-A moto sofre desgaste gradual enquanto o tempo de jogo passa: cerca de 1–3 pontos percentuais por dez minutos rodando, conforme a peça e a velocidade, e desgaste mínimo quando estacionada. O desgaste também continua durante a inspeção. Colisões danificam um único defeito de uma peça aleatória, com perda leve proporcional à velocidade do impacto. Contatos muito leves não causam dano; há 1,5 segundo de intervalo entre impactos. O aviso identifica a peça e os reparos existentes restauram o defeito afetado. Esse dano também se aplica aos obstáculos das perseguições.
-## Câmbio e painel
-
-A moto possui quatro marchas manuais: 1ª até 30 km/h, 2ª até 60 km/h, 3ª até 90 km/h e 4ª até 125 km/h. Fome, sede e desgaste afetam a aceleração, sem reduzir o limite indicado da marcha. R sobe a marcha e Q reduz; também é possível clicar nos botões do painel à direita. Marchas mais altas aceleram mais devagar. Reduzir aplica freio-motor gradualmente; S continua freando e permite a ré.
-
-Ao montar, gasolina, fome e sede sobem para liberar espaço para o painel, que mostra velocidade digital, faixa de RPM, marcha e limite em um painel compacto. Ao descer, os indicadores voltam à posição anterior.
-## Ignição e chaveiro
-A partida começa a pé, ao lado da moto desligada. O minigame aparece ao montar com o motor desligado; descer e subir com o motor ligado não o repete. Com a moto parada e o personagem montado, F desliga o motor ou abre a ignição para ligar novamente. Para dar a partida, arraste a chave pelo cabo e solte o botão esquerdo sobre a fechadura centralizada para encaixar. Depois, gire para a direita para ligar o motor. Após encaixar com o mouse, Enter também permite girar a chave; Esc cancela mantendo o personagem montado. Com condição de partida de 90% ou mais, a moto não sofre falhas aleatórias. Abaixo disso, a chance cresce com o quadrado do desgaste: cerca de 1% a 80%, 16% a 50% e até 80% na condição mínima. A condição de partida combina 70% do estado do motor e 30% da integridade geral da moto; reparos reduzem a chance já na próxima tentativa. Quando a partida falha: a luz fica vermelha e a chave retorna para tentar novamente, sem precisar encaixá-la outra vez. Depois de cinco falhas seguidas, a próxima tentativa liga; fechar a ignição não reinicia essa contagem. Combustível e estado da moto continuam necessários. O escape emite fumaça suave enquanto o motor funciona, mais intensa em rotações altas; ao desligar, a fumaça restante se dissipa. A ignição e a oficina aparecem em painéis compactos; o mundo, a fome, a sede e o desgaste continuam em tempo real. A pé, F abre a oficina. Na visão geral da oficina, WASD continua movimentando o personagem; afastar-se da moto fecha o painel. O chaveiro usa recortes de Yuuri, Chito e Nuko, de Girls' Last Tour. As correntes flexíveis reagem ao arrastar e girar a chave; cada pingente mantém sua própria inércia e desacelera gradualmente ao soltar.
-Verificação: node tests/ignition.test.js.
-
-## Atividades no abrigo
-Nas casas com cruz verde, Z inicia o sono: o tempo continua passando e o cansaço diminui. Mover o personagem acorda. O cansaço se acumula durante a vigília, aumenta mais ao correr e reduz a velocidade a pé e a faixa de acerto para recuperar o equilíbrio na moto.
-
-T ouve uma transmissão e informa o setor mais próximo com suprimentos confirmados ainda não coletados. O rádio pode atualizar a pista a cada 12 segundos. I abre a mochila e a bancada: 1 fabrica sinalizador (3 sucatas e 1 tecido), 2 fabrica isca (2 sucatas) e 3 fabrica bandagem (2 tecidos). Vasculhar suprimentos rende materiais; mover ou sair cancela a fabricação sem gastar materiais. O mostra a rua pela fresta e informa quantas criaturas estão a até 300 metros da entrada; O ou Esc volta ao interior. A simulação continua durante a observação.
-
-Verificação: `node tests/shelter-survival.test.js`.
-
-## Sobrevivente e moto em 128 direções
-O personagem usa uma caminhada simples com o sprite original: passos curtos nas pernas e balanço leve do corpo, sincronizados à distância percorrida. Ao parar, o movimento desacelera até retornar à pose original. A velocidade de caminhada é de 16 km/h, e Shift mantém a corrida. A arte montada foi preservada.
-
-O jogo abre dentro da página. As poses, máscaras do farol e sombras são reutilizadas; os prédios compartilham a geometria projetada entre sombra e desenho. Arquivos antigos, capturas sem uso e a pasta interna vazia foram removidos.
-
-Verificações: `node tests/sprites-128.test.js`, `node tests/render-cache.test.js`, `node tests/bike-maintenance.test.js`, `node tests/ignition.test.js` e `node tests/display.test.js`. O teste `node tests/animation-browser.test.js` usa Chrome ou Edge instalado para conferir a renderização e gerar uma prévia, sem instalar dependências.
-
-## Furo no motor e vazamento
-O serviço Vedar furo do motor substitui a desobstrução do circuito. Segure o botão esquerdo sobre cada um dos quatro pontos do furo para aplicar selante; sair do ponto pausa o trabalho. Pelo teclado, 1–4 seleciona o ponto e E aplica pequenas doses. Furos maiores aparecem maiores e exigem mais tempo de vedação. O dano desse defeito determina o vazamento: há uma margem de 5% para desgaste leve; a perda cresce com o quadrado da gravidade e chega a 21 pontos percentuais de gasolina por minuto. O vazamento continua com o motor desligado e durante exploração ou reparos. Só concluir o serviço restaura esse defeito e estanca a perda; cancelar preserva o dano e o kit. O painel do reparo mostra o tamanho e a taxa de perda. A moto continua iniciando com 20% de condição para testes.
+O desenvolvimento utiliza **HTML, CSS e JavaScript**, com testes automatizados em **Node.js**, permitindo que o jogo funcione diretamente em navegadores, sem necessidade de instalação.
