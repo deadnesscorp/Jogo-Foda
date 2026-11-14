@@ -5,7 +5,7 @@ function createCharacterHealthPanel({container,model,onOpen=()=>{},onClose=()=>{
   const panel=document.createElement('section');panel.id='character-health-panel';panel.className='character-health-panel';panel.hidden=true;
   panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Saúde do personagem');
   panel.innerHTML=`<header class="health-titlebar"><span><b>+</b> PERSONAGEM <small>SAÚDE E PRIMEIROS SOCORROS</small></span><button type="button" data-close aria-label="Fechar saúde">×</button></header>
-    <div class="health-summary">${[['health','Condição'],['blood','Sangue'],['pain','Dor']].map(([id,label])=>`<div class="health-stat"><small>${label}</small><strong data-stat="${id}"></strong><meter data-meter="${id}" min="0" max="100" value="100" aria-label="${label}"></meter></div>`).join('')}</div>
+    <div class="health-summary">${[['health','Vida'],['blood','Sangue'],['pain','Dor']].map(([id,label])=>`<div class="health-stat"><small>${label}</small><strong data-stat="${id}"></strong><meter data-meter="${id}" min="0" max="100" value="100" aria-label="${label}"></meter></div>`).join('')}</div>
     <div class="health-content"><aside class="health-body"><div class="health-body-heading">MAPA CORPORAL <span>01—07</span></div><svg viewBox="0 0 120 200" aria-label="Selecione uma parte do corpo">
       <g stroke="#c4b5ca" stroke-width="1.3"><ellipse data-body="head" cx="60" cy="24" rx="15" ry="19"/>
       <path data-body="chest" d="M39 48 Q60 41 81 48 L77 85 L43 85Z"/>
@@ -19,11 +19,11 @@ function createCharacterHealthPanel({container,model,onOpen=()=>{},onClose=()=>{
       <div class="health-wound" aria-live="polite"><strong data-wound-name></strong><p data-wound-details></p></div>
       <div class="health-recovery"><span>RECUPERAÇÃO</span><strong data-recovery-label></strong><progress data-recovery max="100" value="100" aria-label="Recuperação do ferimento"></progress></div>
       <div class="health-effects"><div class="health-section-label">EFEITOS NO PERSONAGEM <span data-effect-count></span></div><div data-effects></div></div>
-      <div class="health-section-label health-care-label">PRIMEIROS SOCORROS <span>Fique parado para tratar</span></div><div class="health-actions"></div><p class="health-action-hint"></p>
+      <div class="health-section-label health-care-label">CUIDADO <span>Ferimentos cicatrizam sozinhos</span></div><div class="health-actions"></div><p class="health-action-hint"></p>
       <div class="health-treatment" hidden><div><span data-treatment-name></span><button type="button" data-cancel>Cancelar</button></div><progress max="1" value="0"></progress></div>
-      <div class="health-inventory"><small>ESTOJO DE CAMPO</small><div data-materials></div></div>
+      <div class="health-inventory"><small>VIDA E ITENS</small><div data-materials></div></div>
     </section></div><footer><span data-overall></span><small>H fecha · Esc cancela · 1–7 selecionam · mover interrompe o cuidado</small></footer>`;
-  container.append(launcher,panel);
+  container.append(panel);
   let selected='chest',context={moving:false},elapsed=0,available=false,drag=null;
   const partList=panel.querySelector('.health-part-list'),actionList=panel.querySelector('.health-actions');
   CharacterHealth.PARTS.forEach(([id,label],index)=>{

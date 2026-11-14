@@ -10,6 +10,8 @@ function create({riding=true,roll=0,blocked=()=>false,room=false,engine=true}={}
   return new Function('MossCreatures','CharacterHealth','Math','worldBlocked','mounted','bikeEngineRunning','inRoom',`
     let state=inRoom?'explore':'drive',checkpointReturn=null,exploreBuilding=1;
     let creatureHitCooldown=0,creatureBikeCooldown=0,playerKnockdown=0,knockdownAngle=0;
+    let balanceEvent=null;const survivalEffects=[],isShelter=()=>false;
+    const shelterLife={balanceWidth:.5};
     let bikeLife=100,bikeRpm=1000,bikeInspectOpen=false,bikeService=null,bikeDragging=false,flash=0;
     const bike={x:200,y:200,angle:0,speed:50,steering:0,bank:0};
     const player={x:200,y:200,gait:null},explorer={x:200,y:200},world={w:500,h:500},ACTOR_VISUAL_SCALE=.6;
@@ -22,9 +24,11 @@ function create({riding=true,roll=0,blocked=()=>false,room=false,engine=true}={}
     const stopBikeDrag=()=>{bikeDragging=false;},updateObjective=()=>{};
     ${damage}
     ${combat}
+    ${source.slice(source.indexOf('  function attemptBalance('),source.indexOf('  function updateSurvival('))}
     return {bike,player,explorer,health:characterHealth,bikeParts,bikeFaults,interiorWalls,notices,
       attack(kind,options={}){const e={kind,x:190,y:200,roomX:190,roomY:200,home:1,indoors:inRoom,behavior:'chase',pursuingPlayer:true,...options};mossEcology.entities=[e];updateCreatureCombat();return e;},
       update:updateCreatureCombat,
+      get balance(){return balanceEvent;},react(time){balanceEvent.elapsed=time;attemptBalance();},
       get mounted(){return mounted;},get life(){return bikeLife;},get down(){return playerKnockdown;},get engine(){return bikeEngineRunning;},
       get cooldown(){return creatureHitCooldown;}};
   `)(moss,healthAPI,math,blocked,riding,engine,room);
@@ -32,7 +36,9 @@ function create({riding=true,roll=0,blocked=()=>false,room=false,engine=true}={}
 let checks=0;const check=(ok,message)=>{checks++;if(!ok)throw Error(message);};
 const [tall,quad,brute]=api.TYPES;
 check(quad.nightSpeed>tall.nightSpeed&&tall.nightSpeed>brute.nightSpeed,'quadruped is fastest and brute is slowest');
-check(quad.damage<tall.damage&&tall.damage<brute.damage,'the three creatures have increasing rider damage');
+  check(tall.damage<1&&quad.damage<tall.damage&&tall.damage<brute.damage,'only the brute deals heavy damage');
+  check(tall.damage<=.25&&quad.damage<=.15&&tall.wound==='scratch'&&quad.wound==='scratch','the smaller creatures cause only minor scratches');
+  check(tall.knockOffChance>.6&&quad.knockOffChance>.5,'small creatures have an increased chance to knock riders down');
 check(quad.bikeDamage<tall.bikeDamage&&tall.bikeDamage<brute.bikeDamage,'brute deals the heaviest motorcycle damage');
 for(let kind=0;kind<3;kind++){
   const p=api.TYPES[kind];
@@ -40,6 +46,7 @@ for(let kind=0;kind<3;kind++){
   check(!api.attackOutcome(kind,{mounted:true,random:()=>p.knockOffChance}).knockedOff,'knockdown probability respects its upper boundary');
   check(!api.attackOutcome(kind,{mounted:false,random:()=>0}).knockedOff,'foot attacks never produce a motorcycle fall');
   const rider=create();rider.attack(kind);
+  check(rider.mounted&&rider.balance,'moving riders receive a reaction opportunity');rider.react(1.21);
   check(!rider.mounted&&rider.down>0&&rider.bike.speed===0,'successful attack removes the rider and briefly stuns them');
   check(rider.life<100&&Object.values(rider.bikeParts).some(v=>v<100),'attacks damage real bike integrity and repairable components');
   check(rider.health.status().wounds===1&&rider.health.status().health<100,'rider receives a real body injury');
@@ -54,11 +61,12 @@ const heavy=create({riding:false});heavy.attack(2);
 check(heavy.health.status().health<light.health.status().health-15,'brute injuries are substantially more dangerous than quadruped cuts');
 check(Object.values(heavy.health.parts).some(part=>part.wound?.type==='fracture'),'brute causes fractures');
 const slasher=create({riding:false});slasher.attack(0);
-check(Object.values(slasher.health.parts).some(part=>part.wound?.type==='deep'),'tall hunter opens deep wounds');
+check(Object.values(slasher.health.parts).some(part=>part.wound?.type==='scratch'),'tall hunter causes only minor scratches');
 const far=create();far.attack(2,{x:400,y:400});check(far.life===100&&far.health.status().wounds===0,'creatures cannot hit at a distance');
 const wall=create({blocked:(x,y)=>x>=194&&x<=196});wall.attack(2);
 check(wall.life===100&&wall.health.status().wounds===0,'walls block creature attacks');
 const safeFall=create({blocked:x=>x>205});safeFall.attack(2);
+safeFall.react(0);
 check(!safeFall.mounted&&safeFall.player.x<=205,'fall placement avoids walls instead of throwing the player through them');
 const parked=create({riding:false});parked.player.x=400;parked.player.y=400;parked.attack(2);
 check(parked.life<100&&parked.health.status().wounds===0&&parked.down===0,'an attracted creature can damage a parked bike without injuring a distant player');
@@ -68,4 +76,6 @@ const room=create({riding:false,room:true});room.interiorWalls.push({x:194,y:190
 check(room.health.status().wounds===0,'interior walls also stop melee damage');
 const otherRoom=create({riding:false,room:true});otherRoom.attack(0,{home:2});
 check(otherRoom.health.status().wounds===0,'creatures in another room cannot hit the player');
+const saved=create();saved.attack(0);saved.react(.6);check(saved.mounted&&!saved.balance,'a timed reaction preserves the moving rider');
+const stopped=create();stopped.bike.speed=0;stopped.attack(0);check(!stopped.mounted&&!stopped.balance,'a stationary motorcycle cannot use balance recovery');
 console.log(checks+' creature-combat checks passed');

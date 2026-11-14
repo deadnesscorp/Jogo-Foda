@@ -139,18 +139,27 @@
             wound.contamination=clamp(wound.contamination+(wound.cleanTime>0?-.25:dirt)*step,0,100);
             if(wound.contamination>=45)wound.infected=true;
           }
-          const canHeal=wound.type==='bruise'||(wound.type==='fracture'?wound.splint:!!wound.bandage);
-          const fed=hunger>30&&thirst>30;
-          const rate=canHeal&&fed?(moving?.045:.10)*(wound.infected?.15:1)*(wound.bandage?.dirty?.3:1):.004;
+          // Slow recovery continues under strain; adequate food, water and rest
+          // restore wounds much faster without making treatment mandatory.
+          const nourished=hunger>30&&thirst>30;
+          const rate=(nourished?(moving ? .045 : .16):.01)*(wound.type==='fracture'&&!wound.splint ? .55 : 1)*(wound.infected ? .5 : 1);
           wound.remaining=Math.max(0,wound.remaining-rate*step);
           if(wound.remaining===0){part.wound=null;onNotice('Ferimento recuperado.');}
           if(running&&wound.type==='fracture'&&!wound.splint)wound.remaining=Math.min(wound.total,wound.remaining+step*.025);
         }
-        blood=clamp(blood-activeBleeding*step+(activeBleeding===0&&hunger>30&&thirst>30?.045*step:0),0,100);
+        const nourished=hunger>30&&thirst>30;
+        blood=clamp(blood-activeBleeding*step+(activeBleeding===0?(nourished?(moving ? .045 : .45):.018)*step:0),0,100);
         if(activeBleeding>0)vitality=clamp(vitality-activeBleeding*.12*step,0,100);
-        else if(hunger>30&&thirst>30)vitality=clamp(vitality+(hasWounds?.025:.07)*(moving?.45:1)*step,0,100);
+        else vitality=clamp(vitality+(nourished?(moving ? .045 : .28):.012)*step,0,100);
         if(Object.values(parts).some(p=>p.wound?.infected))vitality=clamp(vitality-.015*step,0,100);
       }
+    }
+    function quickBandage(){
+      const wound=Object.values(parts).map(p=>p.wound).filter(w=>w&&bleed(w)>0).sort((a,b)=>bleed(b)-bleed(a))[0];
+      if(!wound){onNotice('Sem sangramento ativo para estancar.');return false;}
+      if(items.bandages<=0){onNotice('Sem bandagens.');return false;}
+      cancel();items.bandages--;wound.bandage={age:60,dirty:false};
+      onNotice('Curativo rápido aplicado. Troque e limpe o ferimento no abrigo.');return true;
     }
     function restock(){items.bandages+=3;items.antiseptic+=2;items.painkillers++;if(random()<.4)items.splints++;onNotice('Primeiros socorros: +3 bandagens, +2 antissépticos e +1 analgésico.');}
     function stabilize(){
@@ -161,7 +170,7 @@
       }
     }
     reset();
-    return {reset,status,injure,start,cancel,eligibility,update,restock,stabilize,
+    return {reset,status,injure,start,cancel,eligibility,update,restock,stabilize,quickBandage,
       get parts(){return parts;},get items(){return items;},get action(){return action;},get clock(){return clock;}};
   }
   const api={PARTS,WOUNDS,ACTIONS,create};

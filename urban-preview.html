@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Construções urbanas — OUTLINE</title>
+<style>body{margin:0;background:#172321;color:#c8cbb7;font:14px monospace}main{max-width:1100px;margin:30px auto;padding:16px}canvas{display:block;width:100%;height:auto}a{color:#98c8ad}h1{font-size:18px;font-weight:400}</style>
+<main><h1>CATÁLOGO DE CONSTRUÇÕES · OUTLINE</h1><canvas id="preview" width="1100" height="710" aria-label="Cinco modelos de construções isométricas"></canvas><a href="index.html">Voltar ao jogo</a></main>
+<script src="urban-structures.js"></script>
+<script>
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+UrbanStructures.TYPES.forEach((type,i)=>{
+  const x=i<3?185+i*365:350+(i-3)*400,y=i<3?270:610;
+  const w=i===3?112:i===2?63:89,h=i===3?43:69;
+  const base=[{x,y:y-65},{x:x+w,y:y-65+w*.5},{x:x+w-h,y:y-65+(w+h)*.5},{x:x-h,y:y-65+h*.5}];
+  UrbanStructures.draw(ctx,{base,lift:type.height},i);
+  ctx.fillStyle='#c8cbb7';ctx.font='13px monospace';ctx.textAlign='center';ctx.fillText(String(i+1).padStart(2,'0')+' · '+type.name,x+5,y+38);
+});
+</script>
+</html>

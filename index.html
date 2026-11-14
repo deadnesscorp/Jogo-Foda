@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111b20">
   <meta name="description" content="Um jogo de aventura em pixel art sobre reconectar a humanidade." />
   <title>OUTLINE — Além do Silêncio</title>
-  <link rel="stylesheet" href="style.css?v=20261108-fullscreen-p">
+  <link rel="stylesheet" href="style.css?v=20261113-clean-hud">
   <link rel="stylesheet" href="character-health.css?v=20261113-care-debuffs">
 </head>
 <body>
@@ -19,18 +19,25 @@
 
     <section class="game-frame" id="topo" aria-label="Jogo OUTLINE: Além do Silêncio">
       <canvas id="game" width="1280" height="720" aria-label="Jogo de aventura em pixel art com perspectiva isométrica"></canvas>
-      <button id="fullscreen-toggle" class="fullscreen-toggle" type="button" aria-label="Tela cheia (P)" aria-pressed="false" title="Tela cheia (P)"><span>TELA CHEIA</span><kbd>P</kbd></button>
       <button id="grapple-action" class="grapple-action" type="button" hidden>LANÇAR RAPEL</button>
       <div class="title-screen" id="title-screen">
         <div class="title-kicker"><span></span> UMA HISTÓRIA DE UM MUNDO DESLIGADO</div>
         <h1>ALÉM DO<br><em>SILÊNCIO</em></h1>
-        <p>As máquinas cortaram a humanidade do resto do mundo.<br>Encontre o caminho. Suba. Reconecte tudo.</p>
+        <p>A noite tomou as estradas.<br>Encontre abrigo. Sobreviva até o amanhecer.</p>
         <div class="title-actions"><button id="start-game" class="start-button" type="button"><span>▶</span> INICIAR MISSÃO</button><button id="show-controls" class="menu-button" type="button" aria-expanded="false" aria-controls="controls-panel">VER CONTROLES</button></div>
         <section id="controls-panel" class="controls-panel" hidden aria-label="Controles do jogo">
           <div class="controls-heading"><strong>CONTROLES</strong><button id="close-controls" type="button" aria-label="Fechar controles">×</button></div>
           <div class="control-row"><span>A pé</span><kbd>W A S D</kbd><small>Mover · Shift corre e faz mais ruído</small></div>
           <div class="control-row"><span>Saúde</span><kbd>H</kbd><small>Ferimentos e primeiros socorros</small></div>
-          <div class="control-row"><span>Interagir</span><kbd>E</kbd><small>Usar máquinas e itens</small></div>
+          <div class="control-row"><span>Chutar</span><kbd>ESPAÇO</kbd><small>A pé · chute para a frente · intervalo de 1,7 s</small></div>
+          <div class="control-row"><span>Interface</span><kbd>TAB</kbd><small>Mostrar ou ocultar indicadores e atalhos completos</small></div>
+          <div class="control-row"><span>Tela cheia</span><kbd>P</kbd><small>Entrar ou sair da tela cheia</small></div>
+          <div class="control-row"><span>Emergência</span><kbd>V / B / J</kbd><small>Sinalizador / isca sonora / curativo rápido a pé</small></div>
+          <div class="control-row"><span>Fuga</span><kbd>X</kbd><small>Perto da janela verde · cruz verde identifica abrigo seguro</small></div>
+          <div class="control-row"><span>Abrigo</span><kbd>Z / T / I / O</kbd><small>Dormir / rádio e rota / fabricar / observar a rua · Esc fecha</small></div>
+          <div class="control-row"><span>Fabricação</span><kbd>1 / 2 / 3</kbd><small>No menu I: sinalizador / isca / bandagem · mover cancela sem gastar</small></div>
+          <div class="control-row"><span>Equilíbrio</span><kbd>CLIQUE / ESPAÇO</kbd><small>Na faixa verde para evitar cair da moto em movimento</small></div>
+          <div class="control-row"><span>Interagir</span><kbd>E</kbd><small>Abrir portas e usar itens</small></div>
           <div class="control-row"><span>Moto</span><kbd>W A S D</kbd><small>Virar, acelerar e frear</small></div>
           <div class="control-row"><span>Montar</span><kbd>F</kbd><small>Subir ou descer</small></div>
           <div class="control-row"><span>Arrastar moto</span><kbd>G + WASD</kbd><small>Segure G perto da moto · solte para largar</small></div>
@@ -44,12 +51,11 @@
     </section>
 
     <section class="mission-bar" aria-live="polite">
-      <div class="mission-objective"><span class="objective-index" id="objective-index">01</span><span><small>OBJETIVO ATUAL</small><strong id="objective">Chegue à primeira máquina de moto.</strong></span></div>
-      <div class="mission-progress"><div class="progress-label"><span>REDE RESTAURADA</span><span id="network-count">0 / 3</span></div><div class="progress-track"><i id="network-progress"></i></div></div>
-      <div class="mission-controls"><kbd>W A S D</kbd><span>MOVER</span><kbd>SHIFT</kbd><span>CORRER</span><kbd>E</kbd><span>INTERAGIR</span><kbd>F</kbd><span>SUBIR / DESCER DA MOTO</span></div>
+        <div class="mission-objective"><span class="objective-index" id="objective-index"></span><span><small>OBJETIVO ATUAL</small><strong id="objective">Sobreviva à noite: encontre abrigo, água e comida.</strong></span></div>
+      <div class="mission-controls"><kbd>TAB</kbd><span>DETALHES</span><kbd>H</kbd><span>SAÚDE</span></div>
     </section>
 
-    <footer class="site-footer"><span>✦ <b>UMA FREQUÊNCIA DE CADA VEZ</b></span><span>FEITO PARA JOGAR NO NAVEGADOR <i>·</i> SEM INSTALAÇÃO</span></footer>
+    <footer class="site-footer"><span>✦ <b>UMA NOITE DE CADA VEZ</b></span><span>FEITO PARA JOGAR NO NAVEGADOR <i>·</i> SEM INSTALAÇÃO</span></footer>
   </main>
   <script src="assets/sprites-128/atlas.js?v=20261111-measured-forearms"></script>
   <script src="ignition.js?v=20261113-reliable-healthy-engine"></script>
@@ -58,10 +64,12 @@
   <script src="mounted-rider.js?v=20261111-bike-grounded"></script>
   <script src="assets/sprites-128/caminhada-8-v2.js?v=20261112-d-sixteen-poses"></script>
   <script src="assets/creatures/atlas.js?v=20261112-moss"></script>
-  <script src="moss-creatures.js?v=20261113-creature-combat-profiles"></script>
-  <script src="character-health.js?v=20261113-care-debuffs"></script>
-  <script src="character-health-panel.js?v=20261113-care-debuffs"></script>
-  <script src="game.js?v=20261113-creature-bike-attacks"></script>
+  <script src="moss-creatures.js?v=20261113-brute-speed"></script>
+  <script src="character-health.js?v=20261113-fed-rest-recovery"></script>
+  <script src="character-health-panel.js?v=20261113-simpler-health"></script>
+  <script src="shelter-survival.js?v=20261113-shelter-activities"></script>
+  <script src="urban-structures.js?v=20261113-performance2"></script>
+  <script src="game.js?v=20261113-survival-no-robots"></script>
   <script>
     const controlsPanel=document.querySelector('#controls-panel');
     const controlsButton=document.querySelector('#show-controls');

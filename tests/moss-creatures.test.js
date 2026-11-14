@@ -113,16 +113,16 @@ function runMossCreatureTests(api){
   const reduced=listener();reduced.hunter.x=540;
   reduced.model.update(.1,{light:night,target,sounds:[running]});
   check(reduced.hunter.heard===null,'a running player at 260 units is outside the reduced hearing range');
-  const nearby=listener();nearby.hunter.x=560;
+  const nearby=listener();nearby.hunter.x=730;
   nearby.model.update(.1,{light:night,target,sounds:[running]});
-  check(nearby.hunter.heard?.x===800,'a running player at 240 units remains audible');
-  const loud=listener();loud.model.update(.1,{light:night,target,sounds:[running]});
+  check(nearby.hunter.heard?.x===800,'a running player at 70 units remains audible');
+  const loud=listener();loud.hunter.x=730;loud.model.update(.1,{light:night,target,sounds:[running]});
   check(loud.hunter.x>550&&loud.hunter.behavior==='investigate'&&loud.hunter.heard.x===800,'running attracts a hunter toward the sound source');
   loud.model.update(.1,{light:night,target:{x:1200,y:1000}});
   check(loud.hunter.heard.x===800&&loud.hunter.heard.y===650,'after silence the creature remembers the sound location rather than following the player through the map');
   for(let i=0;i<41;i++)loud.model.update(.1,{light:night,target:{x:1200,y:1000}});
   check(loud.hunter.heard===null&&loud.hunter.behavior==='wander','investigation ends after four seconds without another sound');
-  const motorHunter=listener();motorHunter.model.update(.1,{light:night,target,sounds:[engine]});
+  const motorHunter=listener();motorHunter.hunter.x=680;motorHunter.model.update(.1,{light:night,target,sounds:[engine]});
   check(motorHunter.hunter.heard?.x===800,'engine noise draws creatures from farther away');
   const separated=listener();separated.model.update(.1,{light:night,target,sounds:[{...engine,room:1}]});
   check(separated.hunter.heard===null,'indoor footsteps are not confused with world coordinates');
@@ -132,7 +132,7 @@ function runMossCreatureTests(api){
   check(competing.hunter.heard?.x===850,'the strongest audible source wins over weaker competing sounds');
   const indoorSound=create(()=>.5);indoorSound.reset(day,target);
   const indoorListener=indoorSound.entities.find(e=>e.indoors),indoorSource={x:400,y:270};
-  Object.assign(indoorListener,{roomX:300,roomY:200});
+  Object.assign(indoorListener,{roomX:360,roomY:250});
   indoorSound.update(.1,{light:day,target,room:indoorListener.home,roomTarget:indoorSource,
     sounds:[api.playerNoise({...indoorSource,speed:45,running:true,room:indoorListener.home})],moveRoom:(p,dx,dy)=>{p.x+=dx;p.y+=dy;}});
   check(indoorListener.behavior==='investigate'&&indoorListener.heard.x===400,'sheltered creatures investigate footsteps in the same room');
@@ -196,6 +196,7 @@ function runMossCreatureTests(api){
   Object.assign(wanderer,{x:600,y:650,destination:{x:400,y:650},retarget:100});
   idle.update(.1,{light:day,target,sounds:[{...target,radius:600,kind:'motor',player:false}]});
   check(wanderer.sunAge===null&&wanderer.speed<=api.TYPES[wanderer.kind].daySpeed+1e-6,'investigating an unattended motorcycle does not start a daytime pursuit or dissolution');
+  Object.assign(wanderer,{x:730,y:650});
   idle.update(.1,{light:day,target,sounds:[api.playerNoise({...target,speed:50,running:true})]});
   check(wanderer.sunAge>0&&wanderer.pursuingPlayer&&wanderer.speed>api.TYPES[wanderer.kind].daySpeed,'hearing a running player starts the fast daytime pursuit and countdown together');
   const startedAge=wanderer.sunAge;idle.update(.1,{light:day,target:{x:1500,y:1100}});

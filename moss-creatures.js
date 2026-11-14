@@ -3,12 +3,12 @@
   'use strict';
   const TYPES=[
     {id:'encoberto',name:'Encoberto',role:'Caçador esguio',daySpeed:5,nightSpeed:62,runSpeed:88,height:30,reach:240,
-      damage:1.35,wound:'deep',attackReach:15,bikeDamage:10,knockOffChance:.48,attackInterval:2.4,stun:1,
+      damage:.25,wound:'scratch',attackReach:15,bikeDamage:10,knockOffChance:.68,attackInterval:2.4,stun:1,
       targets:['chest','abdomen','leftArm','rightArm'],bikeTargets:['handlebar','motor']},
     {id:'rastejante',name:'Rastejante',role:'Quadrúpede veloz',daySpeed:7,nightSpeed:82,runSpeed:108,height:20,reach:310,
-      damage:.8,wound:'cut',attackReach:12,bikeDamage:7,knockOffChance:.22,attackInterval:1.8,stun:.75,
+      damage:.15,wound:'scratch',attackReach:12,bikeDamage:7,knockOffChance:.55,attackInterval:1.8,stun:.75,
       targets:['leftLeg','rightLeg','leftArm','rightArm'],bikeTargets:['frontTire','rearTire']},
-    {id:'coroa',name:'Coroa',role:'Brutamontes',daySpeed:3,nightSpeed:27,runSpeed:40,height:32,reach:190,
+    {id:'coroa',name:'Coroa',role:'Brutamontes',daySpeed:5,nightSpeed:42,runSpeed:58,height:32,reach:190,
       damage:2,wound:'fracture',attackReach:19,bikeDamage:22,knockOffChance:.88,attackInterval:3.4,stun:1.25,
       targets:['head','chest','leftLeg','rightLeg'],bikeTargets:['motor','handlebar','frontTire','rearTire']}
   ];
@@ -21,7 +21,7 @@
   const HEARING_MEMORY=4,SPAWN_START_INTERVAL=10,SPAWN_MIN_INTERVAL=2,SPAWN_INTERVAL_STEP=2;
   function playerNoise({x,y,speed=0,running=false,vehicle=false,engineRunning=false,room=-1}){
     speed=Math.abs(speed);
-    const radius=vehicle?(engineRunning?180+Math.min(470,speed*2):speed>2?90+Math.min(100,speed):0):speed>1?(running?230:100):0;
+    const radius=vehicle?(engineRunning?75+Math.min(125,speed*.65):speed>2?25+Math.min(35,speed*.3):0):speed>1?(running?75:32):0;
     return radius?{x,y,radius,room,kind:vehicle?'motor':running?'running':'steps',player:!vehicle}:null;
   }
   function populationForLight(light){
@@ -88,6 +88,23 @@
       return null;
     }
     function shelter(entity){entity.indoors=true;entity.destination=null;entity.speed=0;entity.heard=null;entity.heardPlayer=false;entity.pursuingPlayer=false;entity.alert=0;Object.assign(entity,door(entity.home));}
+    function kick({x,y,angle=0,room=-1,isRoomBlocked=()=>false}){
+      const candidates=entities.filter(e=>!e.retired&&(room<0?!e.indoors:e.indoors&&e.home===room))
+        .map(e=>({e,x:room<0?e.x:e.roomX,y:room<0?e.y:e.roomY}))
+        .filter(p=>{
+          const dx=p.x-x,dy=p.y-y,d=Math.hypot(dx,dy);
+          if(d>34||(d>1&&(dx*Math.sin(angle)-dy*Math.cos(angle))/d<.15))return false;
+          for(let i=1;i<=8;i++)if(room<0?isBlocked(x+dx*i/8,y+dy*i/8,2):isRoomBlocked(x+dx*i/8,y+dy*i/8))return false;
+          return true;
+        }).sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y));
+      if(!candidates.length)return null;
+      const hit=candidates[0],e=hit.e,dx=hit.x-x,dy=hit.y-y,d=Math.hypot(dx,dy);
+      e.kickStun=e.kind===2?1.5:e.kind===1?1.1:.9;
+      e.kickFlight=e.kind===2?0:.3;e.kickRemaining=e.kind===1?105:e.kind===0?70:0;
+      e.kickX=d>1?dx/d:Math.sin(angle);e.kickY=d>1?dy/d:-Math.cos(angle);
+      e.destination=null;e.roomDestination=null;e.speed=0;e.behavior='stunned';
+      return e;
+    }
     function investigate(entity,position,room,sounds,visibleTarget){
       entity.pursuingPlayer=false;
       if(entity.heardRoom!==room||entity.alert===0)entity.heard=null;
@@ -141,7 +158,63 @@
       if(travel>0){entity.angle=Math.atan2(entity.x-before.x,-(entity.y-before.y));entity.phase+=travel/(entity.kind===1?15:23)*Math.PI*2;}
       return travel;
     }
-    function update(dt,{light,target,room=-1,roomTarget=null,moveRoom=null,sounds=[]}){
+    function encircle(entity,interest,positions,room){
+      if(!night||entity.kind!==0||!entity.pursuingPlayer||!interest)return null;
+      // Each hunter must have seen or heard the player itself. Bait never
+      // recruits a pack, and a lost sound does not reveal the player's location.
+      const pack=entities.filter(other=>other.kind===0&&!other.indoors&&!other.retired&&
+        distance(positions.get(other),interest)<340&&
+        ((other.heardPlayer&&other.alert>0&&other.heard&&distance(other.heard,interest)<80)||
+          (room<0&&distance(positions.get(other),interest)<55)))
+        .sort((a,b)=>a.id-b.id);
+      const slot=pack.indexOf(entity);
+      if(pack.length<2||slot<0)return null;
+      const origin=positions.get(entity),range=distance(origin,interest);
+      // One presses the target; the others spread around the escape routes.
+      if(slot===0||range<30)return null;
+      const leader=positions.get(pack[0]);
+      const base=Math.atan2(leader.y-interest.y,leader.x-interest.x);
+      const desired=base+Math.PI*2*slot/pack.length;
+      const current=Math.atan2(origin.y-interest.y,origin.x-interest.x);
+      const difference=Math.atan2(Math.sin(desired-current),Math.cos(desired-current));
+      const angle=current+Math.max(-.65,Math.min(.65,difference));
+      const radius=Math.abs(difference)>.45?Math.max(65,Math.min(range,115)):24;
+      const size=getSize();
+      for(const offset of [0,.35,-.35,.7,-.7]){
+        const p={x:interest.x+Math.cos(angle+offset)*radius,y:interest.y+Math.sin(angle+offset)*radius};
+        if(p.x<8||p.y<8||p.x>size.w-8||p.y>size.h-8)continue;
+        let clear=true;
+        for(let step=1;step<=8;step++)if(isBlocked(origin.x+(p.x-origin.x)*step/8,origin.y+(p.y-origin.y)*step/8,5)){clear=false;break;}
+        if(clear){entity.behavior='encircle';return p;}
+      }
+      return null;
+    }
+    function ambush(entity,interest,visible,positions,room){
+      if(entity.kind!==0||!interest||distance(entity,interest)<24)return null;
+      const origin=positions.get(entity),dx=interest.x-origin.x,dy=interest.y-origin.y,len=Math.hypot(dx,dy)||1;
+      const lateral=(entity.id%2?1:-1)*32;
+      const forwardX=visible?Math.sin(visible.angle||0):dx/len;
+      const forwardY=visible?-Math.cos(visible.angle||0):dy/len;
+      const p={x:interest.x-forwardX*48-forwardY*lateral,y:interest.y-forwardY*48+forwardX*lateral};
+      const size=getSize();if(room<0&&(p.x<8||p.y<8||p.x>size.w-8||p.y>size.h-8))return null;
+      for(let step=1;step<=8;step++)if(room<0?isBlocked(origin.x+(p.x-origin.x)*step/8,origin.y+(p.y-origin.y)*step/8,5):false)return null;
+      entity.behavior='ambush';return p;
+    }
+    function herdTowardBrute(entity,interest,positions,room){
+      if(entity.kind!==1||!interest||!entity.pursuingPlayer)return null;
+      const origin=positions.get(entity),brute=entities.filter(other=>other.kind===2&&!other.indoors&&!other.retired)
+        .map(other=>({entity:other,position:positions.get(other)}))
+        .filter(other=>distance(other.position,interest)<250)
+        .sort((a,b)=>distance(a.position,interest)-distance(b.position,interest))[0];
+      if(!brute)return null;
+      const bx=interest.x-brute.position.x,by=interest.y-brute.position.y,len=Math.hypot(bx,by)||1;
+      const side=entity.id%2?1:-1,offset=side*26;
+      const p={x:interest.x+bx/len*78-by/len*offset,y:interest.y+by/len*78+bx/len*offset};
+      const size=getSize();if(room<0&&(p.x<8||p.y<8||p.x>size.w-8||p.y>size.h-8))return null;
+      for(let step=1;step<=8;step++)if(room<0&&isBlocked(origin.x+(p.x-origin.x)*step/8,origin.y+(p.y-origin.y)*step/8,5))return null;
+      entity.behavior='herd';return p;
+    }
+    function update(dt,{light,target,room=-1,roomTarget=null,moveRoom=null,sounds=[],repellents=[]}){
       if(!initialized)reset(light,target);
       if(!Number.isFinite(dt)||dt<=0)return;
       dt=Math.min(.1,dt);shadeClock-=dt;
@@ -170,6 +243,7 @@
         if(!night&&entities.length<DAY_COUNT&&!entities.some(e=>e.home===room)&&random()<.45){const resident=add(target,false,room);if(resident)shelter(resident);}
       }
       let nearbyAnomaly=0;
+      const positions=new Map(entities.map(entity=>[entity,{x:entity.x,y:entity.y}]));
       for(const entity of entities){
         entity.spawnAge=Math.min(1,entity.spawnAge+dt);
         entity.attackCooldown=Math.max(0,(entity.attackCooldown||0)-dt);
@@ -190,6 +264,19 @@
         // Average exposure over the frame keeps the gradual slowdown consistent
         // at different refresh rates, reaching 15% speed just before dissolution.
         const sunSpeed=1-.85*Math.min(1,Math.max(0,(entity.sunAge??0)-dt*.5)/SUN_LIFETIME);
+        if(entity.kickStun>0){
+          entity.kickStun=Math.max(0,entity.kickStun-dt);entity.behavior='stunned';entity.speed=0;
+          if(entity.kickFlight>0){
+            const step=Math.min(dt,entity.kickFlight),travel=entity.kickRemaining*step/entity.kickFlight;
+            entity.kickFlight=Math.max(0,entity.kickFlight-step);entity.kickRemaining=Math.max(0,entity.kickRemaining-travel);
+            if(entity.indoors){
+              if(moveRoom){const local={x:entity.roomX,y:entity.roomY};
+                for(let n=0;n<Math.ceil(travel/3);n++)moveRoom(local,entity.kickX*travel/Math.ceil(travel/3),entity.kickY*travel/Math.ceil(travel/3),4);
+                entity.roomX=local.x;entity.roomY=local.y;}
+            }else for(let n=0;n<Math.ceil(travel/3);n++)move(entity,entity.kickX*travel/Math.ceil(travel/3),entity.kickY*travel/Math.ceil(travel/3),false);
+          }
+          continue;
+        }
         if(entity.indoors){
           if(entity.home===room&&roomTarget&&moveRoom){
             if(!entity.roomDestination||distance({x:entity.roomX,y:entity.roomY},entity.roomDestination)<8)
@@ -206,6 +293,12 @@
           }
           continue;
         }
+        const flare=repellents.find(p=>(p.room??-1)===-1&&distance(entity,p)<p.radius);
+        if(flare){
+          const dx=entity.x-flare.x,dy=entity.y-flare.y,len=Math.hypot(dx,dy)||1;
+          move(entity,(dx||1)/len*type.runSpeed*dt,dy/len*type.runSpeed*dt,restricted);
+          entity.heard=null;entity.pursuingPlayer=false;entity.behavior='flee';continue;
+        }
         if(restricted&&!shaded(entity.x,entity.y)){
           const refuge=shadePoint(entity.home);
           if(refuge&&distance(entity,refuge)<32)Object.assign(entity,refuge);else shelter(entity);
@@ -217,13 +310,15 @@
           entity.destination=restricted?shadePoint(entity.home):openPoint(entity,25,110);
           entity.retarget=2+random()*4;
         }
-        const to=interest||entity.destination;
+        const visibleTarget=room<0&&entity.pursuingPlayer&&distance(entity,target)<55?target:null;
+        const to=herdTowardBrute(entity,interest,positions,room)||encircle(entity,interest,positions,room)||
+          ambush(entity,interest,visibleTarget,positions,room)||interest||entity.destination;
         const pursuing=!restricted&&(night?chasing:entity.pursuingPlayer);
         const speed=(pursuing?(!night&&entity.sunRunner?type.runSpeed:type.nightSpeed):type.daySpeed)*sunSpeed;
         entity.speed=0;
         if(to){
           const dx=to.x-entity.x,dy=to.y-entity.y,len=Math.hypot(dx,dy);
-          if(len>(chasing?15:3)){
+          if(len>(['encircle','ambush','herd'].includes(entity.behavior)?3:chasing?15:3)){
             const travel=move(entity,dx/len*Math.min(len,speed*dt),dy/len*Math.min(len,speed*dt),restricted);
             entity.speed=travel/Math.max(.001,dt);if(travel===0)entity.retarget=0;
           }
@@ -233,11 +328,10 @@
       entities=entities.filter(entity=>!entity.retired);
       glitch+=(nearbyAnomaly-glitch)*(1-Math.exp(-dt*6));
     }
-    return {reset,update,isShaded:shaded,get entities(){return entities;},get night(){return night;},get spawnInterval(){return spawnInterval;},get glitch(){return night?0:glitch;}};
+    return {reset,update,kick,isShaded:shaded,get entities(){return entities;},get night(){return night;},get spawnInterval(){return spawnInterval;},get glitch(){return night?0:glitch;}};
   }
   function createRenderer(atlas,{assetRoot='assets/creatures/'}={}){
     const sheets=atlas.types.map(type=>{const image=new Image();image.src=assetRoot+type.file;return image;});
-    const glitchLayer=document.createElement('canvas'),glitchContext=glitchLayer.getContext('2d');
     function draw(ctx,entity,x,y,angle,phase,anomaly=false){
       const type=TYPES[entity.kind],meta=atlas.types[entity.kind],sheet=sheets[entity.kind];
       if(!sheet.complete||!sheet.naturalWidth)return;
@@ -248,6 +342,8 @@
       if(decay>=1)return;
       ctx.save();ctx.imageSmoothingEnabled=false;ctx.globalAlpha*=(1-decay)*Math.min(1,entity.spawnAge??1);
       ctx.fillStyle='#0009';ctx.beginPath();ctx.ellipse(x,y+3,Math.max(4,sw*scale*.32),2.2,0,0,Math.PI*2);ctx.fill();
+      if(entity.kickFlight>0)y-=Math.sin(Math.PI*(1-entity.kickFlight/.3))*(entity.kind===1?15:10);
+      if(entity.kickStun>0){ctx.fillStyle='#e8d294';ctx.fillRect(x-4,y-type.height-6,2,2);ctx.fillRect(x+4,y-type.height-8,2,2);}
       if(decay>0){
         // Stable missing blocks make the moss crumble without particles or readback.
         const left=x-ax*scale,top=y+3-ay*scale,width=sw*scale,height=sh*scale,cell=3;
@@ -259,22 +355,29 @@
         ctx.clip();
       }
       ctx.drawImage(sheet,sx,sy,sw,sh,x-ax*scale,y+3-ay*scale,sw*scale,sh*scale);
-      if(anomaly){ctx.globalAlpha*=.35;ctx.globalCompositeOperation='screen';ctx.drawImage(sheet,sx,sy,sw,sh,x-ax*scale+1,y+3-ay*scale,sw*scale,sh*scale);}
+      if(anomaly){
+        const left=x-ax*scale,top=y+3-ay*scale,width=sw*scale,height=sh*scale;
+        ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha*=entity.pursuingPlayer ? .62 : .22;
+        ctx.drawImage(sheet,sx,sy,sw,sh,left+Math.sin(phase*3)*2,y+3-ay*scale,width,height);
+        if(entity.pursuingPlayer){
+          const pulse=Math.sin(phase*5+(entity.id||0));
+          ctx.globalAlpha*=.65;ctx.fillStyle='#a84cff';ctx.fillRect(left-3+pulse*2,top+height*.24,width*.52,Math.max(2,height*.12));
+          ctx.fillStyle='#49dce7';ctx.fillRect(left+width*.31-pulse*2,top+height*.58,width*.6,Math.max(2,height*.1));
+          ctx.globalAlpha*=.55;ctx.drawImage(sheet,sx,sy,sw,sh,left-2-pulse*2,top,width,height);
+        }
+        ctx.restore();
+      }
       ctx.restore();
     }
     function drawGlitch(ctx,width,height,time,strength){
       if(strength<.03)return;
       // Short low-opacity scanline displacement, never full-screen flashing.
       const pulse=Math.floor(time*13);if(pulse%5>1)return;
-      if(glitchLayer.width!==Math.ceil(width)||glitchLayer.height!==Math.ceil(height)){glitchLayer.width=Math.ceil(width);glitchLayer.height=Math.ceil(height);}
-      const transform=ctx.getTransform();
-      const x=Math.round(transform.e),y=Math.round(transform.f),w=Math.round(width*transform.a),h=Math.round(height*transform.d);
-      glitchContext.clearRect(0,0,width,height);glitchContext.drawImage(ctx.canvas,x,y,w,h,0,0,width,height);
-      ctx.save();ctx.globalAlpha=.2*strength;
-      for(let i=0;i<4;i++){
-        const sy=((pulse*29+i*73)%Math.max(1,height-8)),sh=2+(i%3)*2,shift=Math.sin(pulse*3+i)*8*strength;
-        ctx.drawImage(glitchLayer,0,sy,width,sh,shift,sy,width,sh);
-        ctx.fillStyle=i%2?'#552b9e':'#174b73';ctx.fillRect(0,sy,width,1);
+      ctx.save();ctx.globalAlpha=.38*strength;
+      for(let i=0;i<7;i++){
+        const sy=((pulse*29+i*47)%Math.max(1,height-8)),sh=2+(i%3)*3,shift=Math.sin(pulse*3+i)*14*strength;
+        ctx.fillStyle=i%2?'#552b9e':'#174b73';
+        ctx.fillRect(shift,sy,width*.76,sh);
       }
       ctx.restore();
     }
