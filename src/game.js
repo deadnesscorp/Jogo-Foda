@@ -120,8 +120,7 @@
   function worldLighting(time) {
     if(lightingCache&&time===lightingTime&&startHour===lightingHour&&W===lightingWidth&&H===lightingHeight)return lightingCache;
     lightingTime=time;lightingHour=startHour;lightingWidth=W;lightingHeight=H;
-    const sleepRate=shelterLife?.restfulSleep?8:shelterLife?.sleeping?4:1;
-    const totalHours = startHour + Math.max(0, time) * 24 / DAY_LENGTH_SECONDS*sleepRate;
+    const totalHours = startHour + Math.max(0, time) * 24 / DAY_LENGTH_SECONDS;
     const hour = totalHours % 24;
     const solarAngle = (hour - 6) * Math.PI / 12;
     const sunElevation = Math.sin(solarAngle);
@@ -410,7 +409,7 @@
   }
   const world = { w: 12800, h: 4800 };
   const forest=Forest.create();
-  const towers = Array.from({length:5},(_,i)=>({x:0,y:0,disabled:false,design:i,pace:0,phase:0,name:`COMPUTADOR 0${i+1}`}));
+  const towers = Array.from({length:8},(_,i)=>({x:0,y:0,disabled:false,design:i%5,pace:0,phase:0,name:`COMPUTADOR 0${i+1}`}));
   let roads = [
     [0, 1450], [260, 1450], [440, 1120], [570, 570], [650, 460],
     [940, 520], [1240, 800], [1460, 1130], [1830, 1290], [2160, 870],
@@ -575,6 +574,7 @@
   let shelterView=null;
   const inSafeShelter=()=>state==='explore'&&isShelter(exploreBuilding);
   const observingOutside=()=>shelterView==='observe'&&inSafeShelter();
+  const observingAtRest=()=>observingOutside()&&!shelterLife.activity;
   function shelterKey(key){
     if(!inSafeShelter()||checkpointReturn)return false;
     if(['escape','w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e'].includes(key)){
@@ -591,7 +591,9 @@
     const safe=inSafeShelter();
     if(!safe)shelterView=null;
     const moving=['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(k=>keys.has(k));
-    const result=shelterLife.update(dt,{safe:safe&&!checkpointReturn,moving,running:moving&&keys.has('shift')});
+    const condition=characterHealth.status();
+    const fatigueCondition=1+(1-condition.health/100)*1.2+condition.wounds*.12+condition.pain/100*.35;
+    const result=shelterLife.update(dt,{safe:safe&&!checkpointReturn,moving,running:moving&&keys.has('shift'),condition:fatigueCondition});
     if(result==='rested')setToast('DESCANSADO — FÔLEGO E EQUILÍBRIO RECUPERADOS.');
   }
   function drawShelter(){
@@ -775,13 +777,24 @@
       { q: 'Qual serviço traduz nomes de sites em IP?', a: ['DNS', 'Teclado', 'Monitor'], ok: 0 }
     ]
   ];
+  networkQuestions.push(
+    [
+      {q:'Qual protocolo atribui enderecos IP automaticamente?',a:['DHCP','FTP','HTML'],ok:0},
+      {q:'Qual mascara corresponde a uma rede /24?',a:['255.255.255.0','255.0.0.0','255.255.0.0'],ok:0},
+      {q:'Qual endereco IPv4 e privado?',a:['10.0.0.8','8.8.8.8','200.160.2.3'],ok:0}
+    ],
+    [
+      {q:'Qual protocolo protege a navegacao web com criptografia?',a:['HTTPS','HTTP','Telnet'],ok:0},
+      {q:'Qual protocolo costuma enviar e-mails entre servidores?',a:['SMTP','DHCP','ARP'],ok:0},
+      {q:'Qual protocolo transfere arquivos entre computadores?',a:['FTP','DNS','NTP'],ok:0}
+    ],
+    [
+      {q:'O que o protocolo ARP encontra numa rede local?',a:['O MAC associado a um IP','A senha do roteador','O nome de um site'],ok:0},
+      {q:'Qual equipamento encaminha quadros usando enderecos MAC?',a:['Switch','Modem','Repetidor USB'],ok:0},
+      {q:'O que mede a latencia de uma conexao?',a:['O tempo de resposta','A quantidade de senhas','O alcance do cabo'],ok:0}
+    ]
+  );
   networkQuestions.flat().forEach((question,i)=>question.a.push(['Bluetooth','Cabo de energia','Impressora','Antena de TV','Placa de som'][i%5]));
-  const upgradeOptions=['Economia: -20% de consumo de gasolina','Blindagem: +30% de resistencia da moto','Vitalidade: +25 de vida maxima','Chute: +12 de alcance e +50% de stun'];
-  function chooseUpgrade(choice){
-    upgrades[['fuel','armor','health','kick'][choice]]++;
-    if(choice===2)characterHealth.boost();
-    completeHack();
-  }
   const platforms = [
     { x: 0, w: 82, y: 245 }, { x: 80, w: 73, y: 214 }, { x: 153, w: 70, y: 183 },
     { x: 225, w: 70, y: 152 }, { x: 295, w: 72, y: 121 }, { x: 368, w: 112, y: 90 }
@@ -1022,7 +1035,7 @@
       return {x:targetX,y:roads[Math.floor(roads.length/2)][1],nx:0,ny:1};
     }
     towers.forEach((tower, i) => {
-      const anchor = [1600,4100,6600,9100,11600][i], roadAnchor=sampleRoadAtX(anchor);
+      const anchor = 1600 + i * (world.w - 3200) / Math.max(1,towers.length-1), roadAnchor=sampleRoadAtX(anchor);
       let point = null;
       for (let attempt = 0; attempt < 180 && !point; attempt++) {
         const candidate = { x: anchor, y: Math.max(120, Math.min(world.h - 120, roadAnchor.y + (Math.random() - .5) * 180)) };
@@ -1030,12 +1043,22 @@
         point = candidate;
       }
       if (!point) {
-        // A blocked road must never place a computer inside a building.
+        // A blocked roadside spawn falls back to other clear, separated points.
         for(let offset=0;offset<world.h&&!point;offset+=48)for(const side of [1,-1]){
           const candidate={x:anchor,y:roadAnchor.y+offset*side};
-          if(candidate.y>=120&&candidate.y<=world.h-120&&!worldBlocked(candidate.x,candidate.y,48)){point=candidate;break;}
+          if(candidate.y>=120&&candidate.y<=world.h-120&&distance(candidate,bike)>=1000&&!worldBlocked(candidate.x,candidate.y,48)&&!placed.some(p=>distance(candidate,p)<2300)){point=candidate;break;}
         }
-        if(!point)point={x:roadAnchor.x,y:120};
+        for(let ring=0;ring<world.w&&!point;ring+=96){
+          for(const x of [anchor+ring,anchor-ring]){
+            if(x<70||x>world.w-70)continue;
+            for(let y=120;y<=world.h-120;y+=96){
+              const candidate={x,y};
+              if(distance(candidate,bike)>=1000&&!worldBlocked(x,y,48)&&!placed.some(p=>distance(candidate,p)<2300)){point=candidate;break;}
+            }
+            if(point)break;
+          }
+        }
+        if(!point)throw Error('Sem espaço livre para posicionar todos os computadores.');
       }
       tower.baseX = tower.x = point.x; tower.baseY = tower.y = point.y;
       tower.rangeX = tower.design === 3 ? 72 + Math.random() * 26 : tower.design === 4 ? 32 + Math.random() * 20 : 28 + Math.random() * 30;
@@ -1072,7 +1095,7 @@
   function updateObjective() {
     if (state === 'explore') setObjective('Procure recursos nas construções e volte ao abrigo antes da noite.');
     else if (state === 'ending') setObjective('Você sobreviveu. Continue explorando este mundo abandonado.');
-    else if(active()) setObjective(`Siga o sinal até o ${active().name}. A pé, pressione E e responda 3 perguntas. (${network}/5)`);
+    else if(active()) setObjective(`Siga o sinal até o ${active().name}. A pé, pressione E e responda 3 perguntas. (${network}/${towers.length})`);
     else setObjective('Sobreviva à noite: encontre abrigo, água e comida.');
   }
   function startGame() {
@@ -1286,12 +1309,11 @@
   }
   function hackInput(choice) {
     if (state !== 'hack' || choice < 0 || choice > 3) return;
-    if(hackMode==='upgrade'){chooseUpgrade(choice);return;}
     if (hackMode === 'question') {
       const question = networkQuestions[activeTower][hackStep];
       if (choice === question.ok) {
         hackStep++;
-        if (hackStep >= networkQuestions[activeTower].length) {hackMode='upgrade';keys.clear();setToast('ESCOLHA UMA MELHORIA PERMANENTE');}
+        if (hackStep >= networkQuestions[activeTower].length) completeHack();
         else setToast('RESPOSTA CERTA — PRÓXIMA PERGUNTA');
       } else { hackTime -= 4; setToast('RESPOSTA INCORRETA — TENTE OUTRA OPÇÃO', 1.2); }
     }
@@ -1299,7 +1321,7 @@
   function handleHackPointer(event) {
     if (state !== 'hack') return;
     const {x,y}=bikeCanvasPointer(event);
-    if (hackMode === 'question'||hackMode==='upgrade') {
+    if (hackMode === 'question') {
       const choice = Math.floor((y - 108) / 27);
       if (x >= 107 && x <= 373 && y<213 && choice >= 0 && choice < 4) hackInput(choice);
     }
@@ -3841,7 +3863,7 @@
     const limit=bikeGearSpeedLimit();
     const targetSpeed=fuel<=0||bikeLife<=0?0:keys.has('w')?limit:keys.has('s')?Math.min(38,limit):Math.min(100,limit);
     chaseSpeed += (targetSpeed - chaseSpeed) * Math.min(1, dt * 2.8 * condition);
-    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.12/(1+upgrades.fuel*.25));
+    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.10/(1+upgrades.fuel*.25));
     chaseProgress += chaseSpeed * dt;
     chaseElapsed += dt;
     const tower = active(), machineSpeed = [151,159,167,188,126][tower.design]*.8;
@@ -4119,17 +4141,16 @@
     ctx.fillStyle = '#071012ce'; ctx.fillRect(0, 0, W, H);
     panel(67, 43, 346, 205, '#142324', '#81d4b1');
     ctx.textAlign = 'center'; ctx.fillStyle = '#9ddfc1'; ctx.font = '8px monospace';
-    if (hackMode === 'question'||hackMode==='upgrade') {
-      const reward=hackMode==='upgrade';
-      const question=reward?{q:'Escolha uma melhoria para continuar',a:upgradeOptions}:networkQuestions[activeTower][hackStep];
-      ctx.fillText(reward?'COMPUTADOR CONCLUIDO - MELHORIA':'DIAGNOSTICO - REDES', W / 2, 62);
-      ctx.fillStyle = '#82968b'; ctx.font = '6px monospace'; ctx.fillText(reward?`MELHORIAS ACUMULAM - COMPUTADOR ${network+1}/5`:`PERGUNTA ${hackStep + 1} / 3`, W / 2, 76);
+    if (hackMode === 'question') {
+      const question=networkQuestions[activeTower][hackStep];
+      ctx.fillText('DIAGNOSTICO - REDES', W / 2, 62);
+      ctx.fillStyle = '#82968b'; ctx.font = '6px monospace'; ctx.fillText(`PERGUNTA ${hackStep + 1} / 3`, W / 2, 76);
       ctx.fillStyle = '#e3e9db'; ctx.font = '7px monospace'; ctx.fillText(question.q, W / 2, 96);
       question.a.forEach((answer, i) => {
         const x = 107, y = 108 + i * 27;
         ctx.fillStyle = '#202f2e'; ctx.fillRect(x, y, 266, 24); ctx.strokeStyle = '#536d62'; ctx.strokeRect(x + .5, y + .5, 265, 23);
         ctx.fillStyle = '#d5b576'; ctx.font = '7px monospace'; ctx.textAlign = 'left'; ctx.fillText(`${i + 1}.`, x + 10, y + 16);
-        ctx.fillStyle = '#dce5d8'; ctx.font = reward?'6px monospace':'7px monospace';ctx.fillText(answer, x + 29, y + 16);
+        ctx.fillStyle = '#dce5d8'; ctx.font = '7px monospace';ctx.fillText(answer, x + 29, y + 16);
       });
       ctx.fillStyle = '#8fa59b'; ctx.font = '6px monospace'; ctx.textAlign = 'center'; ctx.fillText('ESCOLHA COM 1, 2, 3, 4 OU TOQUE', W / 2, 216);
     }
@@ -4139,7 +4160,6 @@
     climbTime += dt; hazardCooldown = Math.max(0, hazardCooldown - dt); climber.invulnerable = Math.max(0, climber.invulnerable - dt);
     if (state === 'hack') {
       if(climber.gait)updateFootGait(climber.gait,0,climber.spriteAngle,82,dt,spriteAtlas.survivor.walk);
-      if(hackMode==='upgrade')return;
       hackTime -= dt/characterHealth.status().focus;
       if (hackTime <= 0) { state = 'drive'; keys.clear(); hackStep = 0; hackTime = 90; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
       return;
@@ -4316,7 +4336,8 @@
     if(lastTime)gameDisplay.sampleFrame(now-lastTime);
     if (!lastTime) lastTime = now;
     const dt = Math.min(.045, (now - lastTime) / 1000); lastTime = now;
-    gameTime += dt;
+    const sleepRate=shelterLife.restfulSleep?8:shelterLife.sleeping||observingAtRest()?4:1;
+    gameTime += dt*sleepRate;
     updateSurvival(dt);
     updateShelter(dt);
     updateCharacterCare(dt);
@@ -4330,9 +4351,9 @@
     if(state!=='title'&&state!=='ending')updateBikeFuelTrail(dt);
     updateMachines(gameTime);
     const metabolism=characterHealth.status().metabolism;
-    const resourceRate=shelterLife.restfulSleep?6:shelterLife.sleeping?4:1;
+    const resourceRate=shelterLife.restfulSleep?8:shelterLife.sleeping||observingAtRest()?4:1;
     hunger = Math.max(0, hunger - dt * .0525*metabolism*resourceRate); thirst = Math.max(0, thirst - dt * .09*metabolism*resourceRate);
-    if(bikeEngineRunning&&fuel>0)fuel=Math.max(0,fuel-dt*.10*resourceRate/(1+upgrades.fuel*.25));
+    if(bikeEngineRunning&&fuel>0)fuel=Math.max(0,fuel-dt*.035*resourceRate/(1+upgrades.fuel*.25));
     if(checkpointReturn){
       advanceCheckpointReturn(dt);
       finishFrame(gameTime,dt);
@@ -4366,7 +4387,7 @@
       // Engine braking brings a downshift into its new range without teleporting speed.
       if(bike.speed>maxForward)bike.speed=Math.max(maxForward,bike.speed-dt*260);
       bike.speed=Math.max(-48,bike.speed);
-      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.25)*(reverse?.0675:.165)*(1+(100-bikeParts.motor)/38));
+      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.25)*(reverse?.060:.150)*(1+(100-bikeParts.motor)/38));
       const travelSpeed=(previousSpeed+bike.speed)/2;
       const steeringDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt)*characterHealth.status().handling;
       const turnDelta=bikeWorldTurnDelta(bike.angle,steeringDelta);

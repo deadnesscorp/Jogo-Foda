@@ -139,11 +139,20 @@ function runIgnitionTests(factory,source) {
       let W=480,H=270,gameScene=null;const gameSceneViewport=()=>({x:0,y:0,width:480,height:270});
       let state='drive',mounted=false,bikeInspectOpen=repairing,bikeService=null,checkpointReturn=null;
       let machineTicks=0,wearTicks=0,ignitionTicks=0,repairTicks=0,rendered=0;
-      const bike={x:0,y:0,speed:0},player={x:0,y:0},keys=new Set();
+      let bikeDragging=false,bikeDragSpeed=0,bikeRpm=0,upgrades={fuel:0};
+      const bike={x:0,y:0,speed:0,steering:0,bank:0,angle:0,wheel:0},player={x:0,y:0},keys=new Set();
+      const bikeParts={motor:100,frontTire:100,rearTire:100,handlebar:100};
+      const shelterLife={restfulSleep:false,sleeping:false,activity:null};
+      const characterHealth={status:()=>({metabolism:1,dexterity:1,handling:1})};
+      const observingOutside=()=>false,observingAtRest=()=>false;
+      const updateSurvival=()=>{},updateShelter=()=>{},updateCharacterCare=()=>{};
+      const stopBikeDrag=()=>{},updateBikeFuelTrail=()=>{},updateCreatureCombat=()=>{};
+      const mossEcology={update(){}},worldLighting=()=>({}),creatureSounds=()=>[];
+      const moveExplorer=()=>{};
+      const playerKnockdown=0,ACTOR_VISUAL_SCALE=.6;
       const ignition={active:igniting,update(){ignitionTicks++;}};
       const gameDisplay={sampleFrame(){}},updateBikeGearbox=()=>{},bikeControlsMounted=()=>false,distance=()=>0;
       const updateBikeService=()=>repairTicks++,updateBikeCondition=()=>wearTicks++,updateMachines=()=>machineTicks++;
-      const updateBikeFuelTrail=()=>{};
       const updateObjective=()=>{},active=()=>null,finishFrame=()=>rendered++,requestAnimationFrame=()=>{};
       const updateFootMovement=()=>{},moveWorldEntity=()=>{},projectFacing=angle=>angle;
       ${frameSource}

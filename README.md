@@ -53,7 +53,7 @@ mecânicas continuam ativos.
 
 Foram removidos os modos antigos de cabos do terminal, cuja função de entrada
 não era chamada, e as chamadas vazias do painel de saúde desativado. O fluxo
-atual de três perguntas, escolha de melhoria e conclusão dos cinco computadores
+atual de três perguntas e conclusão dos oito computadores
 continua coberto por `tests/frame-optimization.test.js`, junto da reutilização
 da iluminação e da visibilidade dos computadores. Vida, dano e cura rápida
 continuam no sistema atual.

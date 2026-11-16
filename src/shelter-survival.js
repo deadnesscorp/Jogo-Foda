@@ -15,13 +15,13 @@
       if(!recipe||materials.scrap<recipe.scrap||materials.cloth<recipe.cloth)return false;
       activity={kind:'craft',id,elapsed:0,duration:recipe.duration};return true;
     }
-    function update(dt,{safe=false,moving=false,running=false}={}){
+    function update(dt,{safe=false,moving=false,running=false,condition=1}={}){
       if(!Number.isFinite(dt)||dt<=0)return null;
       if(activity&&(!safe||moving))cancel();
       if(activity?.kind==='sleep'){
-        if(activity.restore)fatigue=Math.max(0,fatigue-dt*5);activity.elapsed+=dt;
+        if(activity.restore)fatigue=Math.max(0,fatigue-dt*7);activity.elapsed+=dt;
         if(activity.restore&&fatigue===0){cancel();return 'rested';}
-      }else fatigue=Math.min(150,fatigue+dt*(running?.975:.33));
+      }else fatigue=Math.min(150,fatigue+dt*(running?.65:.22)*Math.max(1,condition));
       if(activity?.kind==='craft'){
         activity.elapsed+=dt;
         if(activity.elapsed>=activity.duration){

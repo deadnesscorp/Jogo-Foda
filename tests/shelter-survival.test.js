@@ -4,7 +4,7 @@ const life=api.create();
 life.update(100,{running:true});
 assert.equal(life.fatigue,65);
 assert.ok(life.speed<1&&life.balanceWidth<.5);
-life.sleep();life.update(5,{safe:true});assert.equal(life.fatigue,40);
+life.sleep();life.update(5,{safe:true});assert.equal(life.fatigue,30);
 life.update(1,{safe:true,moving:true});assert.equal(life.activity,null);
 life.sleep();assert.equal(life.update(20,{safe:true}),'rested');assert.equal(life.fatigue,0);
 assert.equal(life.speed,1);assert.equal(life.balanceWidth,.5);
@@ -18,4 +18,5 @@ assert.ok(life.craft('bait'));life.update(1,{safe:false});assert.equal(life.acti
 assert.equal(life.materials.scrap,4,'leaving shelter cancels safely');
 life.sleep();life.update(1,{safe:false});assert.equal(life.activity,null);
 life.reset();assert.equal(life.fatigue,0);assert.equal(life.materials.scrap,4);
+life.update(10,{running:true,condition:2});assert.equal(life.fatigue,13,'injuries increase fatigue from running');
 console.log('Shelter survival checks passed');
