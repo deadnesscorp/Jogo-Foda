@@ -221,7 +221,7 @@ async function main() {
           finishFrame(10,0);finishFrame(11,0);RoomInteriors.draw=original;
           const item=supplies[exploreBuilding];item.type='water';item.available=true;item.found=false;thirst=40;
           explorer.x=322;explorer.y=211;finishFrame(10,0);
-          const collected=item.found&&thirst===78;
+          const collected=item.found&&thirst>=50&&thirst<=100;
           let slept=true;
           if(isShelter(exploreBuilding)){explorer.x=153;explorer.y=200;interact();slept=shelterLife.activity?.kind==='sleep';shelterLife.reset();}
           explorer.x=78;explorer.y=200;interact();

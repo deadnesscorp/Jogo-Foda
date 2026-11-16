@@ -90,3 +90,14 @@ for(let terminal=0;terminal<8;terminal++){
 assert.deepEqual(mission.upgrades,{fuel:0,armor:0,health:0,kick:0});
 assert.equal(mission.snapshot().boosts,0,'Completing computers no longer grants upgrade health');
 console.log('All eight computers complete directly after their questions, without upgrades');
+
+const spawnSource=source.slice(source.indexOf('  function randomizeTowerSpawns('),source.indexOf('  function projectPoint(',source.indexOf('  function randomizeTowerSpawns(')));
+assert.match(source,/const world = \{ w: 12800, h: 11200 \}/,'The expanded world provides room for the wider computer spacing');
+const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),bike={x:180,y:3300};
+const spawns=new Function('world','bike','distance','worldBlocked','towers',`${spawnSource};randomizeTowerSpawns();return towers;`)({w:12800,h:11200},bike,distance,()=>false,Array.from({length:8},(_,i)=>({design:i%5})));
+assert.equal(spawns.length,8);
+for(let i=0;i<spawns.length;i++){
+  assert(Number.isFinite(spawns[i].x)&&Number.isFinite(spawns[i].y),'Every computer receives a valid spawn');
+  for(let j=0;j<i;j++)assert(distance(spawns[i],spawns[j])>=4500,'Computer spawns stay at least 4500 units apart');
+}
+console.log('All eight computer spawns are valid and at least 4500 units apart');

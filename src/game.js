@@ -407,7 +407,7 @@
       }
     }
   }
-  const world = { w: 12800, h: 4800 };
+  const world = { w: 12800, h: 11200 };
   const forest=Forest.create();
   const towers = Array.from({length:8},(_,i)=>({x:0,y:0,disabled:false,design:i%5,pace:0,phase:0,name:`COMPUTADOR 0${i+1}`}));
   let roads = [
@@ -515,6 +515,7 @@
   };
   const bikePartNames = { motor: 'MOTOR', handlebar: 'GUIDÃO', frontTire: 'PNEU DIANTEIRO', rearTire: 'PNEU TRASEIRO' };
   let supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .9 : Math.random() < .85 }));
+  let safeCabins=new Set();
   const worldReturn = { x: 0, y: 0 };
   const explorer = { x: 240, y: 145, hp: 3, invulnerable: 0 };
   const interiorWalls = [];
@@ -540,6 +541,7 @@
   }
   let survivalItems={bait:4},survivalEffects=[],balanceEvent=null;
   let hudDetails=false;
+  let worldMapOpen=false;
   let kickCooldown=0,kickVisual=0,kickAngle=0;
   let kickPointer=null;
   function mountedKickAngle(actor){
@@ -569,7 +571,7 @@
   const isGasStation=index=>index===10||buildings[index]?.[4]==='station';
   const isCabin=index=>buildings[index]?.[4]==='cabin';
   const interiorType=index=>isCabin(index)?3:RoomInteriors.variant(index);
-  const isShelter=index=>index>=0&&!isGasStation(index)&&(isCabin(index)||index%6===0);
+  const isShelter=index=>index>=0&&!isGasStation(index)&&(isCabin(index)?safeCabins.has(index):index%6===0);
   const shelterLife=ShelterSurvival.create();
   let shelterView=null;
   const inSafeShelter=()=>state==='explore'&&isShelter(exploreBuilding);
@@ -826,14 +828,15 @@
   }
   function generateMapLayout() {
     forest.clear();
+    safeCabins.clear();
     urbanSpriteCache.clear();urbanSpriteBytes=0;
     buildingGeometryCache.clear();buildingOpacities.clear();collisionGrid=null;
     cityProps.length=0;streetHitboxes.length=0;
     roads = [[180, 3300]];
     let roadY = 3300;
-    const intervals = 36, span = world.w - 360;
+    const intervals = 36, span = world.w - 360,roadStep=930*world.h/4800;
     for (let i = 1; i <= intervals; i++) {
-      roadY = Math.max(300, Math.min(world.h - 300, roadY + (Math.random() - .5) * 930));
+      roadY = Math.max(300, Math.min(world.h - 300, roadY + (Math.random() - .5) * roadStep));
       roads.push([Math.round(180 + span * i / intervals), Math.round(roadY)]);
     }
     branchRoads = [];
@@ -879,7 +882,7 @@
         if(canPlace(x,y))building=[x,y,w,h];
       }
       if(!building)throw Error('Sem espaço livre para gerar os prédios.');
-      if(cabin)building[4]='cabin';
+      if(cabin){building[4]='cabin';if(Math.random()<.25)safeCabins.add(buildings.length);}
       if(gasStation)building[4]='station';
       buildings.push(building);
     }
@@ -1027,36 +1030,21 @@
   }
   function randomizeTowerSpawns() {
     const placed = [];
-    function sampleRoadAtX(targetX) {
-      for (let i=0;i<roads.length-1;i++) {
-        const [ax,ay]=roads[i],[bx,by]=roads[i+1];
-        if(targetX>=ax&&targetX<=bx){const ratio=(targetX-ax)/(bx-ax),dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1;return{x:targetX,y:ay+dy*ratio,nx:-dy/len,ny:dx/len};}
-      }
-      return {x:targetX,y:roads[Math.floor(roads.length/2)][1],nx:0,ny:1};
-    }
+    const minTowerSpacing=4500;
+    const spawnAnchors=[[1200,500],[6600,500],[12000,500],[1200,5600],[6600,5600],[12000,5600],[1200,10700],[6600,10700]];
     towers.forEach((tower, i) => {
-      const anchor = 1600 + i * (world.w - 3200) / Math.max(1,towers.length-1), roadAnchor=sampleRoadAtX(anchor);
+      const [anchorX,anchorY]=spawnAnchors[i];
       let point = null;
       for (let attempt = 0; attempt < 180 && !point; attempt++) {
-        const candidate = { x: anchor, y: Math.max(120, Math.min(world.h - 120, roadAnchor.y + (Math.random() - .5) * 180)) };
-        if (distance(candidate, bike) < 1000 || placed.some(p => distance(candidate, p) < 2300) || worldBlocked(candidate.x, candidate.y, 48)) continue;
+        const candidate={x:anchorX+(Math.random()-.5)*360,y:anchorY+(Math.random()-.5)*360};
+        if(distance(candidate,bike)<1000||placed.some(p=>distance(candidate,p)<minTowerSpacing)||worldBlocked(candidate.x,candidate.y,48))continue;
         point = candidate;
       }
       if (!point) {
-        // A blocked roadside spawn falls back to other clear, separated points.
-        for(let offset=0;offset<world.h&&!point;offset+=48)for(const side of [1,-1]){
-          const candidate={x:anchor,y:roadAnchor.y+offset*side};
-          if(candidate.y>=120&&candidate.y<=world.h-120&&distance(candidate,bike)>=1000&&!worldBlocked(candidate.x,candidate.y,48)&&!placed.some(p=>distance(candidate,p)<2300)){point=candidate;break;}
-        }
-        for(let ring=0;ring<world.w&&!point;ring+=96){
-          for(const x of [anchor+ring,anchor-ring]){
-            if(x<70||x>world.w-70)continue;
-            for(let y=120;y<=world.h-120;y+=96){
-              const candidate={x,y};
-              if(distance(candidate,bike)>=1000&&!worldBlocked(x,y,48)&&!placed.some(p=>distance(candidate,p)<2300)){point=candidate;break;}
-            }
-            if(point)break;
-          }
+        // Search the expanded world for clear fallback positions that keep the same spacing.
+        for(let y=120;y<=world.h-120&&!point;y+=96)for(let x=70;x<=world.w-70&&!point;x+=96){
+          const candidate={x,y};
+          if(distance(candidate,bike)>=1000&&!worldBlocked(x,y,48)&&!placed.some(p=>distance(candidate,p)<minTowerSpacing))point=candidate;
         }
         if(!point)throw Error('Sem espaço livre para posicionar todos os computadores.');
       }
@@ -1102,6 +1090,7 @@
     Object.keys(upgrades).forEach(key=>upgrades[key]=0);
     kickCooldown=0;kickVisual=0;kickPointer=null;
     hudDetails=false;
+    worldMapOpen=false;
     shelterLife.reset();shelterView=null;
     survivalItems={bait:4};survivalEffects=[];balanceEvent=null;
     stopBikeDrag();
@@ -1125,7 +1114,10 @@
     generateMapLayout(); camera.x = player.x; camera.y = player.y;
     mossEcology.reset(worldLighting(0),player);
     supplies.forEach(s => { s.found = false; s.available = s.type==='station'||Math.random() < (s.type === 'fuel' ? .9 : .85); });
-    supplies.forEach((s,i)=>{if(isShelter(i)){s.type='medical';s.available=true;}});
+    supplies.forEach((s,i)=>{if(isShelter(i)){
+      s.type='medical';s.available=true;
+      if(isCabin(i)&&Math.random()<.55)s.interiorBonus={type:Math.random()<.5?'ration':'water',found:false};
+    }});
     towers.forEach(t => t.disabled = false);
     randomizeTowerSpawns();
     rebuildStreetHitboxes(true);
@@ -1255,10 +1247,12 @@
     if(!supply.stock[type])return false;
     supply.stock[type]--;
     if(type==='toolkit'){addToolbox();setToast('FERRAMENTAS DO POSTO - +1 CAIXA');}
-    else if(type==='water'){thirst=Math.min(100,thirst+38);setToast('AGUA DO POSTO - SEDE REDUZIDA');}
-    else {hunger=Math.min(100,hunger+42);setToast('COMIDA DO POSTO - FOME REDUZIDA');}
+    else if(type==='water'){recoverWater();setToast('AGUA DO POSTO - SEDE REDUZIDA');}
+    else {const amount=recoverFood();setToast(amount<30?'TINHA POUCA COMIDA...':'COMIDA DO POSTO - FOME REDUZIDA');}
     return true;
   }
+  function recoverFood(){const amount=10+Math.floor(Math.random()*66);hunger=Math.min(100,hunger+amount);return amount;}
+  function recoverWater(){const amount=10+Math.floor(Math.random()*66);thirst=Math.min(100,thirst+amount);return amount;}
   function interact() {
     if(checkpointReturn)return;
     if (state === 'chase') { startGrappleAim(); return; }
@@ -1328,9 +1322,11 @@
   }
 
   function keyDown(e) {
+    const key=e.key.toLowerCase();
+    if(key==='m'&&['drive','explore'].includes(state)){e.preventDefault();if(!e.repeat)worldMapOpen=!worldMapOpen;return;}
+    if(worldMapOpen&&key==='escape'){e.preventDefault();worldMapOpen=false;return;}
     if(ignition.active&&['e','f'].includes(e.key.toLowerCase())){e.preventDefault();if(!e.repeat){ignition.close(false);if(e.key.toLowerCase()==='f')dismount();}return;}
     if(ignition.active){ignition.key(e);return;}
-    const key = e.key.toLowerCase();
     if(healthPanel.key(key)){e.preventDefault();return;}
     if(key==='tab'&&state!=='title'){e.preventDefault();if(!e.repeat)hudDetails=!hudDetails;return;}
     if(!e.repeat&&shelterKey(key)){e.preventDefault();return;}
@@ -3509,12 +3505,52 @@
     ctx.beginPath();ctx.moveTo(0,-10);ctx.lineTo(3,4);ctx.lineTo(0,2);ctx.lineTo(-3,4);ctx.closePath();ctx.fill();ctx.restore();
     ctx.textAlign='left';ctx.fillStyle='#c7d8c9';ctx.fillText(label,25,0);ctx.restore();
   }
+  function drawWorldMap(){
+    const map={x:96,y:72,w:228,h:199.5},actor=state==='explore'?worldReturn:mounted?bike:player,target=active();
+    const mapPoint=(x,y)=>({x:map.x+x/world.w*map.w,y:map.y+y/world.h*map.h});
+    ctx.save();ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);
+    ctx.fillStyle='#050a0cbb';ctx.fillRect(0,0,DISPLAY_W,DISPLAY_H);
+    ctx.fillStyle='#101a1df5';ctx.fillRect(78,28,484,304);ctx.strokeStyle='#71877a';ctx.lineWidth=1;ctx.strokeRect(78.5,28.5,483,303);
+    ctx.textAlign='left';ctx.fillStyle='#e0e8dc';ctx.font='bold 9px monospace';ctx.fillText('MAPA DO MUNDO',94,48);
+    ctx.fillStyle='#95a99d';ctx.font='6px monospace';ctx.fillText('M / ESC FECHA · POSIÇÕES EM TEMPO REAL',94,59);
+    ctx.fillStyle='#182523';ctx.fillRect(map.x,map.y,map.w,map.h);ctx.strokeStyle='#61756a';ctx.strokeRect(map.x+.5,map.y+.5,map.w-1,map.h-1);
+    ctx.strokeStyle='#354640';ctx.lineWidth=.6;
+    for(let i=1;i<4;i++){const gx=map.x+map.w*i/4,gy=map.y+map.h*i/4;ctx.beginPath();ctx.moveTo(gx,map.y);ctx.lineTo(gx,map.y+map.h);ctx.moveTo(map.x,gy);ctx.lineTo(map.x+map.w,gy);ctx.stroke();}
+    ctx.strokeStyle='#63776b';ctx.lineWidth=1;
+    for(const route of [roads,...branchRoads]){
+      if(!route?.length)continue;ctx.beginPath();
+      route.forEach(([x,y],i)=>{const p=mapPoint(x,y);if(i)ctx.lineTo(p.x,p.y);else ctx.moveTo(p.x,p.y);});ctx.stroke();
+    }
+    towers.forEach((tower,i)=>{
+      const p=mapPoint(tower.x,tower.y),isTarget=tower===target;
+      ctx.fillStyle=tower.disabled?'#668879':isTarget?'#ff9a6b':'#dfc17c';
+      ctx.beginPath();ctx.arc(p.x,p.y,isTarget?5:3.5,0,Math.PI*2);ctx.fill();
+      if(isTarget){ctx.strokeStyle='#ffd0a8';ctx.lineWidth=1;ctx.beginPath();ctx.arc(p.x,p.y,8,0,Math.PI*2);ctx.stroke();}
+      ctx.fillStyle='#f0e7d0';ctx.font='5px monospace';ctx.textAlign='center';ctx.fillText(String(i+1).padStart(2,'0'),p.x,p.y-7);
+    });
+    const bikePoint=mapPoint(bike.x,bike.y);
+    ctx.fillStyle='#b8a4e8';ctx.fillRect(bikePoint.x-2,bikePoint.y-2,4,4);
+    const playerPoint=mapPoint(actor.x,actor.y);
+    ctx.save();ctx.translate(playerPoint.x,playerPoint.y);ctx.rotate(actor.angle||0);ctx.fillStyle='#8de5e0';ctx.strokeStyle='#102020';ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(0,-6);ctx.lineTo(4,4);ctx.lineTo(0,2);ctx.lineTo(-4,4);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+    const listX=346;ctx.textAlign='left';ctx.font='6px monospace';
+    ctx.fillStyle='#91a69b';ctx.fillText('NÓ',listX,78);ctx.textAlign='right';ctx.fillText('ESTADO',542,78);
+    towers.forEach((tower,i)=>{
+      const y=96+i*20,isTarget=tower===target;
+      ctx.textAlign='left';ctx.fillStyle=tower.disabled?'#76998b':isTarget?'#ffad7b':'#d5dfd2';ctx.fillText(`COMPUTADOR 0${i+1}`,listX,y);
+      ctx.textAlign='right';ctx.fillStyle=tower.disabled?'#76998b':isTarget?'#ffad7b':'#85968e';ctx.fillText(tower.disabled?'RESTAURADO':isTarget?'ALVO':'ATIVO',542,y);
+    });
+    ctx.textAlign='left';ctx.fillStyle='#8de5e0';ctx.fillText('▲ VOCÊ',346,267);ctx.fillStyle='#b8a4e8';ctx.fillText('■ MOTO',405,267);
+    ctx.fillStyle='#b7c8ba';ctx.font='6px monospace';
+    ctx.fillText(target?`DISTÂNCIA DO ALVO: ${Math.round(distance(actor,target)).toLocaleString('pt-BR')} u.`:'REDE RESTAURADA',346,289);
+    ctx.fillStyle='#81958a';ctx.fillText(`${network}/${towers.length} COMPUTADORES RESTAURADOS`,346,303);
+    ctx.restore();
+  }
   function drawDriveHud(time) {
     const station=nearbyStation();
     if(station>=0)hint('T ABASTECER',W/2,55,time);
     ctx.save();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · H CORPO · C FAROL` : 'E INTERAGIR  ·  F MONTAR  ·  H CORPO  ·  V CURATIVO RÁPIDO  ·  C FAROL', W - 12, H - 7);
+    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · H CORPO · C FAROL · M MAPA` : 'E INTERAGIR · F MONTAR · H CORPO · V CURATIVO · C FAROL · M MAPA', W - 12, H - 7);
     ctx.restore();
     drawCompass(hudDetails?193:101,25,mounted?bike.angle:player.angle);
     if(!hudDetails){
@@ -3612,11 +3648,20 @@
       if (!checkpointReturn&&Math.hypot(explorer.x - sx, explorer.y - sy) < 20) {
         supply.found = true;
         if (supply.type === 'fuel') { fuel = Math.min(100, fuel + 34); setToast('ACHOU COMBUSTÍVEL — +34%'); }
-        else if (supply.type === 'ration') { hunger = Math.min(100, hunger + 42); setToast('RAÇÃO MILITAR — FOME REDUZIDA'); }
-        else if (supply.type === 'water') { thirst = Math.min(100, thirst + 38); setToast('GARRAFA ENCONTRADA — SEDE REDUZIDA'); }
+        else if (supply.type === 'ration') { const amount=recoverFood();setToast(amount<30?'TINHA POUCA COMIDA...':'RAÇÃO MILITAR — FOME REDUZIDA'); }
+        else if (supply.type === 'water') { recoverWater();setToast('GARRAFA ENCONTRADA — SEDE REDUZIDA'); }
         else if (supply.type === 'toolkit') { addToolbox(); setToast('CAIXA DE FERRAMENTAS: 100% - '+repairKits+' CAIXAS'); }
         else if (supply.type === 'medical') {characterHealth.restock();survivalItems.bait+=2;setToast('PRIMEIROS SOCORROS + 2 ISCAS');}
-        else { hunger = Math.min(100, hunger + 21); setToast('ENLATADO ENCONTRADO — FOME REDUZIDA'); }
+        else { const amount=recoverFood();setToast(amount<30?'TINHA POUCA COMIDA...':'ENLATADO ENCONTRADO — FOME REDUZIDA'); }
+      }
+    }
+    const bonus=supply?.interiorBonus;
+    if(bonus&&!bonus.found){
+      const bx=190,by=170;drawExploreSupply(bonus.type,bx,by,time);
+      if(!checkpointReturn&&Math.hypot(explorer.x-bx,explorer.y-by)<20){
+        bonus.found=true;
+        if(bonus.type==='water'){recoverWater();setToast('GARRAFA ENCONTRADA — SEDE REDUZIDA');}
+        else {const amount=recoverFood();setToast(amount<30?'TINHA POUCA COMIDA...':'RAÇÃO MILITAR — FOME REDUZIDA');}
       }
     }
     ctx.save();
@@ -4312,6 +4357,7 @@
       ctx.restore();
     }
     if(state==='chase'||state==='grapple'){drawSurvivalHud();drawBikeDashboard(time);}
+    if(worldMapOpen&&['drive','explore'].includes(state))drawWorldMap();
     if (flash > 0) { ctx.fillStyle = `rgba(203,255,224,${Math.min(.55, flash * .45)})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt * 1.4); }
     if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) toast.classList.remove('visible'); }
     syncGrappleButton();

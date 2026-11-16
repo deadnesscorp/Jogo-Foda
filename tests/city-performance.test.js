@@ -5,7 +5,7 @@ const source=fs.readFileSync(require('node:path').join(__dirname,'../src/game.js
 const layout=source.slice(source.indexOf('  function pointSegmentDistance('),source.indexOf('  function active()'));
 let seed=1;
 const math=Object.assign(Object.create(Math),{random:()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}});
-const generate=new Function('Math','StreetStructures','Forest',`const world={w:12800,h:4800},bike={x:180,y:3300},cityProps=[],rubble=[];
+const generate=new Function('Math','StreetStructures','Forest',`const world={w:12800,h:4800},bike={x:180,y:3300},cityProps=[],rubble=[],safeCabins=new Set();
 const towers=[],streetHitboxes=[];const rebuildStreetHitboxes=()=>{};
 const forest=Forest.create();
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);

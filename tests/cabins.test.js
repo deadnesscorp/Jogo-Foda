@@ -1,7 +1,9 @@
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
 const forest=require('../src/forest.js').create();
 const interiors=require('../src/room-interiors.js');
 const exterior=require('../src/urban-structures.js');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../src/game.js'),'utf8');
 forest.configure(12800,4800);
 const r=forest.region;
 assert(forest.allowsBuilding(r.x,r.y,58,48,true));
@@ -21,4 +23,11 @@ exterior.draw(ctx,{cabin:true,base:[{x:0,y:0},{x:80,y:40},{x:10,y:75},{x:-70,y:3
 interiors.draw(ctx,148,{cabin:true,shelter:true});
 assert.equal(depth,0);assert(paths>200);assert.equal(interiors.TYPES[3].name,'CABANA DA FLORESTA');
 for(const [x,y] of [[83,198],[153,200],[322,211]])assert(interiors.contains(...Object.values(interiors.constrain(x,y,5.25)),5.25));
+const shelterCode=source.slice(source.indexOf('  const isCabin='),source.indexOf('  const shelterLife=',source.indexOf('  const isCabin=')));
+const shelters=new Function('buildings','safeCabins','isGasStation','RoomInteriors',`${shelterCode};return isShelter;`)(
+  Array.from({length:8},(_,i)=>[0,0,58,48,i===1||i===2||i===7?'cabin':i===3?'station':undefined]),new Set([2,7]),i=>i===3,interiors);
+assert.equal(shelters(1),false,'Most forest cabins can remain ordinary cabins');
+assert.equal(shelters(2),true,'A selected forest cabin can be a safe shelter');
+assert.equal(shelters(3),false,'Gas stations are not shelters');
+assert.equal(shelters(6),true,'Existing urban safe houses remain shelters');
 console.log('Cabins: biome boundaries, exterior/interior rendering and interaction positions passed');
