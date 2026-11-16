@@ -41,6 +41,18 @@
   function createEcology({random=Math.random,getBuildings,getSize,isBlocked,getShadows}){
     let entities=[],night=false,initialized=false,serial=0,spawnClock=0,spawnInterval=SPAWN_START_INTERVAL,shadeClock=0,regions=[],glitch=0,shadeLight=null;
     const roomResidents=new Map();
+    const positions=new Map(),hunters=[],brutes=[];
+    let positionPool=new WeakMap();
+    function snapshotPositions(){
+      positions.clear();hunters.length=0;brutes.length=0;
+      for(const entity of entities){
+        let position=positionPool.get(entity);
+        if(!position){position={x:0,y:0};positionPool.set(entity,position);}
+        position.x=entity.x;position.y=entity.y;positions.set(entity,position);
+        if(entity.kind===0)hunters.push(entity);
+        else if(entity.kind===2)brutes.push(entity);
+      }
+    }
     const nearHomes=target=>getBuildings().map((b,index)=>({index,d:distance(target,{x:b[0]+b[2]*.825,y:b[1]+b[3]*.825})})).sort((a,b)=>a.d-b.d).slice(0,10);
     function door(home){const b=getBuildings()[home];return {x:b[0]+b[2]*1.155,y:b[1]+b[3]*1.65+14};}
     function shaded(x,y){
@@ -92,12 +104,31 @@
       return null;
     }
     function shelter(entity){entity.indoors=true;entity.destination=null;entity.speed=0;entity.heard=null;entity.heardPlayer=false;entity.pursuingPlayer=false;entity.alert=0;Object.assign(entity,door(entity.home));}
-    function kick({x,y,angle=0,room=-1,range=34,stunScale=1,isRoomBlocked=()=>false}){
+    function kick({x,y,angle=0,facing=angle,room=-1,range=34,stunScale=1,mounted=false,isRoomBlocked=()=>false}){
       const candidates=entities.filter(e=>!e.retired&&(room<0?!e.indoors:e.indoors&&e.home===room))
         .map(e=>({e,x:room<0?e.x:e.roomX,y:room<0?e.y:e.roomY}))
         .filter(p=>{
           const dx=p.x-x,dy=p.y-y,d=Math.hypot(dx,dy);
-          if(d>range||(d>1&&(dx*Math.sin(angle)-dy*Math.cos(angle))/d<.15))return false;
+          if(d>range)return false;
+          const forward=dx*Math.sin(angle)-dy*Math.cos(angle);
+          if(mounted){
+            const bikeForward=dx*Math.sin(facing)-dy*Math.cos(facing);
+            const bikeSide=dx*Math.cos(facing)+dy*Math.sin(facing);
+            const aimForward=Math.cos(angle-facing),aimSide=Math.sin(angle-facing);
+            // Hit only the mouse-directed cone on the chosen side; never behind the bike.
+            if(aimForward< -1e-8||Math.abs(aimSide)<1e-8||bikeForward< -1e-8)return false;
+            if(d>1e-8&&bikeSide*aimSide<=0)return false;
+            // Test the creature's body against the cone, including contact at the bike origin.
+            const bodyRadius=Math.max(4,TYPES[p.e.kind].height*.25);
+            const bodyAngle=d>bodyRadius?Math.asin(bodyRadius/d):Math.PI/2;
+            if(d>1e-8&&Math.acos(Math.max(-1,Math.min(1,forward/d)))>Math.PI/6+bodyAngle)return false;
+          }else if(d>1){
+            // At contact distance, the body can overlap the forward kick even if its center misses.
+            if(forward< -1e-8)return false;
+            const bodyRadius=Math.max(4,TYPES[p.e.kind].height*.25);
+            const bodyAngle=d>bodyRadius?Math.asin(bodyRadius/d):Math.PI/2;
+            if(Math.acos(Math.max(-1,Math.min(1,forward/d)))>Math.acos(.15)+bodyAngle)return false;
+          }
           for(let i=1;i<=8;i++)if(room<0?isBlocked(x+dx*i/8,y+dy*i/8,2):isRoomBlocked(x+dx*i/8,y+dy*i/8))return false;
           return true;
         }).sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y));
@@ -146,7 +177,7 @@
       return entity;
     }
     function reset(light,target){
-      entities=[];roomResidents.clear();serial=0;spawnClock=0;spawnInterval=SPAWN_START_INTERVAL;glitch=0;shadeClock=0;
+      entities=[];roomResidents.clear();positions.clear();positionPool=new WeakMap();hunters.length=0;brutes.length=0;serial=0;spawnClock=0;spawnInterval=SPAWN_START_INTERVAL;glitch=0;shadeClock=0;
       night=light.daylight<.28;regions=[];shadeLight=light;initialized=true;
       for(let i=0;i<(night?3:4);i++)add(target);
     }
@@ -164,7 +195,7 @@
       if(!night||entity.kind!==0||!entity.pursuingPlayer||!interest)return null;
       // Each hunter must have seen or heard the player itself. Bait never
       // recruits a pack, and a lost sound does not reveal the player's location.
-      const pack=entities.filter(other=>other.kind===0&&!other.indoors&&!other.retired&&
+      const pack=hunters.filter(other=>other.kind===0&&!other.indoors&&!other.retired&&
         distance(positions.get(other),interest)<340&&
         ((other.heardPlayer&&other.alert>0&&other.heard&&distance(other.heard,interest)<80)||
           (room<0&&distance(positions.get(other),interest)<55)))
@@ -205,7 +236,7 @@
     function herdTowardBrute(entity,interest,positions,room){
       if(entity.kind!==1||!interest||!entity.pursuingPlayer)return null;
       const origin=positions.get(entity);let brute=null,best=250*250;
-      for(const other of entities){
+      for(const other of brutes){
         if(other.kind!==2||other.indoors||other.retired)continue;
         const position=positions.get(other),d=(position.x-interest.x)**2+(position.y-interest.y)**2;
         if(d<best){best=d;brute={position};}
@@ -257,7 +288,7 @@
         if(!night&&entities.length<DAY_COUNT&&!entities.some(e=>e.home===room)&&random()<.45){const resident=add(target,false,room);if(resident)shelter(resident);}
       }
       let nearbyAnomaly=0;
-      const positions=new Map(entities.map(entity=>[entity,{x:entity.x,y:entity.y}]));
+      snapshotPositions();
       for(const entity of entities){
         entity.spawnAge=Math.min(1,entity.spawnAge+dt);
         entity.attackCooldown=Math.max(0,(entity.attackCooldown||0)-dt);
@@ -269,7 +300,8 @@
         const interest=entity.indoors
           ?(inRoom?investigate(entity,{x:entity.roomX,y:entity.roomY},room,sounds,roomTarget):null)
           :investigate(entity,entity,-1,sounds,room<0?target:null);
-        const sunSpeed=1;
+        // Glitches stay threatening on foot but remain outrunnable on a bike.
+        const speedScale=entity.sunRunner?1.15:1;
         if(entity.kickStun>0){
           entity.kickStun=Math.max(0,entity.kickStun-dt);entity.behavior='stunned';entity.speed=0;
           if(entity.kickFlight>0){
@@ -290,7 +322,7 @@
             const to=interest||entity.roomDestination;
             const dx=to.x-entity.roomX,dy=to.y-entity.roomY,len=Math.hypot(dx,dy)||1;
             const pursuing=!restricted&&(night?!!interest:entity.pursuingPlayer);
-            const speed=(pursuing?(night?type.nightSpeed:type.nightSpeed*.8):type.daySpeed)*sunSpeed;
+            const speed=(pursuing?(night?type.nightSpeed:type.nightSpeed*.8):type.daySpeed)*speedScale;
             const local={x:entity.roomX,y:entity.roomY};
             moveRoom(local,dx/len*Math.min(len,speed*dt),dy/len*Math.min(len,speed*dt),4);
             const travel=Math.hypot(local.x-entity.roomX,local.y-entity.roomY);
@@ -314,7 +346,7 @@
         const to=herdTowardBrute(entity,interest,positions,room)||encircle(entity,interest,positions,room)||
           ambush(entity,interest,visibleTarget,positions,room)||interest||entity.destination;
         const pursuing=!restricted&&(night?chasing:entity.pursuingPlayer);
-        const speed=(pursuing?(night?type.nightSpeed:type.nightSpeed*.65):type.daySpeed)*sunSpeed;
+        const speed=(pursuing?(night?type.nightSpeed:type.nightSpeed*.65):type.daySpeed)*speedScale;
         entity.speed=0;
         if(to){
           const dx=to.x-entity.x,dy=to.y-entity.y,len=Math.hypot(dx,dy);

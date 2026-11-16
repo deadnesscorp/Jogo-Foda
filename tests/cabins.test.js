@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict');
+const forest=require('../src/forest.js').create();
+const interiors=require('../src/room-interiors.js');
+const exterior=require('../src/urban-structures.js');
+forest.configure(12800,4800);
+const r=forest.region;
+assert(forest.allowsBuilding(r.x,r.y,58,48,true));
+assert(!forest.allowsBuilding(r.x,r.y,58,48,false));
+assert(!forest.allowsBuilding(r.x+r.rx-60,r.y,58,48,true),'Cabins cannot straddle the boundary');
+assert(!forest.allowsBuilding(r.x+r.rx-60,r.y,58,48,false),'City buildings cannot straddle the boundary');
+assert(forest.allowsBuilding(10000,3000,58,48,false));
+assert(!forest.allowsBuilding(10000,3000,58,48,true));
+let depth=0,paths=0;
+const ctx=new Proxy({}, {get(target,key){
+  if(key==='save')return ()=>depth++;
+  if(key==='restore')return ()=>depth--;
+  if(key==='createRadialGradient')return ()=>({addColorStop(){}});
+  return target[key]||((...args)=>{if(['moveTo','lineTo','fillRect','ellipse'].includes(key)){args.forEach(n=>assert(Number.isFinite(n)));paths++;}});
+},set(target,key,value){target[key]=value;return true;}});
+exterior.draw(ctx,{cabin:true,base:[{x:0,y:0},{x:80,y:40},{x:10,y:75},{x:-70,y:35}],lift:66},148);
+interiors.draw(ctx,148,{cabin:true,shelter:true});
+assert.equal(depth,0);assert(paths>200);assert.equal(interiors.TYPES[3].name,'CABANA DA FLORESTA');
+for(const [x,y] of [[83,198],[153,200],[322,211]])assert(interiors.contains(...Object.values(interiors.constrain(x,y,5.25)),5.25));
+console.log('Cabins: biome boundaries, exterior/interior rendering and interaction positions passed');

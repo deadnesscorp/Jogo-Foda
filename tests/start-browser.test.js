@@ -9,6 +9,9 @@ const {pathToFileURL} = require('node:url');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const smokeOnly=process.argv.includes('--smoke');
+const stationsOnly=process.argv.includes('--stations');
+const forestOnly=process.argv.includes('--forest')||stationsOnly;
+const interiorsOnly=process.argv.includes('--interiors');
 const cityOnly=process.argv.includes('--city');
 const motorOnly=process.argv.includes('--motor');
 const creatureOnly=process.argv.includes('--creatures');
@@ -29,8 +32,8 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
   try {
     let data = fs.readFileSync(file);
-    if((motorOnly||cityOnly)&&path.extname(file)==='.css')data=data.toString().replace(/@import[^;]+;/g,'');
-    if((cityOnly||motorOnly||dragOnly||occlusionOnly||combatOnly)&&file===path.join(root,'src/game.js')){
+    if((motorOnly||cityOnly||interiorsOnly||forestOnly)&&path.extname(file)==='.css')data=data.toString().replace(/@import[^;]+;/g,'');
+    if((cityOnly||motorOnly||dragOnly||occlusionOnly||combatOnly||interiorsOnly||forestOnly)&&file===path.join(root,'src/game.js')){
       // Test-only access to the closure; local files keep the shipped game intact.
       data=data.toString().replace(/\}\)\(\);\s*$/, 'window.__gameEval=code=>eval(code);})();');
     }
@@ -119,7 +122,7 @@ async function main() {
     window.requestAnimationFrame = callback => originalRAF.call(window, time => { window.__frames++; callback(time); });
   `});
   for (const url of ['http://127.0.0.1:' + server.address().port + '/', pathToFileURL(path.join(root, 'index.html')).href]) {
-    if(cityOnly&&url.startsWith('file:'))continue;
+    if((cityOnly||interiorsOnly||forestOnly)&&url.startsWith('file:'))continue;
     await call('Page.navigate', {url});
     await evaluate(`new Promise((resolve,reject)=>{let tries=0;const poll=()=>{
       if(document.readyState==='complete'&&window.__frames>2)resolve(true);
@@ -139,6 +142,114 @@ async function main() {
     await call('Input.dispatchKeyEvent', {type:'keyDown', key:'w', code:'KeyW', windowsVirtualKeyCode:87});
     await evaluate(`new Promise(resolve=>setTimeout(resolve,350))`);
     await call('Input.dispatchKeyEvent', {type:'keyUp', key:'w', code:'KeyW', windowsVirtualKeyCode:87});
+    if(stationsOnly){
+      const stationResult=await evaluate('__gameEval('+JSON.stringify(`(()=>{
+        const index=buildings.findIndex((b,i)=>isGasStation(i)),door=buildingDoor(index),s=supplies[index];
+        keys.clear();mossEcology.entities.length=0;mounted=false;state='drive';
+        Object.assign(player,door);Object.assign(bike,door);bike.speed=0;fuel=20;
+        const before=s.fuelUses;refuelAtStation();
+        const refueled=fuel===100&&s.fuelUses===before-1;
+        bike.x=door.x+55; // Park beside the entrance so E selects the door.
+        interact();const entered=state==='explore'&&exploreBuilding===index;
+        for(const [x,y] of [[322,211],[245,235],[190,170]]){explorer.x=x;explorer.y=y;finishFrame(10,0);}
+        const collected=Object.values(s.stock).every(n=>n===0);
+        explorer.x=78;explorer.y=200;interact();const exited=state==='drive';
+        camera.x=door.x;camera.y=door.y;finishFrame(10,0);
+        return {refueled,entered,collected,exited,count:buildings.filter((b,i)=>isGasStation(i)).length};
+      })()`)+')');
+      assert(stationResult.refueled&&stationResult.entered&&stationResult.collected&&stationResult.exited,JSON.stringify(stationResult));
+      assert.deepEqual(errors,[]);console.log('Gas station browser: '+JSON.stringify(stationResult));continue;
+    }
+    if(forestOnly){
+      const result=await evaluate('__gameEval('+JSON.stringify(`(()=>{
+        const r=forest.region;keys.clear();mossEcology.entities.length=0;mounted=false;
+        state='drive';player.x=r.x;player.y=r.y;camera.x=r.x;camera.y=r.y;hudDetails=false;
+        toastTimer=0;toast.classList.remove('visible');finishFrame(60,0);
+        const trees=forest.items.filter(p=>p.kind==='tree');
+        return {count:forest.items.length,trees:trees.length,collision:trees.every(p=>worldBlocked(p.x,p.y,4)),roads:forest.items.every(p=>!nearAnyRoad(p.x,p.y,115))};
+      })()`)+')');
+      assert(result.count>500&&result.trees>200,'Map has abundant vegetation');
+      assert(result.collision,'All tree trunks block movement');assert(result.roads,'Roads remain clear');
+      const shot=await call('Page.captureScreenshot',{format:'png'});
+      fs.writeFileSync(path.join(root,'previews','forest-review.png'),Buffer.from(shot.data,'base64'));
+      assert.deepEqual(errors,[]);assert.deepEqual(missing,[]);
+      console.log('Forest browser: '+JSON.stringify(result));continue;
+    }
+    if(interiorsOnly){
+      const seen=new Set();
+      for(const index of [0,6,12,3,1,2,148]){
+        const result=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+          keys.clear();mossEcology.entities.length=0;state='explore';exploreBuilding=${index};
+          mounted=false;checkpointReturn=null;shelterView=null;shelterLife.reset();
+          explorer.x=184;explorer.y=226;explorer.gait=null;hudDetails=false;
+          toastTimer=0;toast.classList.remove('visible');
+          supplies[exploreBuilding].available=false;finishFrame(10,0);
+          return {variant:interiorType(exploreBuilding),safe:isShelter(exploreBuilding)};
+        })()`)} )`);
+        if(!result.safe)seen.add(result.variant);
+        const shot=await call('Page.captureScreenshot',{format:'png'});
+        fs.mkdirSync(path.join(root,'previews'),{recursive:true});
+        fs.writeFileSync(path.join(root,'previews',`interior-${result.variant+1}${result.safe?'-shelter':''}.png`),Buffer.from(shot.data,'base64'));
+        if(result.safe){
+          const observation=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+            const before=JSON.stringify({player,explorer,camera,worldReturn});
+            const originals={drawFootWorld,drawPersonCastShadow,drawDriveHud,drawBike};
+            let people=0,shadows=0,hud=0,bikes=0;
+            drawFootWorld=()=>people++;drawPersonCastShadow=()=>shadows++;
+            drawDriveHud=()=>hud++;drawBike=(...args)=>{bikes++;return originals.drawBike(...args);};
+            let viewport,unchanged;
+            try{
+              shelterKey('o');finishFrame(60,0);viewport={...gameScene};
+              unchanged=before===JSON.stringify({player,explorer,camera,worldReturn});
+            }finally{
+              ({drawFootWorld,drawPersonCastShadow,drawDriveHud,drawBike}=originals);
+            }
+            const inside=state==='explore';
+            shelterKey('escape');finishFrame(60,0);
+            return {people,shadows,hud,bikes,viewport,unchanged,inside,returned:shelterView===null&&gameScene.width===480};
+          })()`)} )`);
+          assert.equal(observation.people,0,'Observing outside never draws the indoor player at the door');
+          assert.equal(observation.shadows,0,'The indoor player casts no outdoor shadow');
+          assert.equal(observation.hud,0,'Street interaction panels stay hidden while observing');
+          assert.equal(observation.bikes,1,'The parked motorcycle remains visible');
+          assert.deepEqual(observation.viewport,{x:0,y:0,width:640,height:360},'Exterior fills the display without the interior rectangle');
+          assert(observation.unchanged&&observation.inside&&observation.returned,'Observation preserves positions and returns to the interior');
+        }
+        const checks=await evaluate(`__gameEval(${JSON.stringify(`(()=>{
+          const original=RoomInteriors.draw;let redraws=0;
+          RoomInteriors.draw=(...args)=>{redraws++;return original(...args);};
+          finishFrame(10,0);finishFrame(11,0);RoomInteriors.draw=original;
+          const item=supplies[exploreBuilding];item.type='water';item.available=true;item.found=false;thirst=40;
+          explorer.x=322;explorer.y=211;finishFrame(10,0);
+          const collected=item.found&&thirst===78;
+          let slept=true;
+          if(isShelter(exploreBuilding)){explorer.x=153;explorer.y=200;interact();slept=shelterLife.activity?.kind==='sleep';shelterLife.reset();}
+          explorer.x=78;explorer.y=200;interact();
+          return {redraws,collected,slept,exited:state==='drive',cache:roomInteriorCache.size};
+        })()`)} )`);
+        assert.equal(checks.redraws,0,'Interior artwork is reused between frames');
+        assert(checks.collected,'Supplies remain collectible on the table');
+        assert(checks.slept,'Safe-house bed remains usable');
+        assert(checks.exited,'Door returns to the street');
+        assert(checks.cache<=7,'Interior cache stays bounded: six house variants plus the cabin');
+      }
+      assert.equal(seen.size,3,'Ordinary houses use three different designs');
+      const catalogue=await evaluate(`(()=>{
+        const canvas=document.createElement('canvas');canvas.width=2580;canvas.height=680;
+        const ctx=canvas.getContext('2d');ctx.scale(2,2);ctx.fillStyle='#101b1d';ctx.fillRect(0,0,1290,340);
+        for(let i=0;i<3;i++){
+          ctx.save();ctx.translate(i*430,14);RoomInteriors.draw(ctx,i);
+          ctx.fillStyle='#d3c59e';ctx.font='bold 10px monospace';ctx.textAlign='center';
+          ctx.fillText(RoomInteriors.TYPES[i].name,230,310);ctx.restore();
+        }
+        return canvas.toDataURL('image/png').split(',')[1];
+      })()`);
+      fs.writeFileSync(path.join(root,'previews','interiors-three-designs.png'),Buffer.from(catalogue,'base64'));
+      assert.deepEqual(errors,[],'All interiors render without browser errors');
+      assert.deepEqual(missing,[],'All interior resources load');
+      console.log('Three interiors and safe-house variants: render, cache, supplies, bed and exit passed');
+      continue;
+    }
     if(cityOnly){
       if(url.startsWith('file:'))continue;
       const stats=await evaluate(`__gameEval(${JSON.stringify(`(()=>{

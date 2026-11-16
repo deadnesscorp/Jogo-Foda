@@ -68,3 +68,25 @@ body{padding-inline:max(8px,env(safe-area-inset-left)) max(8px,env(safe-area-ins
   .title-screen>p{font-size:10px;line-height:1.4;margin:4px 0 8px}
   .start-button,.menu-button{min-height:30px;padding:0 10px}
 }
+
+/* Mobile browser and touch layout */
+@media (pointer: coarse) {
+  html,body{min-height:100%;overscroll-behavior:none}
+  body{padding-left:max(4px,env(safe-area-inset-left));padding-right:max(4px,env(safe-area-inset-right))}
+  .game-shell{width:100%;padding-top:max(4px,env(safe-area-inset-top));padding-bottom:max(4px,env(safe-area-inset-bottom))}
+  .game-frame{width:100%;touch-action:manipulation}
+  canvas{touch-action:none}
+  button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .site-header{margin-bottom:6px}
+  .display-button{min-height:38px}
+  .mission-bar{margin-top:6px}
+  .grapple-action{min-height:44px;padding:12px 16px;font-size:10px}
+}
+@media (pointer:coarse) and (orientation:portrait) and (max-width:700px){
+  :root{--game-page-space:168px}
+  .game-shell{width:100%}
+  .site-header{height:34px}
+  .title-screen{padding:12px}
+  .title-screen>p{max-width:55%;font-size:9px;line-height:1.35}
+  .mission-controls{font-size:8px}
+}

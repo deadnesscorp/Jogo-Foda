@@ -32,7 +32,7 @@ function runRenderCacheTests(source) {
   check(api.visible(shape(100,550,100)),'smoke and roof details retain a conservative margin');
   const geometrySource=source.slice(source.indexOf('  const buildingGeometryCache='),source.indexOf('  function isoBuildingVisible('));
   const geometry=new Function(`
-    let W=640,H=360,calls=0;const camera={x:0,y:0};
+    let W=640,H=360,calls=0;const camera={x:0,y:0};const isCabin=()=>false;const isGasStation=i=>i===10;
     const UrbanStructures={TYPES:Array.from({length:5},()=>({height:100}))};
     const projectPoint=(x,y)=>{calls++;return {x:W/2+x-camera.x,y:H/2+y-camera.y};};
     ${geometrySource}

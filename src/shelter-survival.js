@@ -9,7 +9,7 @@
     let fatigue=0,materials={scrap:4,cloth:4},activity=null;
     function reset(){fatigue=0;materials={scrap:4,cloth:4};activity=null;}
     function cancel(){activity=null;}
-    function sleep(){activity={kind:'sleep',elapsed:0};}
+    function sleep({restore=true}={}){activity={kind:'sleep',elapsed:0,restore};}
     function craft(id){
       const recipe=recipes[id];
       if(!recipe||materials.scrap<recipe.scrap||materials.cloth<recipe.cloth)return false;
@@ -19,9 +19,9 @@
       if(!Number.isFinite(dt)||dt<=0)return null;
       if(activity&&(!safe||moving))cancel();
       if(activity?.kind==='sleep'){
-        fatigue=Math.max(0,fatigue-dt*5);activity.elapsed+=dt;
-        if(fatigue===0){cancel();return 'rested';}
-      }else fatigue=Math.min(100,fatigue+dt*(running?.65:.22));
+        if(activity.restore)fatigue=Math.max(0,fatigue-dt*5);activity.elapsed+=dt;
+        if(activity.restore&&fatigue===0){cancel();return 'rested';}
+      }else fatigue=Math.min(150,fatigue+dt*(running?.975:.33));
       if(activity?.kind==='craft'){
         activity.elapsed+=dt;
         if(activity.elapsed>=activity.duration){
@@ -33,7 +33,7 @@
       return null;
     }
     return {reset,cancel,sleep,craft,update,recipes,
-      get fatigue(){return fatigue;},get materials(){return materials;},get activity(){return activity;},
+      get fatigue(){return fatigue;},get materials(){return materials;},get activity(){return activity;},get sleeping(){return activity?.kind==='sleep';},get restfulSleep(){return activity?.kind==='sleep'&&activity.restore;},
       get speed(){return 1-fatigue*.003;},get balanceWidth(){return .5-fatigue*.0025;}};
   }
   const api={create,recipes};

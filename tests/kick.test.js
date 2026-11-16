@@ -20,3 +20,24 @@ assert.equal(api.playerNoise({x:0,y:0,speed:40}).radius,32);
 assert.equal(api.playerNoise({x:0,y:0,speed:40,running:true}).radius,75);
 assert.ok(api.playerNoise({x:0,y:0,speed:300,vehicle:true,engineRunning:true}).radius<=200);
 console.log('Kick and reduced hearing checks passed');
+
+for(const angle of [0,Math.PI/2,Math.PI,-Math.PI/2,.73]){
+  for(const kind of [0,1,2])for(const room of [-1,0]){
+    for(const side of [-1,1])for(const gap of [0,.25,1,3,7]){
+      const m=model(kind),creature=m.entities[0];
+      const x=600+side*gap*Math.cos(angle),y=600+side*gap*Math.sin(angle);
+      Object.assign(creature,{x,y,indoors:room>=0,home:0,roomX:x,roomY:y});
+      assert.equal(m.kick({x:600,y:600,angle,room}),creature,
+        'On-foot kick connects with overlapping bodies, even at the edge of the forward cone, indoors and outdoors');
+    }
+    const behind=model(kind),creature=behind.entities[0];
+    const x=600-Math.sin(angle)*5,y=600+Math.cos(angle)*5;
+    Object.assign(creature,{x,y,indoors:room>=0,home:0,roomX:x,roomY:y});
+    assert.equal(behind.kick({x:600,y:600,angle,room}),null,'Contact tolerance does not target behind the character');
+  }
+}
+const indoorWall=model(0),resident=indoorWall.entities[0];
+Object.assign(resident,{indoors:true,home:0,roomX:603,roomY:600});
+assert.equal(indoorWall.kick({x:600,y:600,angle:0,room:0,isRoomBlocked:()=>true}),null,
+  'Contact kicks still respect indoor walls');
+console.log('On-foot contact kicks passed for all creature types, headings and interior/exterior encounters');

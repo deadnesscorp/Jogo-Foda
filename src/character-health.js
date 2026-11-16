@@ -149,7 +149,7 @@
         }
         const nourished=hunger>30&&thirst>30;
         blood=clamp(blood-activeBleeding*step+(activeBleeding===0?(nourished?(moving ? .045 : .45):.018)*step:0),0,100);
-        if(activeBleeding>0)vitality=clamp(vitality-activeBleeding*.12*step,0,100);
+        if(activeBleeding>0&&blood<75)vitality=clamp(vitality-activeBleeding*.12*step,0,100);
         else vitality=clamp(vitality+(nourished?(moving ? .045 : .28):.012)*step,0,100);
         if(Object.values(parts).some(p=>p.wound?.infected))vitality=clamp(vitality-.015*step,0,100);
       }

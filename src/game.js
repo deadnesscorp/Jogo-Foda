@@ -107,7 +107,7 @@
     bikeSpriteSheets[1]=composed.sheet;spriteAtlas.mounted=composed.metadata;mountedSpritesBuilt=true;
     bikeBlendStamp='';bikeShadowMasks.clear();
   }
-  const DAY_LENGTH_SECONDS = 180;
+  const DAY_LENGTH_SECONDS = 450;
   let startHour = 15;
   const bikeShadowMasks = new Map();
   const nightLayer = document.createElement('canvas');
@@ -120,7 +120,8 @@
   function worldLighting(time) {
     if(lightingCache&&time===lightingTime&&startHour===lightingHour&&W===lightingWidth&&H===lightingHeight)return lightingCache;
     lightingTime=time;lightingHour=startHour;lightingWidth=W;lightingHeight=H;
-    const totalHours = startHour + Math.max(0, time) * 24 / DAY_LENGTH_SECONDS;
+    const sleepRate=shelterLife?.restfulSleep?8:shelterLife?.sleeping?4:1;
+    const totalHours = startHour + Math.max(0, time) * 24 / DAY_LENGTH_SECONDS*sleepRate;
     const hour = totalHours % 24;
     const solarAngle = (hour - 6) * Math.PI / 12;
     const sunElevation = Math.sin(solarAngle);
@@ -288,7 +289,7 @@
       const ground=bikeGroundLayout(p.x,p.y,50,facing.direction,mounted);
       drawBikeCastShadow(p.x,p.y,ground,facing.direction,light,target);
     }
-    if(!mounted){const p=projectPoint(player.x,player.y);drawPersonCastShadow(p.x,p.y,22,light,target);}
+    if(!mounted&&state!=='explore'){const p=projectPoint(player.x,player.y);drawPersonCastShadow(p.x,p.y,22,light,target);}
     target.restore();
     // Composite the combined mask once so overlapping objects do not multiply the darkness.
     softShadowContext.clearRect(0,0,softShadowLayer.width,softShadowLayer.height);
@@ -391,7 +392,7 @@
     playerKnockdown=Math.max(0,playerKnockdown-dt);
     healthPanel.update(dt,healthCareContext());
     if(active){
-      characterHealth.update(dt,healthCareContext());
+      characterHealth.update(dt*(shelterLife.restfulSleep?8:shelterLife.sleeping?4:1),healthCareContext());
       const condition=characterHealth.status();
       player.hp=explorer.hp=condition.critical?0:Math.max(1,Math.ceil(condition.health/34));
       if(condition.critical){
@@ -408,6 +409,7 @@
     }
   }
   const world = { w: 12800, h: 4800 };
+  const forest=Forest.create();
   const towers = Array.from({length:5},(_,i)=>({x:0,y:0,disabled:false,design:i,pace:0,phase:0,name:`COMPUTADOR 0${i+1}`}));
   let roads = [
     [0, 1450], [260, 1450], [440, 1120], [570, 570], [650, 460],
@@ -480,7 +482,7 @@
   function addToolbox(){toolboxes.push(100);repairKits=toolboxes.length;}
   function spendTools(){
     if(!toolboxes.length)return 0;
-    const cost=Math.min(toolboxes[0],1+Math.floor(Math.random()*10));
+    const cost=Math.min(toolboxes[0],1+Math.floor(Math.random()*3));
     toolboxes[0]-=cost;if(toolboxes[0]<=0)toolboxes.shift();repairKits=toolboxes.length;return cost;
   }
   let repairKits = 1, bikeLife = 100, bikeWearClock = 0, bikeCrashCooldown = 0, bikeParts = { motor: 100, handlebar: 100, frontTire: 100, rearTire: 100 };
@@ -517,6 +519,8 @@
   const worldReturn = { x: 0, y: 0 };
   const explorer = { x: 240, y: 145, hp: 3, invulnerable: 0 };
   const interiorWalls = [];
+  const roomBlocked=(x,y,radius=0)=>!RoomInteriors.contains(x,y,radius)||interiorWalls.some(w=>
+    x+radius>=w.x&&x-radius<=w.x+w.w&&y+radius>=w.y&&y-radius<=w.y+w.h);
   const camera = { x: 180, y: 3300 };
   const mossEcology=MossCreatures.createEcology({
     getBuildings:()=>buildings,getSize:()=>world,isBlocked:worldBlocked,getShadows:mossShadowRegions
@@ -537,20 +541,40 @@
   }
   let survivalItems={bait:4},survivalEffects=[],balanceEvent=null;
   let hudDetails=false;
-  let kickCooldown=0,kickVisual=0;
+  let kickCooldown=0,kickVisual=0,kickAngle=0;
+  let kickPointer=null;
+  function mountedKickAngle(actor){
+    if(!kickPointer)return actor.angle+Math.PI/4;
+    const pointer=bikeCanvasPointer(kickPointer),origin=projectPoint(actor.x,actor.y);
+    // Undo the isometric projection before comparing the cursor with the bike heading.
+    const sx=(pointer.x-origin.x)/ISO_X,sy=(pointer.y-origin.y)/ISO_Y;
+    const dx=(sx+sy)/2,dy=(sy-sx)/2;
+    const forward=dx*Math.sin(actor.angle)-dy*Math.cos(actor.angle);
+    const lateral=dx*Math.cos(actor.angle)+dy*Math.sin(actor.angle);
+    if(forward< -1e-8||Math.abs(lateral)<1e-8)return null;
+    return Math.atan2(dx,-dy);
+  }
   function kickCreature(){
-    if(!['drive','explore'].includes(state)||mounted||kickCooldown>0||checkpointReturn||playerKnockdown>0||bikeInspectOpen)return;
+    if(!['drive','explore'].includes(state)||kickCooldown>0||checkpointReturn||playerKnockdown>0||bikeInspectOpen||ignition.active)return;
+    const actor=state==='explore'?explorer:mounted?bike:player;
+    const riding=state==='drive'&&mounted;
+    const aim=riding?mountedKickAngle(actor):actor.angle;
+    if(aim===null)return;
     shelterLife.cancel();shelterView=null;stopBikeDrag();
-    const actor=state==='explore'?explorer:player;
-    const hit=mossEcology.kick({x:actor.x,y:actor.y,angle:actor.angle,room:state==='explore'?exploreBuilding:-1,range:34+upgrades.kick*12,stunScale:1+upgrades.kick*.5,
-      isRoomBlocked:(x,y)=>interiorWalls.some(w=>x>=w.x&&x<=w.x+w.w&&y>=w.y&&y<=w.y+w.h)});
+    const hit=mossEcology.kick({x:actor.x,y:actor.y,angle:aim,facing:actor.angle,mounted:riding,room:state==='explore'?exploreBuilding:-1,range:(riding?46:34)+upgrades.kick*12,stunScale:1+upgrades.kick*.5,
+      isRoomBlocked:roomBlocked});
+    kickAngle=aim;
     kickCooldown=1.7;kickVisual=.25;
     if(hit)setToast(hit.kind===2?'BRUTAMONTES ATORDOADO — CORRA!':hit.kind===1?'RASTEJANTE ARREMESSADO!':'ENCOBERTO AFASTADO!',1.2);
   }
-  const isShelter=index=>index>=0&&index!==10&&index%6===0;
+  const isGasStation=index=>index===10||buildings[index]?.[4]==='station';
+  const isCabin=index=>buildings[index]?.[4]==='cabin';
+  const interiorType=index=>isCabin(index)?3:RoomInteriors.variant(index);
+  const isShelter=index=>index>=0&&!isGasStation(index)&&(isCabin(index)||index%6===0);
   const shelterLife=ShelterSurvival.create();
   let shelterView=null;
   const inSafeShelter=()=>state==='explore'&&isShelter(exploreBuilding);
+  const observingOutside=()=>shelterView==='observe'&&inSafeShelter();
   function shelterKey(key){
     if(!inSafeShelter()||checkpointReturn)return false;
     if(['escape','w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e'].includes(key)){
@@ -558,7 +582,7 @@
     }
     if(!['z','o'].includes(key))return false;
     shelterLife.cancel();keys.clear();explorer.gait=null;
-    if(key==='z'){shelterView=null;shelterLife.sleep();setToast('DESCANSANDO - MOVA-SE PARA ACORDAR.');}
+    if(key==='z'){shelterView=null;shelterLife.sleep({restore:false});setToast('TEMPO AVAN?ANDO ? MOVA-SE PARA ACORDAR.');}
     if(key==='o')shelterView=shelterView==='observe'?null:'observe';
     return true;
   }
@@ -575,24 +599,28 @@
     ctx.save();ctx.textAlign='left';ctx.font='6px monospace';
     if(hudDetails||shelterLife.fatigue>65){
       ctx.fillStyle='#142020e8';ctx.fillRect(8,H-57,180,13);ctx.fillStyle=shelterLife.fatigue>65?'#efad79':'#b9d9c4';
-      ctx.fillText(`CANSAÇO ${Math.round(shelterLife.fatigue)}% · ${shelterLife.fatigue>65?'PRECISA DORMIR':'VIGÍLIA'}`,13,H-48);
+      ctx.fillText(`CANSAÇO ${Math.round(shelterLife.fatigue/1.5)}%`,13,H-48);
     }
     if(inSafeShelter()){
       if(!shelterView&&!shelterLife.activity&&!hudDetails){
         ctx.fillStyle='#bdd8c8';ctx.fillText('ABRIGO - E NA CAMA PARA DORMIR',12,H-30);ctx.restore();return;
       }
       const y=H-119;
+      const job=shelterLife.activity;
+      if(shelterView==='observe'){
+        ctx.fillStyle='#d8e9d9';
+        ctx.fillText('O OU ESC VOLTA · MOVIMENTO NA RUA CONTINUA',16,31);
+        ctx.restore();return;
+      }
+      if(job?.kind==='sleep'){
+        ctx.fillStyle='#d8e9d9';ctx.fillText('DESCANSO · O TEMPO CONTINUA · MOVA-SE PARA ACORDAR',16,24);
+        ctx.fillStyle='#263c35';ctx.fillRect(16,34,380,10);
+        ctx.fillStyle='#73dca7';ctx.fillRect(16,34,380*(1-shelterLife.fatigue/150),10);
+        ctx.restore();return;
+      }
       panel(8,y,Math.min(W-16,390),77,'#0c1b21f2','#78ad93');ctx.fillStyle='#d8e9d9';
       ctx.fillText('ABRIGO - E NA CAMA PARA DORMIR',16,y+13);
-      const job=shelterLife.activity;
-      if(job?.kind==='sleep'){
-        ctx.fillText('DORMINDO · O TEMPO CONTINUA · MOVA-SE PARA ACORDAR',16,y+29);
-        ctx.fillStyle='#73dca7';ctx.fillRect(16,y+40,(1-shelterLife.fatigue/100)*250,5);
-      }else if(shelterView==='observe'){
-        const door=buildingDoor(exploreBuilding),near=mossEcology.entities.filter(c=>!c.indoors&&distance(c,door)<300);
-        ctx.fillText(`PELA FRESTA · ${near.length} CRIATURA(S) A ATÉ 300 m`,16,y+30);
-        ctx.fillText('O OU ESC VOLTA · MOVIMENTO NA RUA CONTINUA',16,y+46);
-      }else{
+      {
         ctx.fillText('DESCANSE, PREPARE ITENS E ESCOLHA A PRÓXIMA ROTA.',16,y+30);
         ctx.fillText('PROCURE COMIDA, AGUA E FERRAMENTAS NAS CASAS.',16,y+47);
       }
@@ -603,7 +631,11 @@
   function survivalUse(key){
     if(!['drive','explore'].includes(state)||ignition.active||bikeInspectOpen||checkpointReturn||playerKnockdown>0)return;
     const actor=survivalActor(),room=state==='explore'?exploreBuilding:-1;
-    if(key==='j'){
+    if(key==='v'){
+      if(mounted){setToast('DESCA DA MOTO PARA APLICAR O CURATIVO.');return;}
+      characterHealth.quickBandage();return;
+    }
+    if(key==='h'){
       if(mounted){setToast('DESÇA DA MOTO PARA APLICAR O CURATIVO.');return;}
       healthPanel.update(0,healthCareContext());healthPanel.setOpen(!healthPanel.open);return;
     }
@@ -615,7 +647,7 @@
       const angle=state==='explore'?explorer.angle:mounted?bike.angle:player.angle;
       for(let step=1;step<=12;step++){
         const next={x:actor.x+Math.sin(angle||0)*step*10,y:actor.y-Math.cos(angle||0)*step*10};
-        if(room<0?(next.x<12||next.y<12||next.x>world.w-12||next.y>world.h-12||worldBlocked(next.x,next.y,4)):(next.x<60||next.x>405||next.y<98||next.y>278||interiorWalls.some(w=>next.x>=w.x&&next.x<=w.x+w.w&&next.y>=w.y&&next.y<=w.y+w.h)))break;
+        if(room<0?(next.x<12||next.y<12||next.x>world.w-12||next.y>world.h-12||worldBlocked(next.x,next.y,4)):roomBlocked(next.x,next.y,4))break;
         p=next;
       }
     }
@@ -639,10 +671,11 @@
   }
   function drawSurvival(){
     if(!['drive','explore'].includes(state))return;
+    if(observingOutside())return;
     const room=state==='explore'?exploreBuilding:-1;
     ctx.save();ctx.textAlign='left';ctx.font='6px monospace';
     if(kickVisual>0){
-      const actor=survivalActor(),pos=room<0?projectPoint(actor.x,actor.y):actor,angle=room<0?projectFacing(actor.angle):actor.angle;
+      const actor=survivalActor(),pos=room<0?projectPoint(actor.x,actor.y):actor,angle=room<0?projectFacing(kickAngle):kickAngle;
       ctx.save();ctx.translate(pos.x,pos.y-3);ctx.rotate(angle);ctx.strokeStyle='#eed4a0';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,18+(1-kickVisual/.25)*10,-Math.PI*.8,-Math.PI*.2);ctx.stroke();ctx.restore();
     }
     for(const p of survivalEffects){
@@ -652,7 +685,7 @@
     }
     if(hudDetails){
       ctx.fillStyle='#0b171ee6';ctx.fillRect(8,H-24,Math.min(W-16,460),18);ctx.fillStyle='#e1e6d0';
-      ctx.fillText(`B ISCA ${survivalItems.bait} \u00b7 J CURATIVO ${characterHealth.items.bandages}`,13,H-13);
+      ctx.fillText(`B ISCA ${survivalItems.bait} \u00b7 H CORPO \u00b7 V CURATIVO ${characterHealth.items.bandages}`,13,H-13);
     }
     if(room<0){
       buildings.forEach((b,i)=>{if(isShelter(i)){const door=buildingDoor(i);if(!hudDetails&&distance(survivalActor(),door)>250)return;const p=projectPoint(door.x,door.y);ctx.fillStyle='#73ffc0';ctx.fillRect(p.x-2,p.y-25,4,15);ctx.fillRect(p.x-7,p.y-20,14,4);if(hudDetails)ctx.fillText('ABRIGO',p.x-12,p.y-29);}});
@@ -779,6 +812,7 @@
     return [roads,...branchRoads].some(path=>path.some((p,i)=>i>0&&pointSegmentDistance(x,y,path[i-1][0],path[i-1][1],p[0],p[1])<limit));
   }
   function generateMapLayout() {
+    forest.clear();
     urbanSpriteCache.clear();urbanSpriteBytes=0;
     buildingGeometryCache.clear();buildingOpacities.clear();collisionGrid=null;
     cityProps.length=0;streetHitboxes.length=0;
@@ -801,14 +835,19 @@
       for(let p=0;p<points;p++){heading+=(Math.random()-.5)*.62;x=Math.max(70,Math.min(world.w-70,x+Math.cos(heading)*(250+Math.random()*260)));y=Math.max(70,Math.min(world.h-70,y+Math.sin(heading)*(250+Math.random()*260)));path.push([Math.round(x),Math.round(y)]);}
       branchRoads.push(path);
     }
+    forest.configure(world.w,world.h);
     buildings = [];
+    const stationIndices=[10,35,65,95,125].slice(0,1+Math.floor(Math.random()*5));
     for (let i = 0; i < 160; i++) {
-      const gasStation = i === 10;
-      const w = gasStation ? 100 : Math.round(42 + Math.random() * 78);
-      const h = gasStation ? 78 : Math.round(36 + Math.random() * 68);
+      const cabin = i >= 148;
+      const gasStation = stationIndices.includes(i);
+      const w = cabin ? 58 : gasStation ? 100 : Math.round(42 + Math.random() * 78);
+      const h = cabin ? 48 : gasStation ? 78 : Math.round(36 + Math.random() * 68);
       const canPlace=(x,y)=>{
+        if(!forest.allowsBuilding(x,y,w,h,cabin))return false;
         if(x<70||y<70||x+w*1.65>world.w-70||y+h*1.65>world.h-70)return false;
         const cx=x+w*.825,cy=y+h*.825;
+        if(gasStation&&buildings.some(([ox,oy,ow,oh,kind])=>kind==='station'&&Math.hypot(cx-ox-ow*.825,cy-oy-oh*.825)<2200))return false;
         if(nearAnyRoad(cx,cy,64+Math.hypot(w,h)*.825)||Math.hypot(cx-bike.x,cy-bike.y)<260)return false;
         return !buildings.some(([ox,oy,ow,oh])=>x<ox+ow*1.65+48&&x+w*1.65+48>ox&&y<oy+oh*1.65+48&&y+h*1.65+48>oy);
       };
@@ -827,9 +866,13 @@
         if(canPlace(x,y))building=[x,y,w,h];
       }
       if(!building)throw Error('Sem espaço livre para gerar os prédios.');
+      if(cabin)building[4]='cabin';
+      if(gasStation)building[4]='station';
       buildings.push(building);
     }
-    supplies = buildings.map((b, i) => ({ x: b[0] + b[2] * .8, y: b[1] + b[3] * 1.2, type: i === 10 ? 'fuel' : i%7===3 ? 'medical' : Math.random() < .3 ? 'toolkit' : ['ration','water','can'][i % 3], found: false, available: i === 10 ? Math.random() < .9 : Math.random() < .85 }));
+    supplies = buildings.map((b, i) => {const type=i===10?'fuel':i%7===3?'medical':Math.random()<.3?'toolkit':['ration','water','can'][i%3];return {x:b[0]+b[2]*.8,y:b[1]+b[3]*1.2,type,found:false,available:i===10?Math.random()<.9:Math.random()<(type==='medical'?.67:.85)};});
+    buildings.forEach((b,i)=>{if(b[4]==='station')supplies[i]={...supplies[i],type:'station',available:true,found:false,
+      fuelUses:1+Math.floor(Math.random()*5),stock:{toolkit:1,water:1,ration:1}};});
     seed = Math.floor(Math.random() * 4294967296);
     rubble.length = 0;
     for (let i = 0; i < 1450; i++) {
@@ -853,12 +896,17 @@
       const x=ax+dx*t-dy/len*offset,y=ay+dy*t+dx/len*offset;
       const kind=i%4,radius=StreetStructures.radius(kind);
       if(x<40||y<40||x>world.w-40||y>world.h-40||worldBlocked(x,y,radius+8))continue;
+      if(!forest.allowsBuilding(x-radius,y-radius,radius*2/1.65,radius*2/1.65))continue;
       if(cityProps.some(prop=>Math.hypot(x-prop.x,y-prop.y)<radius+StreetStructures.radius(prop.kind)+12))continue;
       if(towers.some(terminal=>Math.hypot(x-terminal.x,y-terminal.y)<radius+85))continue;
       const angle=Math.round(Math.atan2(dy,dx)/(Math.PI/4))*(Math.PI/4);
       cityProps.push({x,y,kind,tint:i%3,angle});
     }
     rebuildStreetHitboxes();
+    forest.generate({width:world.w,height:world.h,seed,road:nearAnyRoad,
+      blocked:(x,y,r)=>worldBlocked(x,y,r)||Math.hypot(x-bike.x,y-bike.y)<230||
+        buildings.some((b,i)=>distance({x,y},buildingDoor(i))<130)||towers.some(t=>distance({x,y},t)<110)});
+    collisionGrid=null;
   }
 
   function active() { return towers.find(t => !t.disabled) || null; }
@@ -875,6 +923,11 @@
         }
       }
       for(const [x,y,w,h] of buildings)insert({x,y,left:0,top:0,right:w*1.65,bottom:h*1.65,c:1,s:0},x,y,x+w*1.65,y+h*1.65);
+      if(typeof forest!=='undefined')for(const item of forest.items){
+        if(item.kind!=='tree'&&item.kind!=='rock')continue;
+        const {x,y}=item,r=(item.kind==='tree'?6:10)*item.size;
+        insert({x,y,left:-r,top:-r,right:r,bottom:r,c:1,s:0},x-r,y-r,x+r,y+r);
+      }
       for(const [x,y,left,top,w,h,angle] of [...fenceHitboxes,...streetHitboxes]){
         const c=Math.cos(angle),s=Math.sin(angle),right=left+w,bottom=top+h;
         const points=[[left,top],[right,top],[right,bottom],[left,bottom]].map(([px,py])=>({x:x+px*c-py*s,y:y+px*s+py*c}));
@@ -1024,7 +1077,7 @@
   }
   function startGame() {
     Object.keys(upgrades).forEach(key=>upgrades[key]=0);
-    kickCooldown=0;kickVisual=0;
+    kickCooldown=0;kickVisual=0;kickPointer=null;
     hudDetails=false;
     shelterLife.reset();shelterView=null;
     survivalItems={bait:4};survivalEffects=[];balanceEvent=null;
@@ -1048,13 +1101,13 @@
     bikeService = null; Object.values(bikeFaults).forEach(faults => faults.fill(100));
     generateMapLayout(); camera.x = player.x; camera.y = player.y;
     mossEcology.reset(worldLighting(0),player);
-    supplies.forEach(s => { s.found = false; s.available = Math.random() < (s.type === 'fuel' ? .9 : .85); });
+    supplies.forEach(s => { s.found = false; s.available = s.type==='station'||Math.random() < (s.type === 'fuel' ? .9 : .85); });
     supplies.forEach((s,i)=>{if(isShelter(i)){s.type='medical';s.available=true;}});
     towers.forEach(t => t.disabled = false);
     randomizeTowerSpawns();
     rebuildStreetHitboxes(true);
     titleScreen.classList.add('dismissed'); keys.clear(); updateObjective();
-    setToast('WASD MOVE - E INTERAGE - F MONTA - ESPACO CHUTA - J CURA');
+    setToast('WASD MOVE - E INTERAGE - F MONTA - ESPACO CHUTA - H CORPO - V CURATIVO');
   }
   document.querySelector('#start-game').addEventListener('click', startGame);
 
@@ -1126,7 +1179,7 @@
     if (state === 'chase') startGrappleAim();
     else if (state === 'grapple') attemptGrapple();
   });
-  canvas.addEventListener('pointerdown', event => { if(balanceEvent){event.preventDefault();attemptBalance();return;}if(ignition.active){ignition.down(event);return;}if (bikeInspectOpen) handleBikeInspectPointer(event); else if(handleBikeDashboardPointer(event))return;else if (state === 'grapple') attemptGrapple(); else if (state === 'hack') handleHackPointer(event); });
+  canvas.addEventListener('pointerdown', event => { kickPointer={clientX:event.clientX,clientY:event.clientY};if(balanceEvent){event.preventDefault();attemptBalance();return;}if(ignition.active){ignition.down(event);return;}if (bikeInspectOpen) handleBikeInspectPointer(event); else if(handleBikeDashboardPointer(event))return;else if (state === 'grapple') attemptGrapple(); else if (state === 'hack') handleHackPointer(event); });
   canvas.addEventListener('dblclick', event => {
     if(event.button!==0||!bikeInspectOpen||ignition.active)return;
     const {x,y}=bikeServicePointer(event);
@@ -1139,11 +1192,12 @@
     bikeInspectHover=null;
   });
   canvas.addEventListener('pointermove', event => {
+    kickPointer={clientX:event.clientX,clientY:event.clientY};
     if(ignition.active){ignition.move(event);return;}
     bikeInspectHover=bikeInspectOpen?bikeServicePointer(event):null;
     moveBikeServiceGesture(event);
   });
-  canvas.addEventListener('pointerleave', () => {bikeInspectHover=null;});
+  canvas.addEventListener('pointerleave', () => {bikeInspectHover=null;kickPointer=null;});
   canvas.addEventListener('pointerup', event=>{if(ignition.active)ignition.up(event);else endBikeServiceGesture(event);});
   canvas.addEventListener('pointercancel', event=>{if(ignition.active)ignition.up(event);else endBikeServiceGesture(event);});
   canvas.addEventListener('lostpointercapture', event=>{if(ignition.active)ignition.up(event);else endBikeServiceGesture(event);});
@@ -1159,6 +1213,29 @@
     const label=state==='grapple'?'DISPARAR RAPEL':grappleAvailable?'MIRAR / RAPEL':'RAPEL INDISPONÍVEL';
     if(grappleButton.textContent!==label)grappleButton.textContent=label;
   }
+  function nearbyStation(){
+    const actor=mounted?bike:player;
+    return buildings.findIndex((b,i)=>isGasStation(i)&&distance(actor,buildingDoor(i))<100);
+  }
+  function refuelAtStation(){
+    const index=nearbyStation();
+    if(index<0){setToast('APROXIME-SE DE UM POSTO PARA ABASTECER.');return;}
+    const supply=supplies[index];
+    if(distance(bike,buildingDoor(index))>=100){setToast('TRAGA A MOTO PARA A FRENTE DO POSTO.');return;}
+    if(Math.abs(bike.speed)>2){setToast('PARE A MOTO PARA ABASTECER.');return;}
+    if(!supply?.fuelUses){setToast('ESTE POSTO ESTA SEM GASOLINA.');return;}
+    if(fuel>=100){setToast('O TANQUE JA ESTA CHEIO.');return;}
+    fuel=100;supply.fuelUses--;
+    setToast('TANQUE CHEIO.');
+  }
+  function collectStationSupply(supply,type){
+    if(!supply.stock[type])return false;
+    supply.stock[type]--;
+    if(type==='toolkit'){addToolbox();setToast('FERRAMENTAS DO POSTO - +1 CAIXA');}
+    else if(type==='water'){thirst=Math.min(100,thirst+38);setToast('AGUA DO POSTO - SEDE REDUZIDA');}
+    else {hunger=Math.min(100,hunger+42);setToast('COMIDA DO POSTO - FOME REDUZIDA');}
+    return true;
+  }
   function interact() {
     if(checkpointReturn)return;
     if (state === 'chase') { startGrappleAim(); return; }
@@ -1170,7 +1247,7 @@
       const building = nearbyEntrance(player.x, player.y);
       const bikeDistance=distance(player,bike),doorDistance=building>=0?distance(player,buildingDoor(building)):Infinity;
       const chooseDoor=building>=0&&(bikeDistance>=43||doorFacesPriority(player,building,43));
-      if (building >= 0 && chooseDoor) { bikeInspectOpen=false;bikeService=null;state = 'explore'; exploreBuilding = building; worldReturn.x = player.x; worldReturn.y = player.y; player.gait=null; explorer.x = 83; explorer.y = 198; explorer.hp = 3; explorer.gait=null; keys.clear(); setToast('INTERIOR C-03 — VASCULHE A MESA E SAIA PELA PORTA.'); updateObjective(); return; }
+      if (building >= 0 && chooseDoor) { bikeInspectOpen=false;bikeService=null;state = 'explore'; exploreBuilding = building; worldReturn.x = player.x; worldReturn.y = player.y; player.gait=null; Object.assign(explorer,RoomInteriors.constrain(83,198,7*ACTOR_VISUAL_SCALE)); explorer.hp = 3; explorer.gait=null; keys.clear(); setToast((isGasStation(building)?'LOJA DO POSTO':RoomInteriors.TYPES[interiorType(building)].name)+' — VASCULHE A MESA E SAIA PELA PORTA.'); updateObjective(); return; }
       if (nearbyBuilding(player.x, player.y) >= 0 && bikeDistance>=43) { setToast('PROCURE A PORTA DA CONSTRUÇÃO PARA ENTRAR.'); return; }
       if (bikeDistance < 43) {
         if (bikeLife <= 0 && repairKits <= 0) { setToast('MOTO AVARIADA — PROCURE UM KIT DE REPARO'); return; }
@@ -1236,17 +1313,14 @@
     if(key==='tab'&&state!=='title'){e.preventDefault();if(!e.repeat)hudDetails=!hudDetails;return;}
     if(!e.repeat&&shelterKey(key)){e.preventDefault();return;}
     if(balanceEvent&&key===' '){e.preventDefault();if(!e.repeat)attemptBalance();return;}
-    if(['b','j'].includes(key)&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();survivalUse(key);return;}
-    if(bikeDragging&&['e','f','h','r','escape'].includes(key))stopBikeDrag();
+    if(['b','h','v'].includes(key)&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();survivalUse(key);return;}
+    if(bikeDragging&&['e','f','c','r','escape'].includes(key))stopBikeDrag();
     if (bikeInspectOpen && key === 'escape') { if (bikeService) bikeService = null; else bikeInspectOpen = false; return; }
     if (bikeInspectOpen && key !== 'f' && key !== 'g' && (key !== 'e' || bikeService)) {
       e.preventDefault();
       if(!bikeService&&['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift'].includes(key)){keys.add(key);return;}
       if (!e.repeat && bikeService) {
-        if (/^[1-8]$/.test(key)) bikeServiceAction(Number(key)-1);
-        else if (['arrowleft','a','-'].includes(key)) bikeServiceAction(0);
-        else if (['arrowright','d','+','='].includes(key)) bikeServiceAction(1);
-        else if (['e',' ','enter'].includes(key)) bikeServiceAction(bikeService.job[2]==='engineHole'?4:2);
+        if (key === 'e') bikeServiceAction(bikeService.job[2]==='engineHole'?4:2);
       }
       return;
     }
@@ -1261,8 +1335,9 @@
     if(key===' '&&['drive','explore'].includes(state)&&!e.repeat){e.preventDefault();kickCreature();return;}
     if(key==='g'&&!e.repeat){e.preventDefault();startBikeDrag();return;}
     if(bikeControlsMounted()&&['q','e'].includes(key)){e.preventDefault();if(!e.repeat)shiftBikeGear(key==='e'?1:-1);return;}
+    if(key==='t'&&state==='drive'&&!e.repeat){e.preventDefault();refuelAtStation();return;}
     if(key==='r'&&state==='drive'&&!e.repeat){e.preventDefault();switchOffBike();return;}
-    if(key==='h'&&state==='drive'&&!e.repeat&&(mounted||distance(player,bike)<=43)){e.preventDefault();bikeHeadlightOn=!bikeHeadlightOn;setToast(bikeHeadlightOn?'FAROL LIGADO':'FAROL DESLIGADO');return;}
+    if(key==='c'&&state==='drive'&&!e.repeat&&(mounted||distance(player,bike)<=43)){e.preventDefault();bikeHeadlightOn=!bikeHeadlightOn;setToast(bikeHeadlightOn?'FAROL LIGADO':'FAROL DESLIGADO');return;}
     if(key==='f'&&state==='drive'&&!e.repeat){bikeInspectOpen=false;bikeService=null;if(mounted)dismount();else mount();return;}
     if (state === 'drive' && !mounted && key === 'e' && !e.repeat && (bikeInspectOpen || distance(player,bike)<=43) && !doorFacesPriority(player,nearbyEntrance(player.x,player.y),43)) {
       if (distance(player,bike) <= 43) { bikeInspectOpen = !bikeInspectOpen; keys.clear(); bikeInspectTab = 'Info'; bikeService = null; }
@@ -1300,6 +1375,12 @@
     if(groundTextureCache.size>=48)groundTextureCache.delete(groundTextureCache.keys().next().value);
     groundTextureCache.set(key,tile);return tile;
   }
+  const roadPathCache=new WeakMap();
+  function roadPath(points){
+    let path=roadPathCache.get(points);
+    if(!path){path=new Path2D();points.forEach(([x,y],i)=>i?path.lineTo(x,y):path.moveTo(x,y));roadPathCache.set(points,path);}
+    return path;
+  }
   function drawGround(time) {
     ctx.fillStyle = '#34413a'; ctx.fillRect(0, 0, world.w, world.h);
     const left = Math.max(0, Math.floor((camera.x - 520) / 16) * 16), right = Math.min(world.w, camera.x + 520);
@@ -1308,15 +1389,21 @@
       const width=Math.min(GROUND_CHUNK_SIZE,world.w-x),height=Math.min(GROUND_CHUNK_SIZE,world.h-y);
       ctx.drawImage(groundTextureChunk(x,y),0,0,width,height,x,y,width,height);
     }
+    forest.ground(ctx,camera);
     rubble.forEach(r => { if (Math.abs(r.x-camera.x)<560 && Math.abs(r.y-camera.y)<560) { ctx.fillStyle = r.color > .5 ? '#3c4641' : '#1c292b'; ctx.fillRect(r.x, r.y, r.s, r.s * .7); } });
     ctx.lineCap = 'square'; ctx.lineJoin = 'round';
-    ctx.beginPath(); roads.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-    ctx.strokeStyle = '#282f30'; ctx.lineWidth = 46; ctx.stroke();
-    ctx.beginPath(); roads.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-    ctx.strokeStyle = '#50554d'; ctx.lineWidth = 30; ctx.stroke();
-    branchRoads.forEach(path=>{ctx.beginPath();path.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.strokeStyle='#282f30';ctx.lineWidth=46;ctx.stroke();ctx.beginPath();path.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.strokeStyle='#50554d';ctx.lineWidth=30;ctx.stroke();});
-    ctx.setLineDash([9, 13]); ctx.lineWidth = 1; ctx.strokeStyle = '#a1805a40'; ctx.stroke(); ctx.setLineDash([]);
-    branchRoads.forEach(path=>{ctx.beginPath();path.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.setLineDash([9,13]);ctx.lineWidth=1;ctx.strokeStyle='#a1805a40';ctx.stroke();ctx.setLineDash([]);});
+    const mainRoad=roadPath(roads);
+    ctx.strokeStyle='#282f30';ctx.lineWidth=46;ctx.stroke(mainRoad);
+    ctx.strokeStyle='#50554d';ctx.lineWidth=30;ctx.stroke(mainRoad);
+    for(const points of branchRoads){
+      const path=roadPath(points);
+      ctx.strokeStyle='#282f30';ctx.lineWidth=46;ctx.stroke(path);
+      ctx.strokeStyle='#50554d';ctx.lineWidth=30;ctx.stroke(path);
+    }
+    // Preserve the existing marking passes and their overlap at intersections.
+    const lastRoad=branchRoads.length?roadPath(branchRoads[branchRoads.length-1]):mainRoad;
+    ctx.setLineDash([9,13]);ctx.lineWidth=1;ctx.strokeStyle='#a1805a40';ctx.stroke(lastRoad);ctx.setLineDash([]);
+    for(const points of branchRoads){ctx.setLineDash([9,13]);ctx.lineWidth=1;ctx.strokeStyle='#a1805a40';ctx.stroke(roadPath(points));ctx.setLineDash([]);}
     // Buckled asphalt, potholes and long cracks scar the old transit routes.
     for(let roadIndex=2;roadIndex<roads.length;roadIndex+=3) {
       const [x,y]=roads[roadIndex],i=(roadIndex-2)/3;
@@ -1345,10 +1432,10 @@
     const width=w,height=h;
     w *= 1.65; h *= 1.65;
     const base = [projectPoint(x, y), projectPoint(x + w, y), projectPoint(x + w, y + h), projectPoint(x, y + h)];
-    const floors = index === 10 ? 1 : w >= 115 && h >= 99 ? 3 + index % 4 : 1 + index % 2;
-    const lift = index===10?20+floors*13+h*.26:UrbanStructures.TYPES[index%5].height;
+    const floors = isGasStation(index) ? 1 : w >= 115 && h >= 99 ? 3 + index % 4 : 1 + index % 2;
+    const lift = isCabin(index)?66:isGasStation(index)?20+floors*13+h*.26:UrbanStructures.TYPES[index%5].height;
     const roof = base.map(p => ({ x: p.x, y: p.y - lift }));
-    const shape={w,h,base,roof,lift};
+    const shape={w,h,base,roof,lift,cabin:isCabin(index)};
     buildingGeometryCache.set(index,{x,y,width,height,shape});
     return shape;
   }
@@ -1392,7 +1479,7 @@
     ctx.drawImage(sprite.layer,shape.base[0].x+sprite.left,shape.base[0].y+sprite.top,sprite.width,sprite.height);
   }
   function drawIsoBuilding(x, y, width, height, index, time, geometry, opacity=1) {
-    if(index!==10){
+    if(!isGasStation(index)){
       ctx.save();ctx.globalAlpha*=opacity;drawUrbanBuildingSprite(geometry||isoBuildingGeometry(x,y,width,height,index),index);ctx.restore();return;
     }
     ctx.save();ctx.globalAlpha*=opacity;
@@ -1431,7 +1518,7 @@
       if ((chunk + index) % 2 === 0) { ctx.strokeStyle = '#78604a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(px + 2, py - 3); ctx.lineTo(px + 5, py - 14); ctx.lineTo(px + 9, py - 16); ctx.stroke(); }
     }
     const center = { x: (roof[0].x + roof[1].x + roof[2].x + roof[3].x) / 4, y: (roof[0].y + roof[1].y + roof[2].y + roof[3].y) / 4 };
-    if (index === 10) {
+    if (isGasStation(index)) {
       ctx.fillStyle = '#8b4939'; ctx.fillRect(center.x - 12, center.y - lift * .45, 24, 9); ctx.fillStyle = '#e2b879'; ctx.font = '5px monospace'; ctx.textAlign = 'center'; ctx.fillText('GAS', center.x, center.y - lift * .45 + 6);
       ctx.fillStyle = '#303936'; ctx.fillRect(center.x - 19, center.y - lift * .45 + 9, 38, 4);
     }
@@ -1646,6 +1733,13 @@
     const halfWidth=mounted?18:7;
     const actorRect={left:actorPoint.x-halfWidth,right:actorPoint.x+halfWidth,top:actorPoint.y-(mounted?30:22),bottom:actorPoint.y+6};
     const revealCircle={x:actorPoint.x,y:actorPoint.y-8,radius:mounted?56:40};
+    for(const item of forest.query(camera.x,camera.y,1100)){
+      const p=projectPoint(item.x,item.y);
+      if(p.x<-70||p.x>W+70||p.y<-20||p.y>H+140)continue;
+      const fade=includeActors&&item.kind==='tree'&&item.x+item.y>actor.x+actor.y&&
+        Math.abs(p.x-actorPoint.x)<42*item.size&&actorPoint.y<p.y+8&&actorPoint.y>p.y-110*item.size;
+      objects.push({depth:item.x+item.y,draw:()=>forest.draw(ctx,item,p,time,fade)});
+    }
     for(const prop of cityProps){
       const p=projectPoint(prop.x,prop.y);
       if(p.x<-80||p.x>W+80||p.y<-40||p.y>H+100)continue;
@@ -1662,11 +1756,11 @@
       }
     }
     buildings.forEach(([x,y,w,h],i)=>{
-      const corner=projectPoint(x,y),lift=i===10?100:UrbanStructures.TYPES[i%5].height;
+      const corner=projectPoint(x,y),lift=isCabin(i)?66:isGasStation(i)?100:UrbanStructures.TYPES[i%5].height;
       if(corner.x+w*1.65*ISO_X < -80||corner.x-h*1.65*ISO_X>W+80||corner.y-lift>H+128||corner.y+(w+h)*1.65*ISO_Y < -80)return;
       const geometry=isoBuildingGeometry(x,y,w,h,i);
       if(isoBuildingVisible(geometry)){
-        if(i!==10)visibleUrbanSprites.add(i);
+        if(!isGasStation(i))visibleUrbanSprites.add(i);
         const depth=x+y+(w+h)*.82;
         const occluded=includeActors&&state==='drive'&&buildingOccludesActor(geometry,actorRect,depth,actor.x+actor.y);
         const opacity=buildingOpacity(i,occluded,time);
@@ -1693,7 +1787,7 @@
         const p = projectPoint(bike.x, bike.y);
         drawBike(p.x, p.y, projectFacing(bike.angle), 0, time);
       } });
-      objects.push({ depth: player.x + player.y, draw: () => {
+      if(state!=='explore')objects.push({ depth: player.x + player.y, draw: () => {
         const p = projectPoint(player.x, player.y);
         drawFootWorld(p.x, p.y, projectFacing(player.angle), time);
       } });
@@ -1852,7 +1946,7 @@
     bikeParts[part] = bikeFaults[part].reduce((a,b)=>a+b,0)/4;
   }
   function updateBikeCondition(dt,speed=0) {
-    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt/(1+upgrades.fuel*.25));
+    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt*1.5/(1+upgrades.fuel*.25));
     if(fuel<=0)bikeEngineRunning=false;
     bikeCrashCooldown=Math.max(0,bikeCrashCooldown-dt);
     const moving=Math.abs(speed)>8;
@@ -1889,7 +1983,7 @@
     if(distance(origin,target)>MossCreatures.TYPES[creature.kind].attackReach+radius)return false;
     for(const fraction of [.25,.5,.75]){
       const x=origin.x+(target.x-origin.x)*fraction,y=origin.y+(target.y-origin.y)*fraction;
-      if(inRoom?interiorWalls.some(w=>x>=w.x&&x<=w.x+w.w&&y>=w.y&&y<=w.y+w.h):worldBlocked(x,y,1))return false;
+      if(inRoom?roomBlocked(x,y):worldBlocked(x,y,1))return false;
     }
     return true;
   }
@@ -3219,8 +3313,9 @@
       gait.turnTime=0;
     }
   }
-  function moveExplorer(actor,dx,dy,radius) {
-    const x=Math.max(58,Math.min(408,actor.x+dx)),y=Math.max(95,Math.min(280,actor.y+dy));
+  function moveExplorer(actor,dx,dy,radius=5) {
+    const target=RoomInteriors.constrain(actor.x+dx,actor.y+dy,radius);
+    const {x,y}=target;
     const hitsWall=(x,y)=>interiorWalls.some(w=>x+radius>w.x&&x-radius<w.x+w.w&&y+radius>w.y&&y-radius<w.y+w.h);
     if(!hitsWall(x,actor.y))actor.x=x;
     if(!hitsWall(actor.x,y))actor.y=y;
@@ -3393,9 +3488,11 @@
     ctx.textAlign='left';ctx.fillStyle='#c7d8c9';ctx.fillText(label,25,0);ctx.restore();
   }
   function drawDriveHud(time) {
+    const station=nearbyStation();
+    if(station>=0)hint('T ABASTECER',W/2,55,time);
     ctx.save();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · J CURATIVO · H CORPO` : 'E INTERAGIR  ·  F MONTAR  ·  J CURATIVO  ·  H CORPO', W - 12, H - 7);
+    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · H CORPO · C FAROL` : 'E INTERAGIR  ·  F MONTAR  ·  H CORPO  ·  V CURATIVO RÁPIDO  ·  C FAROL', W - 12, H - 7);
     ctx.restore();
     drawCompass(hudDetails?193:101,25,mounted?bike.angle:player.angle);
     if(!hudDetails){
@@ -3461,105 +3558,33 @@
     drawIsoMap(time); drawWorldGroundShadows(time); drawIsoDepthObjects(time, true);
     drawAtmosphere(time, 'world');
     drawDayNightLighting(time);
-    drawDriveHud(time);
+    if(!observingOutside())drawDriveHud(time);
   }
+  const roomInteriorCache = new Map();
+  let roomInteriorScale = 0;
   function drawExplore(time) {
-    // Shared C-03 first-floor layout, adapted to the room's 430x320 game canvas.
-    const palette = {floor:'#252e2b',wall:'#39423d',dark:'#1c2523',light:'#828574',accent:'#b88e5c'};
-    ctx.fillStyle = '#101819'; ctx.fillRect(0, 0, W, H);
-    for (let y = -50; y < H + 60; y += 24) for (let x = -60; x < W + 60; x += 40) {
-      const sx = x + ((y / 24) % 2) * 20, sy = y + Math.sin(time * .7 + x) * .4;
-      ctx.fillStyle = ((x + y) / 24) % 3 ? palette.floor : '#283435';
-      ctx.beginPath(); ctx.moveTo(sx, sy + 12); ctx.lineTo(sx + 20, sy); ctx.lineTo(sx + 40, sy + 12); ctx.lineTo(sx + 20, sy + 24); ctx.closePath(); ctx.fill();
+    const roomType=interiorType(exploreBuilding),safe=isShelter(exploreBuilding);
+    ctx.fillStyle='#101b1d';ctx.fillRect(-gameScene.x,-gameScene.y,DISPLAY_W,DISPLAY_H);
+    // Six house variants plus the cabin; rebuild only when render resolution changes.
+    const scale=RENDER_SCALE;
+    if(roomInteriorScale!==scale){roomInteriorCache.clear();roomInteriorScale=scale;}
+    const key=roomType*2+Number(safe);
+    let artwork=roomInteriorCache.get(key);
+    if(!artwork){
+      artwork=document.createElement('canvas');artwork.width=Math.ceil(430*scale);artwork.height=Math.ceil(320*scale);
+      const painter=artwork.getContext('2d');painter.scale(scale,scale);
+      RoomInteriors.draw(painter,exploreBuilding,{shelter:safe,cabin:isCabin(exploreBuilding)});roomInteriorCache.set(key,artwork);
     }
-    // Room shell, layered walls, fractured masonry, and perspective floor insets.
-    polygon([{x:39,y:190},{x:226,y:67},{x:430,y:185},{x:236,y:306}], '#11191a');
-    polygon([{x:60,y:187},{x:226,y:86},{x:405,y:188},{x:236,y:289}], palette.floor);
-    polygon([{x:44,y:187},{x:226,y:75},{x:236,y:270},{x:44,y:158}], palette.dark);
-    polygon([{x:226,y:75},{x:421,y:187},{x:421,y:154},{x:236,y:42}], palette.wall);
-    polygon([{x:44,y:187},{x:236,y:302},{x:236,y:270},{x:44,y:158}], '#202b2b');
-    polygon([{x:236,y:302},{x:421,y:187},{x:421,y:154},{x:236,y:270}], '#293331');
-    // Broad concrete floor slabs echo the reference room's clean, worn floor.
-    ctx.strokeStyle='#111a18a8';ctx.lineWidth=1;
-    for(let i=1;i<6;i++){const x=60+i*54;ctx.beginPath();ctx.moveTo(x,187-(x-60)*.56);ctx.lineTo(x+42,211+(x-60)*.56);ctx.stroke();}
-    for(let i=1;i<5;i++){const y=187+i*20;ctx.beginPath();ctx.moveTo(60+(y-187)*1.62,y);ctx.lineTo(405-(y-187)*1.62,y);ctx.stroke();}
-    // Slatted window above the sleeping area.
-    polygon([{x:92,y:142},{x:133,y:117},{x:134,y:159},{x:93,y:183}], '#10191a');
-    polygon([{x:96,y:143},{x:130,y:122},{x:130,y:155},{x:97,y:174}], '#ba9868');
-    ctx.fillStyle='#192321';ctx.fillRect(98,141,31,32);ctx.strokeStyle='#876b49';ctx.lineWidth=1;
-    for(let i=0;i<6;i++){const y=145+i*4;ctx.beginPath();ctx.moveTo(98,y);ctx.lineTo(129,y-18);ctx.stroke();}
-    ctx.fillStyle='#d3a96a';ctx.fillRect(99,143,30,2);
-    ctx.fillStyle = '#101718'; ctx.fillRect(219,97,6,170); ctx.fillRect(393,169,6,91);
-    ctx.fillStyle = palette.light; ctx.fillRect(221,98,2,157); ctx.fillRect(395,171,2,82);
-    ctx.strokeStyle = '#806849'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(226,79); ctx.lineTo(249,101); ctx.lineTo(241,119); ctx.lineTo(258,139); ctx.moveTo(396,171); ctx.lineTo(376,185); ctx.lineTo(388,200); ctx.stroke();
-    ctx.strokeStyle = '#756d5c'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(73,151); ctx.lineTo(94,165); ctx.lineTo(106,160); ctx.moveTo(349,145); ctx.lineTo(366,153); ctx.lineTo(384,142); ctx.stroke();
-    // Kitchen run along the back wall: refrigerator, sink, cupboards and stove.
-    polygon([{x:202,y:166},{x:217,y:157},{x:239,y:169},{x:224,y:178}], '#171f1d');
-    polygon([{x:202,y:166},{x:224,y:178},{x:224,y:218},{x:202,y:206}], '#596057');
-    polygon([{x:224,y:178},{x:239,y:169},{x:239,y:209},{x:224,y:218}], '#404942');
-    ctx.strokeStyle='#a09272';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(206,170);ctx.lineTo(206,201);ctx.moveTo(219,181);ctx.lineTo(219,211);ctx.stroke();
-    ctx.fillStyle='#b28e5d';ctx.fillRect(212,184,3,2);
-    polygon([{x:235,y:164},{x:278,y:139},{x:322,y:164},{x:279,y:189}], '#1a2321');
-    polygon([{x:239,y:160},{x:278,y:137},{x:318,y:160},{x:279,y:183}], '#777466');
-    polygon([{x:239,y:160},{x:279,y:183},{x:279,y:202},{x:239,y:179}], '#50574f');
-    polygon([{x:279,y:183},{x:318,y:160},{x:318,y:179},{x:279,y:202}], '#3a433e');
-    // Sink basin and faucet.
-    polygon([{x:249,y:159},{x:267,y:149},{x:287,y:160},{x:269,y:171}], '#303934');
-    polygon([{x:253,y:158},{x:267,y:150},{x:283,y:159},{x:269,y:167}], '#10191a');
-    ctx.strokeStyle='#a3a08c';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(269,151);ctx.lineTo(269,146);ctx.lineTo(274,146);ctx.stroke();
-    // Small cooker on the right end of the counter.
-    polygon([{x:287,y:157},{x:305,y:147},{x:315,y:153},{x:297,y:164}], '#343b36');
-    ctx.strokeStyle='#b3a27b';ctx.lineWidth=1;ctx.beginPath();ctx.arc(298,155,3,0,Math.PI*2);ctx.arc(307,153,3,0,Math.PI*2);ctx.stroke();
-    // Lit extractor hood and overhead cupboard.
-    polygon([{x:248,y:127},{x:284,y:106},{x:313,y:122},{x:277,y:143}], '#242d29');
-    polygon([{x:253,y:124},{x:284,y:106},{x:308,y:119},{x:277,y:137}], '#565b50');
-    ctx.fillStyle='#e0b579';ctx.fillRect(263,139,40,3);ctx.fillStyle='#b98851';ctx.fillRect(260,143,44,2);
-    // Wall shelves with boxes and jars.
-    polygon([{x:324,y:115},{x:347,y:102},{x:374,y:117},{x:351,y:131}], '#222a26');
-    polygon([{x:328,y:112},{x:347,y:101},{x:370,y:114},{x:351,y:126}], '#716b59');
-    polygon([{x:329,y:134},{x:351,y:121},{x:374,y:134},{x:352,y:147}], '#242c28');
-    polygon([{x:333,y:131},{x:351,y:120},{x:370,y:131},{x:352,y:142}], '#7b735e');
-    ctx.fillStyle='#4f493c';ctx.fillRect(343,103,11,9);ctx.fillRect(352,125,8,7);ctx.fillRect(362,128,5,6);
-    ctx.strokeStyle='#9a8a68';ctx.lineWidth=1;ctx.strokeRect(343,103,11,9);ctx.strokeRect(352,125,8,7);
-    // Open stairwell on the right, visibly blocked by a striped safety barrier.
-    polygon([{x:351,y:165},{x:390,y:142},{x:415,y:157},{x:377,y:180}], '#111917');
-    for(let i=0;i<5;i++){
-      const x=365+i*8,y=170-i*5;
-      polygon([{x,y},{x:x+27,y:y-16},{x:x+34,y:y-12},{x:x+7,y:y+4}], '#555a50');
-      polygon([{x,y},{x:x+7,y:y+4},{x:x+7,y:y+9},{x,y:y+5}], '#343c37');
-    }
-    ctx.strokeStyle='#7b7b69';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(365,168);ctx.lineTo(397,149);ctx.moveTo(366,176);ctx.lineTo(398,157);ctx.stroke();
-    ctx.fillStyle='#b9a174';ctx.font='5px monospace';ctx.textAlign='center';ctx.fillText('↑ 2º ANDAR',389,158);
-    ctx.strokeStyle='#c49a57';ctx.lineWidth=4;ctx.setLineDash([5,3]);ctx.beginPath();ctx.moveTo(354,188);ctx.lineTo(397,164);ctx.stroke();ctx.setLineDash([]);
-    ctx.fillStyle='#ddd1b1';ctx.fillRect(372,175,13,11);ctx.fillStyle='#8f4940';ctx.beginPath();ctx.arc(378,180,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ddd1b1';ctx.fillRect(376,179,4,2);
-    // Low storage rack and stacked crates along the near right wall.
-    ctx.fillStyle='#292f2a';ctx.fillRect(339,222,4,29);ctx.fillRect(378,200,4,29);ctx.fillRect(338,228,42,3);ctx.fillRect(338,240,42,3);
-    ctx.strokeStyle='#777362';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(339,228);ctx.lineTo(379,205);ctx.moveTo(339,240);ctx.lineTo(379,217);ctx.stroke();
-    for(const [x,y] of [[345,219],[359,212],[366,231],[347,234]]){
-      polygon([{x,y},{x:x+10,y:y-6},{x:x+20,y:y},{x:x+10,y:y+6}], '#6a604d');
-      polygon([{x,y},{x:x+10,y:y+6},{x:x+10,y:y+14},{x,y:y+8}], '#49483d');
-      polygon([{x:x+10,y:y+6},{x:x+20,y:y},{x:x+20,y:y+8},{x:x+10,y:y+14}], '#393d35');
-    }
-    // The exit is a real doorway in the near wall, with a lit threshold to guide return.
-    polygon([{x:58,y:181},{x:79,y:168},{x:99,y:180},{x:99,y:207},{x:79,y:220},{x:58,y:207}], '#111819');
-    polygon([{x:64,y:183},{x:79,y:174},{x:93,y:182},{x:93,y:202},{x:79,y:212},{x:64,y:203}], '#080e10');
-    ctx.strokeStyle = '#a78659'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(63,203); ctx.lineTo(79,213); ctx.lineTo(94,203); ctx.stroke();
-    ctx.fillStyle = Math.sin(time * 5) > 0 ? '#e1bd78' : '#876c4d'; ctx.fillRect(77,210,4,2);
-    ctx.fillStyle = '#b8b39a'; ctx.font = '5px monospace'; ctx.textAlign = 'center'; ctx.fillText('PORTA',79,166);
-    // Shared salvage table: every discoverable food or fuel item is placed on top.
-    ctx.fillStyle = '#080d0e99'; ctx.beginPath(); ctx.ellipse(322,244,39,9,0,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#302a22'; ctx.fillRect(297,225,5,22); ctx.fillRect(341,225,5,21); ctx.fillRect(309,234,4,13); ctx.fillRect(332,234,4,12);
-    polygon([{x:288,y:220},{x:320,y:200},{x:355,y:220},{x:323,y:241}], '#17201e');
-    polygon([{x:291,y:217},{x:320,y:199},{x:351,y:217},{x:322,y:236}], '#80664a');
-    polygon([{x:291,y:217},{x:322,y:236},{x:322,y:241},{x:291,y:222}], '#4a3b2d');
-    polygon([{x:322,y:236},{x:351,y:217},{x:351,y:222},{x:322,y:241}], '#594530');
-    ctx.strokeStyle = '#b18d61'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(298,217); ctx.lineTo(321,231); ctx.lineTo(344,217); ctx.stroke();
-    // Mug and loose papers on the dining table, as in the C-03 reference.
-    ctx.fillStyle='#3d3328';ctx.fillRect(309,207,5,6);ctx.fillStyle='#8d8875';ctx.fillRect(309,206,5,2);ctx.strokeStyle='#8d8875';ctx.lineWidth=1;ctx.beginPath();ctx.arc(314,210,2,Math.PI*1.5,Math.PI*.5);ctx.stroke();
-    polygon([{x:327,y:210},{x:337,y:204},{x:345,y:209},{x:335,y:215}], '#b4aa8f');
-    ctx.strokeStyle='#696858';ctx.beginPath();ctx.moveTo(330,210);ctx.lineTo(338,206);ctx.moveTo(333,212);ctx.lineTo(341,208);ctx.stroke();
+    ctx.drawImage(artwork,0,0,artwork.width,artwork.height,0,0,artwork.width/scale,artwork.height/scale);
     const supply = supplies[exploreBuilding];
-    if (supply && supply.available && !supply.found) {
+    if(supply?.type==='station'){
+      for(const [type,x,y] of [['toolkit',322,211],['water',245,235],['ration',190,170]]){
+        if(!supply.stock[type])continue;
+        drawExploreSupply(type,x,y,time);
+        if(!checkpointReturn&&Math.hypot(explorer.x-x,explorer.y-y)<20)collectStationSupply(supply,type);
+      }
+      hint('POSTO - FERRAMENTAS, AGUA E COMIDA | T ABASTECE LA FORA',W/2,43,time);
+    }else if (supply && supply.available && !supply.found) {
       const sx = 322 + Math.sin(time * .6) * 3, sy = 211;
       drawExploreSupply(supply.type, sx, sy, time);
       if (!checkpointReturn&&Math.hypot(explorer.x - sx, explorer.y - sy) < 20) {
@@ -3572,39 +3597,25 @@
         else { hunger = Math.min(100, hunger + 21); setToast('ENLATADO ENCONTRADO — FOME REDUZIDA'); }
       }
     }
-    if(isShelter(exploreBuilding)){
-      // Bright, clearly recognizable bed reserved for the safe-base room.
-      ctx.fillStyle='#080d0eaa';ctx.beginPath();ctx.ellipse(153,220,53,13,0,0,Math.PI*2);ctx.fill();
-      polygon([{x:105,y:199},{x:151,y:172},{x:207,y:203},{x:160,y:231}], '#292e2a');
-      polygon([{x:110,y:192},{x:151,y:168},{x:201,y:196},{x:160,y:224}], '#b9b29c');
-      polygon([{x:110,y:192},{x:160,y:224},{x:160,y:236},{x:110,y:204}], '#625d50');
-      polygon([{x:160,y:224},{x:201,y:196},{x:201,y:208},{x:160,y:236}], '#44483f');
-      polygon([{x:117,y:189},{x:141,y:175},{x:159,y:185},{x:135,y:200}], '#eee5ca');
-      polygon([{x:143,y:187},{x:160,y:177},{x:194,y:196},{x:161,y:216}], '#758579');
-      ctx.strokeStyle='#bba77e';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(114,198);ctx.lineTo(159,225);ctx.lineTo(198,202);ctx.stroke();
-      ctx.fillStyle='#d2b579';ctx.font='bold 6px monospace';ctx.textAlign='center';ctx.fillText('CAMA',155,164);
-      ctx.fillStyle='#d0bd8d';ctx.fillRect(130,229,2,2);ctx.fillRect(178,229,2,2);
-    }
     ctx.save();
-    drawRoomMoss(true);
+    const roomCreatures=safe?[]:mossEcology.entities.filter(entity=>entity.indoors&&entity.home===exploreBuilding)
+      .sort((a,b)=>a.roomY-b.roomY);
+    drawRoomMoss(true,roomCreatures);
     const p = { x: explorer.x, y: explorer.y };
     const angle=explorer.angle??Math.PI,gait=applyReturnPose(explorer,angle,explorer.gait);
     ctx.fillStyle = '#080d0e88'; ctx.beginPath(); ctx.ellipse(p.x,p.y + 5,8*ACTOR_VISUAL_SCALE,4*ACTOR_VISUAL_SCALE,0,0,Math.PI*2); ctx.fill();
     drawPerson(p.x,p.y,angle,time,!!gait&&gait.stage!=='idle',false,gait);
-    drawRoomMoss(false);
+    drawRoomMoss(false,roomCreatures);
     ctx.restore();
-    drawAtmosphere(time, 'world');
     if(hudDetails){
-      panel(10, 9, 180, 33, '#101a1deF', '#667a6e'); ctx.fillStyle = '#83d8bd'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.fillText('C-03 · INTERIOR (1º ANDAR)', 18, 22); ctx.fillStyle = '#9da99a'; ctx.fillText(Math.hypot(explorer.x - 78, explorer.y - 200) < 42 ? 'E  SAIR PELA PORTA' : 'PROCURE A PORTA PARA SAIR', 18, 34);
+      panel(10, 9, 180, 33, '#101a1deF', '#667a6e'); ctx.fillStyle = '#83d8bd'; ctx.font = '6px monospace'; ctx.textAlign = 'left'; ctx.fillText(isGasStation(exploreBuilding)?'LOJA DO POSTO':RoomInteriors.TYPES[roomType].name, 18, 22); ctx.fillStyle = '#9da99a'; ctx.fillText(Math.hypot(explorer.x - 78, explorer.y - 200) < 42 ? 'E  SAIR PELA PORTA' : 'PROCURE A PORTA PARA SAIR', 18, 34);
     }
     if (isShelter(exploreBuilding)&&Math.hypot(explorer.x - 153, explorer.y - 200) < 38) hint('E  DORMIR NA CAMA · Z  DESCANSO', W / 2, 43, time);
     else if (Math.hypot(explorer.x - 78, explorer.y - 200) < 42) hint('E  SAIR PELA PORTA', W / 2, 43, time);
     drawSurvivalHud();
   }
-  function drawRoomMoss(behind){
-    if(isShelter(exploreBuilding))return;
-    for(const creature of mossEcology.entities.filter(entity=>entity.indoors&&entity.home===exploreBuilding)
-      .sort((a,b)=>a.roomY-b.roomY)){
+  function drawRoomMoss(behind,creatures){
+    for(const creature of creatures){
       if((creature.roomY<=explorer.y)!==behind)continue;
       mossRenderer.draw(ctx,creature,creature.roomX,creature.roomY,creature.roomAngle,creature.roomPhase);
     }
@@ -3715,9 +3726,12 @@
     ctx.restore();
   }
   function drawSurvivalHud() {
+    // Keep status panels anchored to the display, including the smaller interior scene.
+    const W=DISPLAY_W,H=DISPLAY_H;
     const riding=bikeControlsMounted(),bounds=bikeDashboardBounds(),w=110,x=W-w-12;
-    const top=riding?bounds.y-29:H-42,barWidth=w-53;
-    ctx.save();panel(x,top,w,23,'#101f23bb','#506f6866');ctx.font='5px monospace';
+    const top=riding?bounds.y+gameScene.y-29:H-42,barWidth=w-53;
+    ctx.save();ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);
+    panel(x,top,w,23,'#101f23bb','#506f6866');ctx.font='5px monospace';
     const meters=[['FOME',hunger,'#c69d6d'],['SEDE',thirst,'#78b9b0']];
     meters.forEach(([name,value,color],i)=>{
       const y=top+9+i*9;ctx.textAlign='left';ctx.fillStyle='#9ba99d';ctx.fillText(name,x+5,y);
@@ -3725,8 +3739,18 @@
       ctx.textAlign='right';ctx.fillStyle='#cedbce';ctx.fillText(String(Math.round(value)),x+w-5,y);
     });
     const status=characterHealth.status();
-    ctx.textAlign='left';ctx.font='6px monospace';ctx.fillStyle='#dbe6dc';ctx.fillText('VIDA '+Math.ceil(status.health)+' / '+status.maxHealth,12,H-77);
-    ctx.fillStyle='#25322f';ctx.fillRect(12,H-72,110,7);ctx.fillStyle=status.health<status.maxHealth*.3?'#ee806e':'#83d8a5';ctx.fillRect(13,H-71,108*status.health/status.maxHealth,5);
+    const lowHealth=status.health<=status.maxHealth*.3;
+    const healthColor=lowHealth?'#ff806e':status.health<=status.maxHealth*.6?'#f2c478':'#83d8a5';
+    const healthY=H-98;
+    panel(8,healthY,150,51,lowHealth?'#391b20ee':'#101f23ee',healthColor);
+    ctx.textAlign='left';ctx.font='bold 9px monospace';ctx.fillStyle=healthColor;
+    ctx.fillText('VIDA',15,healthY+14);
+    ctx.textAlign='right';ctx.font='bold 13px monospace';ctx.fillText(Math.ceil(status.health)+' / '+status.maxHealth,151,healthY+15);
+    ctx.fillStyle='#25322f';ctx.fillRect(15,healthY+21,136,10);
+    ctx.fillStyle=healthColor;ctx.fillRect(16,healthY+22,134*Math.max(0,Math.min(1,status.health/status.maxHealth)),8);
+    ctx.textAlign='left';ctx.font='6px monospace';
+    ctx.globalAlpha=lowHealth?.65+.35*Math.sin(gameTime*6)**2:1;
+    ctx.fillText(lowHealth?'VIDA BAIXA - H: SAUDE':'H: SAUDE / FERIMENTOS',15,healthY+43);
     ctx.restore();
   }
   function drawAtmosphere(time, view) {
@@ -3817,7 +3841,7 @@
     const limit=bikeGearSpeedLimit();
     const targetSpeed=fuel<=0||bikeLife<=0?0:keys.has('w')?limit:keys.has('s')?Math.min(38,limit):Math.min(100,limit);
     chaseSpeed += (targetSpeed - chaseSpeed) * Math.min(1, dt * 2.8 * condition);
-    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.08/(1+upgrades.fuel*.25));
+    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.12/(1+upgrades.fuel*.25));
     chaseProgress += chaseSpeed * dt;
     chaseElapsed += dt;
     const tower = active(), machineSpeed = [151,159,167,188,126][tower.design]*.8;
@@ -4242,7 +4266,7 @@
   }
 
   function finishFrame(time, dt) {
-    gameScene=gameSceneViewport(state);W=gameScene.width;H=gameScene.height;
+    gameScene=gameSceneViewport(observingOutside()?'drive':state);W=gameScene.width;H=gameScene.height;
     ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);
     ctx.fillStyle='#101819';ctx.fillRect(0,0,DISPLAY_W,DISPLAY_H);
     ctx.translate(gameScene.x,gameScene.y);
@@ -4250,10 +4274,9 @@
     if (state === 'title') { drawWorld(time, dt); }
     else if (state === 'drive') drawWorld(time, dt);
     else if (state === 'explore') {
-      if(shelterView==='observe'&&inSafeShelter()){
+      if(observingOutside()){
         const saved={x:camera.x,y:camera.y},door=buildingDoor(exploreBuilding);
         camera.x=door.x;camera.y=door.y;drawWorld(time,0);Object.assign(camera,saved);
-        ctx.fillStyle='#020809';ctx.fillRect(0,0,W,45);ctx.fillRect(0,H-132,W,132);
       }else drawExplore(time);
     }
     else if (state === 'chase') drawChase(time);
@@ -4289,7 +4312,7 @@
   }
 
   function frame(now) {
-    gameScene=gameSceneViewport(state);W=gameScene.width;H=gameScene.height;
+    gameScene=gameSceneViewport(observingOutside()?'drive':state);W=gameScene.width;H=gameScene.height;
     if(lastTime)gameDisplay.sampleFrame(now-lastTime);
     if (!lastTime) lastTime = now;
     const dt = Math.min(.045, (now - lastTime) / 1000); lastTime = now;
@@ -4307,7 +4330,9 @@
     if(state!=='title'&&state!=='ending')updateBikeFuelTrail(dt);
     updateMachines(gameTime);
     const metabolism=characterHealth.status().metabolism;
-    hunger = Math.max(0, hunger - dt * .035*metabolism); thirst = Math.max(0, thirst - dt * .06*metabolism);
+    const resourceRate=shelterLife.restfulSleep?6:shelterLife.sleeping?4:1;
+    hunger = Math.max(0, hunger - dt * .0525*metabolism*resourceRate); thirst = Math.max(0, thirst - dt * .09*metabolism*resourceRate);
+    if(bikeEngineRunning&&fuel>0)fuel=Math.max(0,fuel-dt*.10*resourceRate/(1+upgrades.fuel*.25));
     if(checkpointReturn){
       advanceCheckpointReturn(dt);
       finishFrame(gameTime,dt);
@@ -4341,7 +4366,7 @@
       // Engine braking brings a downshift into its new range without teleporting speed.
       if(bike.speed>maxForward)bike.speed=Math.max(maxForward,bike.speed-dt*260);
       bike.speed=Math.max(-48,bike.speed);
-      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.25)*(reverse?.045:.11)*(1+(100-bikeParts.motor)/38));
+      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.25)*(reverse?.0675:.165)*(1+(100-bikeParts.motor)/38));
       const travelSpeed=(previousSpeed+bike.speed)/2;
       const steeringDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt)*characterHealth.status().handling;
       const turnDelta=bikeWorldTurnDelta(bike.angle,steeringDelta);

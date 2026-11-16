@@ -1,7 +1,7 @@
 /* Character care window, using the workshop's muted purple and brass palette. */
 function createCharacterHealthPanel({container,model,onOpen=()=>{},onClose=()=>{}}){
   const launcher=document.createElement('button');launcher.className='health-launcher';launcher.type='button';launcher.hidden=true;
-  launcher.title='Saúde do personagem (J)';launcher.setAttribute('aria-controls','character-health-panel');
+  launcher.title='Saúde do personagem (H)';launcher.setAttribute('aria-controls','character-health-panel');
   const panel=document.createElement('section');panel.id='character-health-panel';panel.className='character-health-panel';panel.hidden=true;
   panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Saúde do personagem');
   panel.innerHTML=`<header class="health-titlebar"><span><b>+</b> PERSONAGEM <small>SAÚDE E PRIMEIROS SOCORROS</small></span><button type="button" data-close aria-label="Fechar saúde">×</button></header>
@@ -22,7 +22,7 @@ function createCharacterHealthPanel({container,model,onOpen=()=>{},onClose=()=>{
       <div class="health-section-label health-care-label">CUIDADO <span>Ferimentos cicatrizam sozinhos</span></div><div class="health-actions"></div><p class="health-action-hint"></p>
       <div class="health-treatment" hidden><div><span data-treatment-name></span><button type="button" data-cancel>Cancelar</button></div><progress max="1" value="0"></progress></div>
       <div class="health-inventory"><small>VIDA E ITENS</small><div data-materials></div></div>
-    </section></div><footer><span data-overall></span><small>J fecha · Esc cancela · 1–7 selecionam · mover interrompe o cuidado</small></footer>`;
+    </section></div><footer><span data-overall></span><small>H fecha · Esc cancela · 1–7 selecionam · mover interrompe o cuidado</small></footer>`;
   container.append(panel);
   let selected='chest',context={moving:false},elapsed=0,available=false,drag=null;
   const partList=panel.querySelector('.health-part-list'),actionList=panel.querySelector('.health-actions');
