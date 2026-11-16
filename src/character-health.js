@@ -101,7 +101,8 @@
     }
     function start(kind,part,context={}){
       const allowed=eligibility(kind,part,context);if(!allowed.ok){onNotice(allowed.reason);return false;}
-      const job=ACTIONS[kind];action={kind,part,elapsed:0,duration:job.duration/status().dexterity};return true;
+      const treatmentBonus=kind==='painkiller'?0:Math.min(3,context.treatmentBonus||0);
+      const job=ACTIONS[kind];action={kind,part,elapsed:0,duration:job.duration/((status().dexterity)*(1+treatmentBonus*.05))};return true;
     }
     function cancel(message='Tratamento cancelado. Nenhum material consumido.'){
       if(!action)return false;action=null;onNotice(message);return true;
@@ -159,7 +160,7 @@
       if(!wound){onNotice('Sem sangramento ativo para estancar.');return false;}
       if(items.bandages<=0){onNotice('Sem bandagens.');return false;}
       cancel();items.bandages--;wound.bandage={age:60,dirty:false};
-      onNotice('Curativo rápido aplicado. Troque e limpe o ferimento no abrigo.');return true;
+      onNotice('Curativo aplicado; sangramento controlado.');return true;
     }
     function restock(){items.bandages+=3;items.antiseptic+=2;items.painkillers++;if(random()<.4)items.splints++;onNotice('Primeiros socorros: +3 bandagens, +2 antissépticos e +1 analgésico.');}
     function stabilize(){

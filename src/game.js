@@ -370,12 +370,21 @@
   const objectiveNode = document.querySelector('#objective');
   const objectiveIndex = document.querySelector('#objective-index');
   const keys = new Set();
-  const upgrades={fuel:0,armor:0,health:0,kick:0};
+  const upgrades={fuel:0,armor:0,kick:0,treatment:0,stamina:0,survival:0};
+  const upgradeOptions=[
+    {id:'fuel',title:'MOTORISTA',detail:'Consumo da moto -5%',max:3},
+    {id:'armor',title:'MOTO REFORÇADA',detail:'Dano à moto -5%',max:3},
+    {id:'treatment',title:'SOCORRISTA',detail:'Tratamentos 5% mais rápidos',max:3},
+    {id:'stamina',title:'FÔLEGO',detail:'Corrida 5% mais rápida',max:3},
+    {id:'survival',title:'RACIONAMENTO',detail:'Fome e sede caem 5% mais devagar',max:3},
+    {id:'kick',title:'AUTODEFESA',detail:'Chute alcança mais longe',max:3}
+  ];
+  let offeredUpgrades=[];
   const characterHealth=CharacterHealth.create({onNotice:message=>setToast(message)});
   const healthPanel=createCharacterHealthPanel({container:canvas.parentElement,model:characterHealth,onOpen:()=>{keys.clear();stopBikeDrag();}});
   function healthCareContext(){
     return {available:['drive','explore'].includes(state)&&!mounted&&!ignition.active&&!bikeInspectOpen&&!checkpointReturn&&playerKnockdown<=0,
-      moving:['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(key=>keys.has(key)),running:keys.has('shift'),hunger,thirst};
+      moving:['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].some(key=>keys.has(key)),running:keys.has('shift'),hunger,thirst,treatmentBonus:upgrades.treatment};
   }
   let creatureHitCooldown=0,creatureBikeCooldown=0,playerKnockdown=0,knockdownAngle=0;
   function woundCharacter(source,severity=1){
@@ -457,6 +466,7 @@
   let hackStep = 0;
   let hackTime = 0;
   let hackMode = 'question';
+  let pendingUpgradeChoice=false;
   let chaseProgress = 0;
   let chaseSpeed = 105;
   let chaseLag = 90;
@@ -1295,14 +1305,23 @@
   function completeHack() {
     const tower = active();
     tower.disabled = true; network++; activeTower = towers.findIndex(t => !t.disabled); approachedByBike = false;
-    flash = 1; state = active() ? 'drive' : 'ending'; mounted = false; bike.speed = 0;
+    offeredUpgrades=upgradeOptions.filter(option=>upgrades[option.id]<option.max).sort(()=>Math.random()-.5).slice(0,4);
+    flash = 1; state = 'hack'; hackMode='upgrade'; pendingUpgradeChoice=true; mounted = false; bike.speed = 0;
     creatureHitCooldown=Math.max(creatureHitCooldown,4);
     keys.clear();
-    setToast(active() ? `${tower.name} CONCLUÍDO — SINAL RESTAURADO` : 'REDE RESTAURADA — A HUMANIDADE VOLTOU A OUVIR', 4);
-    if (active()) updateObjective(); else setObjective('Rede restaurada. O mundo voltou a responder.', towers.length - 1);
+    setToast(`${tower.name} CONCLUÍDO — ESCOLHA UM APRIMORAMENTO`, 4);
+  }
+  function chooseUpgrade(choice){
+    if(state!=='hack'||hackMode!=='upgrade'||!pendingUpgradeChoice||!Number.isInteger(choice)||choice<0||choice>=offeredUpgrades.length)return;
+    pendingUpgradeChoice=false;
+    const chosen=offeredUpgrades[choice];upgrades[chosen.id]=Math.min(chosen.max,upgrades[chosen.id]+1);setToast(`${chosen.title}: ${chosen.detail.toUpperCase()}`);
+    offeredUpgrades=[];
+    flash=1;state=active()?'drive':'ending';hackMode='question';
+    if(active())updateObjective();else setObjective('Rede restaurada. O mundo voltou a responder.', towers.length - 1);
   }
   function hackInput(choice) {
     if (state !== 'hack' || choice < 0 || choice > 3) return;
+    if(hackMode==='upgrade'){chooseUpgrade(choice);return;}
     if (hackMode === 'question') {
       const question = networkQuestions[activeTower][hackStep];
       if (choice === question.ok) {
@@ -1315,7 +1334,10 @@
   function handleHackPointer(event) {
     if (state !== 'hack') return;
     const {x,y}=bikeCanvasPointer(event);
-    if (hackMode === 'question') {
+    if (hackMode === 'upgrade') {
+      const choice=Math.floor((y-104)/31);
+      if(x>=75&&x<=405&&y>=104&&y<228&&choice>=0&&choice<offeredUpgrades.length)chooseUpgrade(choice);
+    } else if (hackMode === 'question') {
       const choice = Math.floor((y - 108) / 27);
       if (x >= 107 && x <= 373 && y<213 && choice >= 0 && choice < 4) hackInput(choice);
     }
@@ -1363,7 +1385,8 @@
       return;
     }
     if (state === 'hack') {
-      if (['1','2','3','4'].includes(key) && !e.repeat) hackInput(Number(key) - 1);
+      if(hackMode==='upgrade'&&['1','2','3','4'].includes(key)&&!e.repeat)chooseUpgrade(Number(key)-1);
+      else if (['1','2','3','4'].includes(key) && !e.repeat) hackInput(Number(key) - 1);
       return;
     }
     if (state === 'explore' && key === 'e' && !e.repeat) { interact(); return; }
@@ -1954,7 +1977,7 @@
     return .35*bikeHoleSeverity()**2;
   }
   function damageBikePart(part, amount, impact = false) {
-    amount/=1+upgrades.armor*.3;
+    amount/=1+upgrades.armor*.05;
     if (impact) {
       const faults=bikeFaults[part].map((value,index)=>value>0?index:-1).filter(index=>index>=0);
       if(!faults.length)return;
@@ -1964,7 +1987,7 @@
     bikeParts[part] = bikeFaults[part].reduce((a,b)=>a+b,0)/4;
   }
   function updateBikeCondition(dt,speed=0) {
-    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt*1.5/(1+upgrades.fuel*.25));
+    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt*1.5/(1+upgrades.fuel*.05));
     if(fuel<=0)bikeEngineRunning=false;
     bikeCrashCooldown=Math.max(0,bikeCrashCooldown-dt);
     const moving=Math.abs(speed)>8;
@@ -1973,7 +1996,7 @@
     const wear=dt*(moving?.002+Math.min(1,Math.abs(speed)/150)*.002:.0001);
     const rates={motor:1,handlebar:.6,frontTire:1.2,rearTire:1.3};
     Object.keys(bikeParts).forEach(part=>damageBikePart(part,wear*rates[part]));
-    bikeLife=Math.max(0,bikeLife-wear*.5/(1+upgrades.armor*.3));
+    bikeLife=Math.max(0,bikeLife-wear*.5/(1+upgrades.armor*.05));
   }
   function bikeImpactDamage(speed,clearance=0){
     const ratio=Math.min(1.5,Math.abs(speed)/180),proximity=1-Math.min(1,Math.max(0,clearance)/80);
@@ -1986,7 +2009,7 @@
     const part=parts[Math.floor(Math.random()*parts.length)],before=bikeParts[part];
     const amount=bikeImpactDamage(speed,clearance);
     damageBikePart(part,amount,true);
-    bikeLife=Math.max(0,bikeLife-amount*.8/(1+upgrades.armor*.3));bikeCrashCooldown=1.2;
+    bikeLife=Math.max(0,bikeLife-amount*.8/(1+upgrades.armor*.05));bikeCrashCooldown=1.2;
     const loss=before-bikeParts[part];
     setToast(label+' · '+bikePartNames[part]+' −'+loss.toFixed(1)+'% · inspecione com E');
     return true;
@@ -2013,7 +2036,7 @@
       const part=parts[Math.floor(Math.random()*parts.length)];
       damageBikePart(part,profile.bikeDamage,true);label=bikePartNames[part];
     }
-    bikeLife=Math.max(0,bikeLife-profile.bikeDamage*.6/(1+upgrades.armor*.3));
+    bikeLife=Math.max(0,bikeLife-profile.bikeDamage*.6/(1+upgrades.armor*.05));
     creatureBikeCooldown=1.2;
     if(bikeLife<=0){bikeEngineRunning=false;bikeRpm=0;bike.speed=0;}
     return label;
@@ -3192,7 +3215,7 @@
   }
   const FOOT_WALK_KMH=16,FOOT_RUN_KMH=35;
   function footSpeedMultiplier() {
-    return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?Math.max(1,FOOT_RUN_KMH/FOOT_WALK_KMH*(typeof characterHealth==='undefined'?1:characterHealth.status().sprint)):1;
+    return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?Math.max(1,FOOT_RUN_KMH/FOOT_WALK_KMH*(typeof characterHealth==='undefined'?1:characterHealth.status().sprint))*(1+upgrades.stamina*.025):1;
   }
   function footWalkSpeed() {
     const condition=.55+.45*Math.min(hunger,thirst)/100;
@@ -3908,7 +3931,7 @@
     const limit=bikeGearSpeedLimit();
     const targetSpeed=fuel<=0||bikeLife<=0?0:keys.has('w')?limit:keys.has('s')?Math.min(38,limit):Math.min(100,limit);
     chaseSpeed += (targetSpeed - chaseSpeed) * Math.min(1, dt * 2.8 * condition);
-    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.10/(1+upgrades.fuel*.25));
+    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.10/(1+upgrades.fuel*.05));
     chaseProgress += chaseSpeed * dt;
     chaseElapsed += dt;
     const tower = active(), machineSpeed = [151,159,167,188,126][tower.design]*.8;
@@ -4186,6 +4209,17 @@
     ctx.fillStyle = '#071012ce'; ctx.fillRect(0, 0, W, H);
     panel(67, 43, 346, 205, '#142324', '#81d4b1');
     ctx.textAlign = 'center'; ctx.fillStyle = '#9ddfc1'; ctx.font = '8px monospace';
+    if(hackMode==='upgrade'){
+      ctx.fillText('ESCOLHA UM APRIMORAMENTO',W/2,72);
+      ctx.fillStyle='#82968b';ctx.font='6px monospace';ctx.fillText('RECOMPENSA POR RESTAURAR O TERMINAL',W/2,91);
+      offeredUpgrades.forEach((option,i)=>{
+        const y=103+i*31;ctx.fillStyle='#202f2e';ctx.fillRect(75,y,330,26);ctx.strokeStyle='#70b596';ctx.strokeRect(75.5,y+.5,329,25);
+        ctx.fillStyle='#d5b576';ctx.font='7px monospace';ctx.textAlign='left';ctx.fillText(`${i+1}. ${option.title}`,84,y+11);
+        ctx.fillStyle='#dce5d8';ctx.font='6px monospace';ctx.fillText(option.detail,84,y+21);
+      });
+      ctx.fillStyle='#8fa59b';ctx.font='6px monospace';ctx.textAlign='center';ctx.fillText('ESCOLHA COM 1 A 4 OU TOQUE',W/2,239);
+      return;
+    }
     if (hackMode === 'question') {
       const question=networkQuestions[activeTower][hackStep];
       ctx.fillText('DIAGNOSTICO - REDES', W / 2, 62);
@@ -4206,7 +4240,7 @@
     if (state === 'hack') {
       if(climber.gait)updateFootGait(climber.gait,0,climber.spriteAngle,82,dt,spriteAtlas.survivor.walk);
       hackTime -= dt/characterHealth.status().focus;
-      if (hackTime <= 0) { state = 'drive'; keys.clear(); hackStep = 0; hackTime = 90; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
+      if (hackTime <= 0&&!pendingUpgradeChoice) { state = 'drive'; keys.clear(); hackStep = 0; hackTime = 90; setToast('TEMPO ESGOTADO — REINICIE O DIAGNÓSTICO'); }
       return;
     }
     const left = keys.has('a') || keys.has('arrowleft'); const right = keys.has('d') || keys.has('arrowright');
@@ -4397,9 +4431,9 @@
     if(state!=='title'&&state!=='ending')updateBikeFuelTrail(dt);
     updateMachines(gameTime);
     const metabolism=characterHealth.status().metabolism;
-    const resourceRate=shelterLife.restfulSleep?8:shelterLife.sleeping||observingAtRest()?4:1;
+    const resourceRate=(shelterLife.restfulSleep?8:shelterLife.sleeping||observingAtRest()?4:1)/(1+upgrades.survival*.05);
     hunger = Math.max(0, hunger - dt * .0525*metabolism*resourceRate); thirst = Math.max(0, thirst - dt * .09*metabolism*resourceRate);
-    if(bikeEngineRunning&&fuel>0)fuel=Math.max(0,fuel-dt*.035*resourceRate/(1+upgrades.fuel*.25));
+    if(bikeEngineRunning&&fuel>0)fuel=Math.max(0,fuel-dt*.035*resourceRate/(1+upgrades.fuel*.05));
     if(checkpointReturn){
       advanceCheckpointReturn(dt);
       finishFrame(gameTime,dt);
@@ -4433,7 +4467,7 @@
       // Engine braking brings a downshift into its new range without teleporting speed.
       if(bike.speed>maxForward)bike.speed=Math.max(maxForward,bike.speed-dt*260);
       bike.speed=Math.max(-48,bike.speed);
-      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.25)*(reverse?.060:.150)*(1+(100-bikeParts.motor)/38));
+      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.05)*(reverse?.060:.150)*(1+(100-bikeParts.motor)/38));
       const travelSpeed=(previousSpeed+bike.speed)/2;
       const steeringDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt)*characterHealth.status().handling;
       const turnDelta=bikeWorldTurnDelta(bike.angle,steeringDelta);
