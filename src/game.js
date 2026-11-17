@@ -3573,7 +3573,7 @@
     if(station>=0)hint('T ABASTECER',W/2,55,time);
     ctx.save();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · B ISCA · H CORPO · C FAROL · M MAPA` : 'E INTERAGIR · F MONTAR · B ISCA · H CORPO · V CURATIVO · C FAROL · M MAPA', W - 12, H - 7);
+    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · B USAR ISCA · H CORPO · C FAROL · M MAPA` : 'E INTERAGIR · F MONTAR · B USAR ISCA · H CORPO · V CURATIVO · C FAROL · M MAPA', W - 12, H - 7);
     ctx.restore();
     drawCompass(hudDetails?193:101,25,mounted?bike.angle:player.angle);
     if(!hudDetails){
