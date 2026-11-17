@@ -372,11 +372,11 @@
   const keys = new Set();
   const upgrades={fuel:0,armor:0,kick:0,treatment:0,stamina:0,survival:0};
   const upgradeOptions=[
-    {id:'fuel',title:'MOTORISTA',detail:'Consumo da moto -5%',max:3},
-    {id:'armor',title:'MOTO REFORÇADA',detail:'Dano à moto -5%',max:3},
-    {id:'treatment',title:'SOCORRISTA',detail:'Tratamentos 5% mais rápidos',max:3},
-    {id:'stamina',title:'FÔLEGO',detail:'Corrida 5% mais rápida',max:3},
-    {id:'survival',title:'RACIONAMENTO',detail:'Fome e sede caem 5% mais devagar',max:3},
+    {id:'fuel',title:'MOTORISTA',detail:'Consumo da moto -10%',max:3},
+    {id:'armor',title:'MOTO REFORÇADA',detail:'Dano à moto -10%',max:3},
+    {id:'treatment',title:'SOCORRISTA',detail:'Tratamentos 10% mais rápidos',max:3},
+    {id:'stamina',title:'FÔLEGO',detail:'Corrida 10% mais rápida',max:3},
+    {id:'survival',title:'RACIONAMENTO',detail:'Fome e sede caem 10% mais devagar',max:3},
     {id:'kick',title:'AUTODEFESA',detail:'Chute alcança mais longe',max:3}
   ];
   let offeredUpgrades=[];
@@ -1977,7 +1977,7 @@
     return .35*bikeHoleSeverity()**2;
   }
   function damageBikePart(part, amount, impact = false) {
-    amount/=1+upgrades.armor*.05;
+    amount/=1+upgrades.armor*.10;
     if (impact) {
       const faults=bikeFaults[part].map((value,index)=>value>0?index:-1).filter(index=>index>=0);
       if(!faults.length)return;
@@ -1987,7 +1987,7 @@
     bikeParts[part] = bikeFaults[part].reduce((a,b)=>a+b,0)/4;
   }
   function updateBikeCondition(dt,speed=0) {
-    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt*1.5/(1+upgrades.fuel*.05));
+    fuel=Math.max(0,fuel-bikeFuelLeakRate()*dt*1.5/(1+upgrades.fuel*.10));
     if(fuel<=0)bikeEngineRunning=false;
     bikeCrashCooldown=Math.max(0,bikeCrashCooldown-dt);
     const moving=Math.abs(speed)>8;
@@ -1996,7 +1996,7 @@
     const wear=dt*(moving?.002+Math.min(1,Math.abs(speed)/150)*.002:.0001);
     const rates={motor:1,handlebar:.6,frontTire:1.2,rearTire:1.3};
     Object.keys(bikeParts).forEach(part=>damageBikePart(part,wear*rates[part]));
-    bikeLife=Math.max(0,bikeLife-wear*.5/(1+upgrades.armor*.05));
+    bikeLife=Math.max(0,bikeLife-wear*.5/(1+upgrades.armor*.10));
   }
   function bikeImpactDamage(speed,clearance=0){
     const ratio=Math.min(1.5,Math.abs(speed)/180),proximity=1-Math.min(1,Math.max(0,clearance)/80);
@@ -2009,7 +2009,7 @@
     const part=parts[Math.floor(Math.random()*parts.length)],before=bikeParts[part];
     const amount=bikeImpactDamage(speed,clearance);
     damageBikePart(part,amount,true);
-    bikeLife=Math.max(0,bikeLife-amount*.8/(1+upgrades.armor*.05));bikeCrashCooldown=1.2;
+    bikeLife=Math.max(0,bikeLife-amount*.8/(1+upgrades.armor*.10));bikeCrashCooldown=1.2;
     const loss=before-bikeParts[part];
     setToast(label+' · '+bikePartNames[part]+' −'+loss.toFixed(1)+'% · inspecione com E');
     return true;
@@ -2036,7 +2036,7 @@
       const part=parts[Math.floor(Math.random()*parts.length)];
       damageBikePart(part,profile.bikeDamage,true);label=bikePartNames[part];
     }
-    bikeLife=Math.max(0,bikeLife-profile.bikeDamage*.6/(1+upgrades.armor*.05));
+    bikeLife=Math.max(0,bikeLife-profile.bikeDamage*.6/(1+upgrades.armor*.10));
     creatureBikeCooldown=1.2;
     if(bikeLife<=0){bikeEngineRunning=false;bikeRpm=0;bike.speed=0;}
     return label;
@@ -3215,7 +3215,7 @@
   }
   const FOOT_WALK_KMH=16,FOOT_RUN_KMH=35;
   function footSpeedMultiplier() {
-    return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?Math.max(1,FOOT_RUN_KMH/FOOT_WALK_KMH*(typeof characterHealth==='undefined'?1:characterHealth.status().sprint))*(1+upgrades.stamina*.025):1;
+    return keys.has('shift')&&((state==='drive'&&!mounted)||state==='explore')?Math.max(1,FOOT_RUN_KMH/FOOT_WALK_KMH*(typeof characterHealth==='undefined'?1:characterHealth.status().sprint))*(1+upgrades.stamina*.05):1;
   }
   function footWalkSpeed() {
     const condition=.55+.45*Math.min(hunger,thirst)/100;
@@ -3573,7 +3573,7 @@
     if(station>=0)hint('T ABASTECER',W/2,55,time);
     ctx.save();
     ctx.textAlign = 'right'; ctx.fillStyle = '#82938b'; ctx.font = '6px monospace';
-    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · H CORPO · C FAROL · M MAPA` : 'E INTERAGIR · F MONTAR · H CORPO · V CURATIVO · C FAROL · M MAPA', W - 12, H - 7);
+    ctx.fillText(mounted ? `Q REDUZ · E SOBE MARCHA · F DESCE · B ISCA · H CORPO · C FAROL · M MAPA` : 'E INTERAGIR · F MONTAR · B ISCA · H CORPO · V CURATIVO · C FAROL · M MAPA', W - 12, H - 7);
     ctx.restore();
     drawCompass(hudDetails?193:101,25,mounted?bike.angle:player.angle);
     if(!hudDetails){
@@ -3931,7 +3931,7 @@
     const limit=bikeGearSpeedLimit();
     const targetSpeed=fuel<=0||bikeLife<=0?0:keys.has('w')?limit:keys.has('s')?Math.min(38,limit):Math.min(100,limit);
     chaseSpeed += (targetSpeed - chaseSpeed) * Math.min(1, dt * 2.8 * condition);
-    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.10/(1+upgrades.fuel*.05));
+    if(keys.has('w')&&fuel>0&&bikeLife>0)fuel=Math.max(0,fuel-dt*.10/(1+upgrades.fuel*.10));
     chaseProgress += chaseSpeed * dt;
     chaseElapsed += dt;
     const tower = active(), machineSpeed = [151,159,167,188,126][tower.design]*.8;
@@ -4431,9 +4431,9 @@
     if(state!=='title'&&state!=='ending')updateBikeFuelTrail(dt);
     updateMachines(gameTime);
     const metabolism=characterHealth.status().metabolism;
-    const resourceRate=(shelterLife.restfulSleep?8:shelterLife.sleeping||observingAtRest()?4:1)/(1+upgrades.survival*.05);
+    const resourceRate=(shelterLife.restfulSleep?8:shelterLife.sleeping||observingAtRest()?4:1)/(1+upgrades.survival*.10);
     hunger = Math.max(0, hunger - dt * .0525*metabolism*resourceRate); thirst = Math.max(0, thirst - dt * .09*metabolism*resourceRate);
-    if(bikeEngineRunning&&fuel>0)fuel=Math.max(0,fuel-dt*.035*resourceRate/(1+upgrades.fuel*.05));
+    if(bikeEngineRunning&&fuel>0)fuel=Math.max(0,fuel-dt*.035*resourceRate/(1+upgrades.fuel*.10));
     if(checkpointReturn){
       advanceCheckpointReturn(dt);
       finishFrame(gameTime,dt);
@@ -4467,7 +4467,7 @@
       // Engine braking brings a downshift into its new range without teleporting speed.
       if(bike.speed>maxForward)bike.speed=Math.max(maxForward,bike.speed-dt*260);
       bike.speed=Math.max(-48,bike.speed);
-      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.05)*(reverse?.060:.150)*(1+(100-bikeParts.motor)/38));
+      if ((throttle || reverse) && Math.abs(bike.speed)>0) fuel=Math.max(0,fuel-dt/(1+upgrades.fuel*.10)*(reverse?.060:.150)*(1+(100-bikeParts.motor)/38));
       const travelSpeed=(previousSpeed+bike.speed)/2;
       const steeringDelta=bikeTurnDelta(travelSpeed,bike.steering,bikeParts.handlebar,Math.min(bikeParts.frontTire,bikeParts.rearTire),dt)*characterHealth.status().handling;
       const turnDelta=bikeWorldTurnDelta(bike.angle,steeringDelta);

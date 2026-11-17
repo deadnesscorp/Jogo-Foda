@@ -102,7 +102,7 @@
     function start(kind,part,context={}){
       const allowed=eligibility(kind,part,context);if(!allowed.ok){onNotice(allowed.reason);return false;}
       const treatmentBonus=kind==='painkiller'?0:Math.min(3,context.treatmentBonus||0);
-      const job=ACTIONS[kind];action={kind,part,elapsed:0,duration:job.duration/((status().dexterity)*(1+treatmentBonus*.05))};return true;
+      const job=ACTIONS[kind];action={kind,part,elapsed:0,duration:job.duration/((status().dexterity)*(1+treatmentBonus*.10))};return true;
     }
     function cancel(message='Tratamento cancelado. Nenhum material consumido.'){
       if(!action)return false;action=null;onNotice(message);return true;

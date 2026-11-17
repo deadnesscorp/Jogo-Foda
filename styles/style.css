@@ -68,7 +68,6 @@ body{padding-inline:max(8px,env(safe-area-inset-left)) max(8px,env(safe-area-ins
   .title-screen>p{font-size:10px;line-height:1.4;margin:4px 0 8px}
   .start-button,.menu-button{min-height:30px;padding:0 10px}
 }
-
 /* Mobile browser and touch layout */
 @media (pointer: coarse) {
   html,body{min-height:100%;overscroll-behavior:none}
@@ -90,3 +89,4 @@ body{padding-inline:max(8px,env(safe-area-inset-left)) max(8px,env(safe-area-ins
   .title-screen>p{max-width:55%;font-size:9px;line-height:1.35}
   .mission-controls{font-size:8px}
 }
+
